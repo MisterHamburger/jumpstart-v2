@@ -1,20 +1,23 @@
-import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useLocation } from 'react-router-dom'
 import AdminDashboard from '../components/AdminDashboard'
 import AdminInputs from '../components/AdminInputs'
 import AdminInventory from '../components/AdminInventory'
 import AdminProfitability from '../components/AdminProfitability'
 
 const TABS = [
-  { id: 'dashboard', label: 'Dashboard', icon: '📊' },
-  { id: 'inputs', label: 'Inputs', icon: '📤' },
-  { id: 'inventory', label: 'Inventory', icon: '📦' },
-  { id: 'profitability', label: 'Profitability', icon: '💰' },
+  { id: 'dashboard', path: '/admin', label: 'Dashboard', icon: '📊' },
+  { id: 'inputs', path: '/admin/inputs', label: 'Inputs', icon: '📤' },
+  { id: 'inventory', path: '/admin/inventory', label: 'Inventory', icon: '📦' },
+  { id: 'profitability', path: '/admin/profitability', label: 'Profitability', icon: '💰' },
 ]
 
 export default function Admin() {
   const navigate = useNavigate()
-  const [activeTab, setActiveTab] = useState('dashboard')
+  const location = useLocation()
+
+  // Determine active tab from URL
+  const activeTab = TABS.find(t => t.path !== '/admin' && location.pathname.startsWith(t.path))?.id
+    || (location.pathname === '/admin' || location.pathname === '/admin/' ? 'dashboard' : 'dashboard')
 
   return (
     <div className="min-h-screen flex flex-col md:flex-row">
@@ -30,7 +33,7 @@ export default function Admin() {
           {TABS.map(tab => (
             <button
               key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
+              onClick={() => navigate(tab.path)}
               className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium whitespace-nowrap transition-colors
                 ${activeTab === tab.id
                   ? 'bg-slate-700 text-white'
