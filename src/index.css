@@ -1,0 +1,18 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Prevent pull-to-refresh on mobile when scanning */
+html, body {
+  overscroll-behavior-y: contain;
+}
+
+/* Smooth transitions for scanner result screens */
+.zone-flash {
+  animation: flashIn 0.3s ease-out;
+}
+
+@keyframes flashIn {
+  from { opacity: 0; transform: scale(0.95); }
+  to { opacity: 1; transform: scale(1); }
+}

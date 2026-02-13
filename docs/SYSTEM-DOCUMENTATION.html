@@ -1,0 +1,799 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>Jumpstart System Documentation</title>
+  <style>
+    /* Default styles provided by pandoc.
+    ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+    */
+    code{white-space: pre-wrap;}
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: min(4vw, 1.5em);}
+    div.column{flex: auto; overflow-x: auto;}
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+    .display.math{display: block; text-align: center; margin: 0.5rem auto;}
+    /* CSS for syntax highlighting */
+    html { -webkit-text-size-adjust: 100%; }
+    pre > code.sourceCode { white-space: pre; position: relative; }
+    pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+    pre > code.sourceCode > span:empty { height: 1.2em; }
+    .sourceCode { overflow: visible; }
+    code.sourceCode > span { color: inherit; text-decoration: inherit; }
+    div.sourceCode { margin: 1em 0; }
+    pre.sourceCode { margin: 0; }
+    @media screen {
+    div.sourceCode { overflow: auto; }
+    }
+    @media print {
+    pre > code.sourceCode { white-space: pre-wrap; }
+    pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+    }
+    pre.numberSource code
+      { counter-reset: source-line 0; }
+    pre.numberSource code > span
+      { position: relative; left: -4em; counter-increment: source-line; }
+    pre.numberSource code > span > a:first-child::before
+      { content: counter(source-line);
+        position: relative; left: -1em; text-align: right; vertical-align: baseline;
+        border: none; display: inline-block;
+        -webkit-touch-callout: none; -webkit-user-select: none;
+        -khtml-user-select: none; -moz-user-select: none;
+        -ms-user-select: none; user-select: none;
+        padding: 0 4px; width: 4em;
+        color: #aaaaaa;
+      }
+    pre.numberSource { margin-left: 3em; border-left: 1px solid #aaaaaa;  padding-left: 4px; }
+    div.sourceCode
+      {   }
+    @media screen {
+    pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+    }
+    code span.al { color: #ff0000; font-weight: bold; } /* Alert */
+    code span.an { color: #60a0b0; font-weight: bold; font-style: italic; } /* Annotation */
+    code span.at { color: #7d9029; } /* Attribute */
+    code span.bn { color: #40a070; } /* BaseN */
+    code span.bu { color: #008000; } /* BuiltIn */
+    code span.cf { color: #007020; font-weight: bold; } /* ControlFlow */
+    code span.ch { color: #4070a0; } /* Char */
+    code span.cn { color: #880000; } /* Constant */
+    code span.co { color: #60a0b0; font-style: italic; } /* Comment */
+    code span.cv { color: #60a0b0; font-weight: bold; font-style: italic; } /* CommentVar */
+    code span.do { color: #ba2121; font-style: italic; } /* Documentation */
+    code span.dt { color: #902000; } /* DataType */
+    code span.dv { color: #40a070; } /* DecVal */
+    code span.er { color: #ff0000; font-weight: bold; } /* Error */
+    code span.ex { } /* Extension */
+    code span.fl { color: #40a070; } /* Float */
+    code span.fu { color: #06287e; } /* Function */
+    code span.im { color: #008000; font-weight: bold; } /* Import */
+    code span.in { color: #60a0b0; font-weight: bold; font-style: italic; } /* Information */
+    code span.kw { color: #007020; font-weight: bold; } /* Keyword */
+    code span.op { color: #666666; } /* Operator */
+    code span.ot { color: #007020; } /* Other */
+    code span.pp { color: #bc7a00; } /* Preprocessor */
+    code span.sc { color: #4070a0; } /* SpecialChar */
+    code span.ss { color: #bb6688; } /* SpecialString */
+    code span.st { color: #4070a0; } /* String */
+    code span.va { color: #19177c; } /* Variable */
+    code span.vs { color: #4070a0; } /* VerbatimString */
+    code span.wa { color: #60a0b0; font-weight: bold; font-style: italic; } /* Warning */
+  </style>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/water.css@2/out/dark.min.css" />
+</head>
+<body>
+<header id="title-block-header">
+<h1 class="title">Jumpstart System Documentation</h1>
+</header>
+<h1 id="jumpstart-deals-comprehensive-system-documentation">Jumpstart
+Deals — Comprehensive System Documentation</h1>
+<p><strong>Last Updated:</strong> 2026-02-12<br />
+<strong>Stable Version:</strong> Commit <code>63edecc</code>
+(v1.0-stable, verified 3:25 PM CST)<br />
+<strong>Live URL:</strong> https://jumpstart-sorting.netlify.app<br />
+<strong>Google Sheet:</strong>
+<code>1oH6B0tAO06ghFXzjARhi_AZLoPCZCfgJBJ1PRobAyug</code></p>
+<hr />
+<h2 id="table-of-contents">Table of Contents</h2>
+<ol type="1">
+<li><a href="#1-business-context">Business Context</a></li>
+<li><a href="#2-system-architecture">System Architecture</a></li>
+<li><a href="#3-google-sheets-schema">Google Sheets Schema (The
+Database)</a></li>
+<li><a href="#4-data-flow-the-yellow-sticker-system">Data Flow: The
+Yellow Sticker System</a></li>
+<li><a href="#5-frontend-components">Frontend Components</a></li>
+<li><a href="#6-netlify-functions">Netlify Functions (Backend
+API)</a></li>
+<li><a href="#7-profitability-engine">Profitability Engine (Critical
+Path)</a></li>
+<li><a href="#8-csv-upload-pipeline">CSV Upload Pipeline</a></li>
+<li><a href="#9-scanner-modes">Scanner Modes</a></li>
+<li><a href="#10-admin-dashboard">Admin Dashboard</a></li>
+<li><a href="#11-known-issues--edge-cases">Known Issues &amp; Edge
+Cases</a></li>
+<li><a href="#12-deployment--operations">Deployment &amp;
+Operations</a></li>
+<li><a href="#13-stability-risks--migration-considerations">Stability
+Risks &amp; Migration Considerations</a></li>
+</ol>
+<hr />
+<h2 id="business-context">1. Business Context</h2>
+<p><strong>Jumpstart Deals</strong> is a Whatnot live auction resale
+business. The workflow:</p>
+<ol type="1">
+<li><strong>Buy</strong> bulk liquidation pallets from vendors (e.g.,
+J.Crew, Madewell returns)</li>
+<li><strong>Sort</strong> items into zones by value tier using barcode
+scanning</li>
+<li><strong>Sell</strong> items on Whatnot live shows (2 shows/day:
+morning + evening)</li>
+<li><strong>Ship</strong> items after shows, scanning each to link
+physical item → sale record</li>
+<li><strong>Track</strong> profitability at the individual item
+level</li>
+</ol>
+<p>The system serves 5+ warehouse workers on mobile phones
+simultaneously.</p>
+<h3 id="channels">Channels</h3>
+<ul>
+<li><strong>Jumpstart</strong> — primary Whatnot channel</li>
+<li><strong>Kickstart</strong> — secondary channel (same inventory pool,
+tracked separately)</li>
+</ul>
+<h3 id="key-business-metrics">Key Business Metrics</h3>
+<ul>
+<li>Per-item cost (from liquidation manifest)</li>
+<li>Per-item sale price (from Whatnot CSV export)</li>
+<li>Whatnot fees: 7.2% commission (premium seller tier) + 2.9%
+processing + $0.30/item</li>
+<li>Profitability = Net Payout - Cost (including freight at
++$0.45/item)</li>
+</ul>
+<hr />
+<h2 id="system-architecture">2. System Architecture</h2>
+<pre><code>┌─────────────────────────────────────────────────────┐
+│                    FRONTEND                          │
+│  React 19 + Vite 7 + Tailwind CSS 3                │
+│  Mobile-first SPA (warehouse phone usage)           │
+│  html5-qrcode for barcode scanning                  │
+│  localStorage for session persistence               │
+└─────────────────┬───────────────────────────────────┘
+                  │ HTTP (fetch)
+                  ▼
+┌─────────────────────────────────────────────────────┐
+│              NETLIFY FUNCTIONS                        │
+│  110 serverless functions (.js/.cjs)                 │
+│  Node.js + googleapis SDK                            │
+│  esbuild bundler                                     │
+│  Auth: GOOGLE_SERVICE_ACCOUNT_KEY env var            │
+└─────────────────┬───────────────────────────────────┘
+                  │ Google Sheets API v4
+                  ▼
+┌─────────────────────────────────────────────────────┐
+│           GOOGLE SHEETS (Database)                   │
+│  Single spreadsheet, ~15 tabs                        │
+│  All reads/writes via Sheets API                     │
+│  No caching layer                                    │
+└─────────────────────────────────────────────────────┘</code></pre>
+<h3 id="tech-stack">Tech Stack</h3>
+<ul>
+<li><strong>Frontend:</strong> React 19, Vite 7, Tailwind CSS 3,
+html5-qrcode</li>
+<li><strong>Backend:</strong> Netlify Functions (serverless), googleapis
+SDK</li>
+<li><strong>Database:</strong> Google Sheets (single spreadsheet)</li>
+<li><strong>Hosting:</strong> Netlify (auto-deploys from
+<code>dist/</code>)</li>
+<li><strong>Build:</strong> <code>npm run build</code> →
+<code>vite build</code> → <code>dist/</code></li>
+<li><strong>Auth:</strong> Google Service Account (env var
+<code>GOOGLE_SERVICE_ACCOUNT_KEY</code>)</li>
+</ul>
+<h3 id="key-dependencies">Key Dependencies</h3>
+<div class="sourceCode" id="cb2"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;html5-qrcode&quot;</span><span class="fu">:</span> <span class="st">&quot;^2.3.8&quot;</span><span class="fu">,</span>   <span class="er">//</span> <span class="er">Barcode</span> <span class="er">scanning</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;papaparse&quot;</span><span class="fu">:</span> <span class="st">&quot;^5.5.3&quot;</span><span class="fu">,</span>       <span class="er">//</span> <span class="er">CSV</span> <span class="er">parsing</span></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;googleapis&quot;</span><span class="fu">:</span> <span class="st">&quot;^171.4.0&quot;</span><span class="fu">,</span>    <span class="er">//</span> <span class="er">Google</span> <span class="er">Sheets</span> <span class="er">API</span> <span class="er">(in</span> <span class="er">devDeps,</span> <span class="er">used</span> <span class="er">by</span> <span class="er">functions)</span></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;react&quot;</span><span class="fu">:</span> <span class="st">&quot;^19.2.0&quot;</span></span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<hr />
+<h2 id="google-sheets-schema">3. Google Sheets Schema</h2>
+<h3 id="core-tabs">Core Tabs</h3>
+<h4 id="manifest-manifestag"><strong>Manifest</strong>
+(<code>Manifest!A:G</code>)</h4>
+<p>Source: Liquidation vendor manifest CSV, uploaded via admin. | Column
+| Field | Example | |——–|——-|———| | A | Barcode (Universal ID) |
+<code>099107846961</code> | | B | Product Name |
+<code>J.Crew Slim Fit Shirt</code> | | C | Zone | <code>1</code> | | D |
+Bundle | <code>5</code> | | E | Cost | <code>48.86</code> | | F | Load
+ID | <code>LOAD-2026-01-15-001</code> | | G | Cost+Freight |
+<code>49.31</code> (Cost + $0.45) |</p>
+<h4 id="scan-sessions-scan-sessionsah"><strong>Scan Sessions</strong>
+(<code>Scan Sessions!A:H</code>)</h4>
+<p>Source: Sales Scanner app (one row per scanned item during packing).
+| Column | Field | Example | |——–|——-|———| | A | Session ID |
+<code>jumpstart_2026-02-10_evening_1707600000000</code> | | B | Show
+Type/Channel | <code>Jumpstart</code> | | C | Date of Show |
+<code>2026-02-10</code> | | D | Time of Day | <code>evening</code> | | E
+| Barcode (Universal ID) | <code>099107846961</code> | | F | Listing
+Number (Yellow Sticker) | <code>7</code> | | G | Timestamp |
+<code>02/10/2026, 18:30:45</code> | | H | Submitted At |
+<code>02/10/2026, 18:30:45</code> |</p>
+<p><strong>Critical:</strong> This tab is the BRIDGE between barcodes
+and yellow stickers. Without it, profitability cannot be calculated.</p>
+<h4 id="show-items-show-itemsan"><strong>Show Items</strong>
+(<code>Show Items!A:N</code>)</h4>
+<p>Source: Whatnot CSV export, uploaded via admin. One row per listing
+number (deduped). | Column | Field | Example | |——–|——-|———| | A | Date
+| <code>2026-02-10</code> | | B | Merchant | <code>Whatnot</code> | | C
+| Product Name | <code>J.Crew &amp; Madewell! #7</code> | | D | Sold
+Price | <code>23.25</code> (THIS IS BUYER PAID, post-coupon) | | E |
+Cancelled |
+`<code>(empty=valid,</code>failed<code>,</code>cancelled<code>) | | F | Placed At |</code>2026-02-10T18:45:00Z<code>| | G | Yellow Sticker |</code>7<code>(extracted from product name via</code>/#()/<code>) | | H | Channel |</code>Jumpstart<code>| | I | Show Date |</code>2026-02-10<code>(manually set during upload) | | J | Coupon Code |</code>BISCUIT<code>| | K | Coupon Amount |</code>7.75<code>| | L | Buyer Paid |</code>23.25<code>(same as Sold Price) | | M | Original Hammer |</code>31.00<code>(Sold Price + Coupon Amount) | | N | Show Name |</code>2026-02-10-Jumpstart-evening`
+|</p>
+<p><strong>CRITICAL PRICING NOTE:</strong> The Whatnot CSV “Sold Price”
+field is the POST-COUPON price (what buyer actually paid). The original
+hammer price = Sold Price + Coupon Amount. Do NOT subtract coupons from
+sold price — that double-counts.</p>
+<h4 id="shows-showsag"><strong>Shows</strong>
+(<code>Shows!A:G</code>)</h4>
+<p>Source: Auto-created when uploading Show CSV. Metadata about each
+show. | Column | Field | Example | |——–|——-|———| | A | Show Name |
+<code>2026-02-10-Jumpstart-evening</code> | | B | Date |
+<code>2026-02-10</code> | | C | Channel | <code>Jumpstart</code> | | D |
+Total Items (scannable) | <code>88</code> | | E | Scanned Count |
+<code>88</code> | | F | Status | <code>completed</code> | | G | Created
+At | <code>2026-02-12T20:00:00Z</code> |</p>
+<h4 id="loads-loadsag"><strong>Loads</strong>
+(<code>Loads!A:G</code>)</h4>
+<p>Source: Manual entry via admin. | Column | Field | Example |
+|——–|——-|———| | A | Load ID | <code>LOAD-2026-01-15-001</code> | | B |
+Date | <code>2026-01-15</code> | | C | Channel | <code>Jumpstart</code>
+| | D | Vendor | <code>Madewell Returns</code> | | E | Quantity |
+<code>500</code> | | F | Total Cost | <code>5000.00</code> | | G | Notes
+| <code>Mixed returns pallet</code> |</p>
+<h4 id="expenses-log-expenses-logad"><strong>Expenses Log</strong>
+(<code>Expenses Log!A:D</code>)</h4>
+<p>Source: Copilot finance app CSV export, uploaded via admin. | Column
+| Field | Example | |——–|——-|———| | A | Date | <code>2026-02-01</code> |
+| B | Description | <code>Shipping supplies</code> | | C | Amount |
+<code>150.00</code> | | D | Category | <code>EXPENSES</code> |</p>
+<h3 id="zone-tabs-sorting-reference-data">Zone Tabs (Sorting Reference
+Data)</h3>
+<p>These tabs define which zone each barcode belongs to. Used by the
+Sorting Scanner.</p>
+<h4 id="zone-1-test-zone-1-testai"><strong>Zone 1 TEST</strong>
+(<code>Zone 1 TEST!A:I</code>)</h4>
+<p>Premium items ($98+ MSRP). ~2,784 rows. | Column | Field | |——–|——-|
+| A | Universal ID (barcode) | | B | Part Number | | C | Description | |
+D | Category | | E | Subclass | | F | Size | | G | Color | | H | MSRP |
+| I | Vendor |</p>
+<h4 id="zone-2-test-zone-2-testai"><strong>Zone 2 TEST</strong>
+(<code>Zone 2 TEST!A:I</code>)</h4>
+<p>Standard items. ~581 rows. Same schema as Zone 1.</p>
+<h4 id="zone-3-test-zone-3-testaj"><strong>Zone 3 TEST</strong>
+(<code>Zone 3 TEST!A:J</code>)</h4>
+<p>Bundle items. ~1,401 rows. Same as Zone 1/2 plus: | Column J | Bundle
+Number | <code>5</code> or <code>Leftover</code> |</p>
+<p><strong>⚠️ DO NOT MODIFY Zone 3 TEST</strong> — This tab is actively
+used by warehouse workers. Column J (index 9) contains the bundle
+assignment.</p>
+<h3 id="log-tabs">Log Tabs</h3>
+<ul>
+<li><strong>General Sort Log</strong> — Records from General Sort
+scanner</li>
+<li><strong>Bundle Sort Log</strong> — Records from Bundle Sort
+scanner</li>
+<li><strong>Missing Items Review</strong> — Items not found in any
+zone</li>
+</ul>
+<hr />
+<h2 id="data-flow-the-yellow-sticker-system">4. Data Flow: The Yellow
+Sticker System</h2>
+<h3 id="why-yellow-stickers-exist">Why Yellow Stickers Exist</h3>
+<p>Whatnot doesn’t export barcodes in its CSV. Items sold on live shows
+are identified by a physical yellow sticker number (#1, #2, #3…) that
+appears in the product name.</p>
+<h3 id="the-three-table-join">The Three-Table Join</h3>
+<pre><code>MANIFEST (barcode → cost)          SCAN SESSIONS (barcode → sticker#)          SHOW ITEMS (sticker# → sale price)
+┌──────────────────────┐           ┌───────────────────────────┐                ┌─────────────────────────┐
+│ barcode: 099107846961│           │ barcode: 099107846961     │                │ product: &quot;J.Crew #7&quot;    │
+│ cost: $48.86         │──barcode─→│ listing#: 7               │──listing #──→  │ buyer paid: $23.25      │
+│ load: LOAD-001       │           │ show: 2026-02-10-evening  │                │ coupon: $7.75           │
+└──────────────────────┘           └───────────────────────────┘                │ hammer: $31.00          │
+                                                                                └─────────────────────────┘
+
+PROFIT = buyerPaid - fees - costFreight
+       = $23.25 - $2.72 - $49.31
+       = -$28.78 (loss on this item)</code></pre>
+<h3 id="join-keys-critical">Join Keys (Critical!)</h3>
+<p><strong>Profitability function</strong>
+(<code>get-profitability-data.js</code>): 1. <strong>Show Items → keyed
+by:</strong> <code>showName:listing</code> (e.g.,
+<code>2026-02-10-jumpstart-evening:7</code>) — lowercase 2. <strong>Scan
+Sessions → keyed by:</strong> <code>date:timeOfDay:listing</code> for
+dedup (e.g., <code>2026-02-10:evening:7</code>) 3.
+<strong>Join:</strong> Scan Session builds <code>scanShowName</code> =
+<code>date-channel-timeOfDay</code>, matches against Show Items key 4.
+<strong>Fallback:</strong> If showName key doesn’t match, tries
+<code>date:listing</code> (backward compat)</p>
+<p><strong>Why morning/evening matters:</strong> Two shows per day can
+have overlapping listing numbers. Show #7 morning ≠ Show #7 evening. The
+dedup key and join key MUST include time of day.</p>
+<h3 id="barcode-normalization">Barcode Normalization</h3>
+<p>All barcode operations use this normalization:</p>
+<div class="sourceCode" id="cb4"><pre
+class="sourceCode javascript"><code class="sourceCode javascript"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="kw">const</span> normBarcode <span class="op">=</span> (b) <span class="kw">=&gt;</span> (b <span class="op">||</span> <span class="st">&#39;&#39;</span>)<span class="op">.</span><span class="fu">toString</span>()<span class="op">.</span><span class="fu">replace</span>(<span class="ss">/</span><span class="sc">^[&#39;\s0]+</span><span class="ss">/</span><span class="op">,</span> <span class="st">&#39;&#39;</span>)<span class="op">.</span><span class="fu">trim</span>()<span class="op">;</span></span></code></pre></div>
+<p>Strips leading zeros, apostrophes, whitespace. The
+<code>log-scan.js</code> function pads barcodes to 12 digits with
+leading zeros for storage.</p>
+<hr />
+<h2 id="frontend-components">5. Frontend Components</h2>
+<h3 id="component-tree">Component Tree</h3>
+<pre><code>App.jsx
+├── Home.jsx                    — Landing page (3 main actions)
+├── SortingModeSelect.jsx       — Choose: General Sort or Bundle Sort
+│   ├── GeneralSort.jsx         — Scan → lookup zone → display zone color
+│   └── BundleSort.jsx          — Scan → lookup bundle → display box number
+├── SalesSetup.jsx              — Select show from dropdown → start scanning
+│   └── SalesScanner.jsx        — Scan barcode → enter sticker# → log to Sheets
+│       └── SalesSummary.jsx    — Post-session summary
+└── Admin.jsx                   — Admin dashboard (sidebar nav)
+    ├── AdminHome.jsx / Dashboard.jsx  — P&amp;L metrics, revenue, COGS, inventory
+    ├── Inputs.jsx              — Upload loads, manifests, show CSVs, expenses
+    ├── Inventory.jsx           — Browse inventory by zone
+    ├── Profitability.jsx       — Item-level profit/loss table
+    └── DataValidation.jsx      — Data quality scoring dashboard</code></pre>
+<h3 id="navigation">Navigation</h3>
+<p>State-based routing via <code>navigate(pageName)</code> function in
+<code>App.jsx</code>. No React Router — just <code>useState</code> for
+current page.</p>
+<h3 id="key-ux-patterns">Key UX Patterns</h3>
+<ul>
+<li><strong>Mobile-first:</strong> Designed for phone use in warehouse
+(large buttons, minimal typing)</li>
+<li><strong>localStorage persistence:</strong> Scanner counts survive
+browser close/reopen</li>
+<li><strong>Real-time polling:</strong> Sales Scanner polls
+<code>get-show-scanned-count</code> every 5 seconds for multi-device
+count sync</li>
+<li><strong>Fire-and-forget writes:</strong> Scan logging doesn’t block
+UI — <code>fetch()</code> without <code>await</code></li>
+<li><strong>Processing guard:</strong> <code>processingRef</code>
+prevents double-scan on fast cameras</li>
+<li><strong>Camera stays running:</strong> Between scans, camera doesn’t
+stop/restart (prevents permission re-prompts)</li>
+</ul>
+<hr />
+<h2 id="netlify-functions-backend-api">6. Netlify Functions (Backend
+API)</h2>
+<h3 id="function-categories">Function Categories</h3>
+<p><strong>Core Operations (actively used in production):</strong> |
+Function | Method | Purpose | |———-|——–|———| |
+<code>get-profitability-data.js</code> | GET | Main profitability join —
+the most complex function | | <code>upload-show-csv.cjs</code> | POST |
+Upload Whatnot CSV with smart dedup | | <code>log-scan.js</code> | POST
+| Write scan to Scan Sessions/Sort Logs | | <code>lookup-zone.cjs</code>
+| POST | Look up barcode → zone assignment | |
+<code>check-listing-status.cjs</code> | POST | Validate listing# before
+scanning (duplicate/failed/valid) | |
+<code>get-show-scanned-count.cjs</code> | POST | Real-time scan count
+for progress display | | <code>update-show-progress.cjs</code> | POST |
+Update show scanned count + completion status | |
+<code>get-active-shows.cjs</code> | GET | List shows available for
+scanning | | <code>get-dashboard-data.js</code> | GET | Aggregate
+P&amp;L metrics | | <code>get-loads.js</code> | GET | List all loads | |
+<code>get-shows.cjs</code> | GET | List all shows with metadata | |
+<code>add-load.js</code> | POST | Create a new load | |
+<code>edit-load.js</code> | POST | Update load metadata | |
+<code>delete-load.js</code> | POST | Delete a load | |
+<code>upload-manifest.js</code> | POST | Upload manifest CSV to Manifest
+tab | | <code>upload-expenses.js</code> | POST | Upload expenses CSV | |
+<code>load-manifest.js</code> | GET | Load full manifest (used by
+BundleSort for client-side lookup) | |
+<code>get-inventory-data.js</code> | GET | Inventory browsing data |</p>
+<p><strong>Admin/Maintenance:</strong> | Function | Purpose | |———-|———|
+| <code>clear-show-items.cjs</code> | Clear Show Items tab (with dry-run
+safety) | | <code>clear-shows.cjs</code> | Clear Shows metadata tab | |
+<code>clear-manifest.js</code> | Clear Manifest tab | |
+<code>clear-expenses.js</code> | Clear Expenses tab | |
+<code>delete-scan-rows.cjs</code> | Delete specific Scan Session rows |
+| <code>get-show-items.cjs</code> | Read Show Items for debugging | |
+<code>count-show-items.cjs</code> | Count Show Items rows |</p>
+<p><strong>Diagnostic/Debug (should be removed or disabled in
+production):</strong> | Function | Purpose | |———-|———| |
+<code>debug-show-items.js</code> | Inspect Show Items data | |
+<code>debug-scan-sessions.js</code> | Inspect Scan Sessions | |
+<code>debug-scanner.js</code> | Scanner diagnostics | |
+<code>diagnose-profitability.cjs</code> | Debug profitability joins | |
+<code>diagnose-show-items.cjs</code> | Debug Show Items data | |
+<code>debug-zero-dollar-items.cjs</code> | Find $0 items |</p>
+<p><strong>Legacy/One-Time Migration Scripts (110 functions total
+includes ~50+ of these):</strong> Many functions were created for
+one-time data migrations, barcode cleanup, zone restructuring, etc.
+Examples: <code>fix-all-test-tab-barcodes.cjs</code>,
+<code>cleanup-barcodes-proper.cjs</code>,
+<code>reorganize-bundles.cjs</code>,
+<code>verify-zone1-migration.cjs</code>. These are no longer needed in
+production but remain deployed.</p>
+<hr />
+<h2 id="profitability-engine-critical-path">7. Profitability Engine
+(Critical Path)</h2>
+<p><strong>File:</strong>
+<code>netlify/functions/get-profitability-data.js</code></p>
+<p>This is the most complex and critical function. It performs a 3-way
+join across Manifest, Scan Sessions, and Show Items to calculate
+per-item profitability.</p>
+<h3 id="algorithm">Algorithm</h3>
+<pre><code>1. Fetch ALL data in parallel:
+   - Manifest (barcode → cost)
+   - Zone 1/2/3 TEST (barcode → description)
+   - Show Items (listing# → sale price)
+   - Loads (loadId → channel)
+   - Scan Sessions (barcode → listing#)
+
+2. Build lookup maps:
+   - barcodeCost[normalizedBarcode] = cost
+   - barcodeCostFreight[normalizedBarcode] = cost + 0.45
+   - barcodeProduct[normalizedBarcode] = product name
+   - barcodeDescription[normalizedBarcode] = zone description (better names)
+   - listingData[showName:listing] = {buyerPaid, couponAmount, originalHammer, ...}
+
+3. Process Scan Sessions:
+   - Parse each scan entry
+   - Build dedup key: date:timeOfDay:listing
+   - Keep last entry per dedup key (handles re-scans)
+
+4. Join for each unique scan:
+   - Get cost from Manifest via barcode
+   - Get description from Zone tabs or Manifest
+   - Build scanShowName from scan&#39;s date + channel + timeOfDay
+   - Look up sale data: listingData[scanShowName:listing] (fallback: date:listing)
+   - Calculate fees: 7.2% commission + 2.9% processing + $0.30
+   - Calculate profit: buyerPaid - fees - costFreight
+
+5. Filter:
+   - Must have sale data (hasSaleData = true)
+   - Must have buyerPaid &gt; 0 OR originalHammer &gt; 0 (includes 100% coupon items)
+   - Optional: filter by channel, search term
+
+6. Return: items array + summary totals + debug info</code></pre>
+<h3 id="fee-calculation">Fee Calculation</h3>
+<div class="sourceCode" id="cb7"><pre
+class="sourceCode javascript"><code class="sourceCode javascript"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a>commission <span class="op">=</span> buyerPaid <span class="op">*</span> <span class="fl">0.072</span>       <span class="co">// 7.2% premium seller rate</span></span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a>processing <span class="op">=</span> (buyerPaid <span class="op">*</span> <span class="fl">0.029</span>) <span class="op">+</span> <span class="fl">0.30</span>  <span class="co">// 2.9% + $0.30 per item</span></span>
+<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a>totalFees <span class="op">=</span> commission <span class="op">+</span> processing</span>
+<span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a>netPayout <span class="op">=</span> buyerPaid <span class="op">-</span> totalFees</span>
+<span id="cb7-5"><a href="#cb7-5" aria-hidden="true" tabindex="-1"></a>profit <span class="op">=</span> netPayout <span class="op">-</span> costFreight</span>
+<span id="cb7-6"><a href="#cb7-6" aria-hidden="true" tabindex="-1"></a>margin <span class="op">=</span> (profit <span class="op">/</span> buyerPaid) <span class="op">*</span> <span class="dv">100</span></span></code></pre></div>
+<h3 id="critical-gotcha-coupon-math">Critical Gotcha: Coupon Math</h3>
+<div class="sourceCode" id="cb8"><pre
+class="sourceCode javascript"><code class="sourceCode javascript"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="co">// CSV &quot;Sold Price&quot; = what buyer paid AFTER coupon (post-coupon)</span></span>
+<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a><span class="co">// NOT the hammer price!</span></span>
+<span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a>buyerPaid <span class="op">=</span> soldPrice           <span class="co">// ✅ Correct</span></span>
+<span id="cb8-4"><a href="#cb8-4" aria-hidden="true" tabindex="-1"></a>originalHammer <span class="op">=</span> soldPrice <span class="op">+</span> couponAmount  <span class="co">// ✅ Correct</span></span>
+<span id="cb8-5"><a href="#cb8-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb8-6"><a href="#cb8-6" aria-hidden="true" tabindex="-1"></a><span class="co">// WRONG (was causing systematic errors):</span></span>
+<span id="cb8-7"><a href="#cb8-7" aria-hidden="true" tabindex="-1"></a><span class="co">// buyerPaid = soldPrice - couponAmount  // ❌ Double-subtracts</span></span></code></pre></div>
+<hr />
+<h2 id="csv-upload-pipeline">8. CSV Upload Pipeline</h2>
+<p><strong>File:</strong>
+<code>netlify/functions/upload-show-csv.cjs</code></p>
+<h3 id="upload-flow">Upload Flow</h3>
+<pre><code>1. User selects: Date, Time of Day (morning/evening), Channel (Jumpstart/Kickstart)
+2. User uploads Whatnot CSV
+3. Parse CSV with PapaParse (header mode)
+4. Header matching via getField() — case-insensitive, whitespace-trimmed
+5. Group rows by listing number (extracted via /#(\d+)/ from product name)
+6. For each listing, determine status:
+   - Gift card/credit → excluded entirely
+   - All rows &quot;cancelled&quot; → status: cancelled
+   - All rows &quot;failed&quot; → status: failed (truly failed)
+   - Any row succeeded → status: valid (even if some rows failed)
+7. Pick &quot;best row&quot; per listing (prefer successful row)
+8. Write to Show Items tab (one row per listing, ALL statuses)
+9. Write show metadata to Shows tab (scannable count excludes gift cards + failed + cancelled)
+10. Return summary with excluded items list</code></pre>
+<h3 id="getfield-helper">getField() Helper</h3>
+<div class="sourceCode" id="cb10"><pre
+class="sourceCode javascript"><code class="sourceCode javascript"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a><span class="kw">const</span> getField <span class="op">=</span> (row<span class="op">,</span> <span class="op">...</span>names) <span class="kw">=&gt;</span> {</span>
+<span id="cb10-2"><a href="#cb10-2" aria-hidden="true" tabindex="-1"></a>  <span class="cf">for</span> (<span class="kw">const</span> name <span class="kw">of</span> names) {</span>
+<span id="cb10-3"><a href="#cb10-3" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> (row[name] <span class="op">!==</span> <span class="kw">undefined</span>) <span class="cf">return</span> row[name]<span class="op">;</span></span>
+<span id="cb10-4"><a href="#cb10-4" aria-hidden="true" tabindex="-1"></a>    <span class="kw">const</span> key <span class="op">=</span> <span class="bu">Object</span><span class="op">.</span><span class="fu">keys</span>(row)<span class="op">.</span><span class="fu">find</span>(k <span class="kw">=&gt;</span> </span>
+<span id="cb10-5"><a href="#cb10-5" aria-hidden="true" tabindex="-1"></a>      k<span class="op">.</span><span class="fu">trim</span>()<span class="op">.</span><span class="fu">toLowerCase</span>() <span class="op">===</span> name<span class="op">.</span><span class="fu">toLowerCase</span>()</span>
+<span id="cb10-6"><a href="#cb10-6" aria-hidden="true" tabindex="-1"></a>    )<span class="op">;</span></span>
+<span id="cb10-7"><a href="#cb10-7" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> (key) <span class="cf">return</span> row[key]<span class="op">;</span></span>
+<span id="cb10-8"><a href="#cb10-8" aria-hidden="true" tabindex="-1"></a>  }</span>
+<span id="cb10-9"><a href="#cb10-9" aria-hidden="true" tabindex="-1"></a>  <span class="cf">return</span> <span class="st">&#39;&#39;</span><span class="op">;</span></span>
+<span id="cb10-10"><a href="#cb10-10" aria-hidden="true" tabindex="-1"></a>}<span class="op">;</span></span></code></pre></div>
+<p>This was added after discovering Whatnot CSV headers have
+inconsistent casing/whitespace.</p>
+<h3 id="dedup-logic">Dedup Logic</h3>
+<ul>
+<li><strong>Key:</strong> <code>date:timeOfDay:listing</code> — must
+include morning/evening because two shows per day can have overlapping
+listing numbers</li>
+<li>Gift cards: Detected by product name containing “gift card”,
+“account credit”, or “store credit”</li>
+<li>Failed-then-succeeded: Valid (common pattern — buyer’s first payment
+fails, retry succeeds)</li>
+</ul>
+<hr />
+<h2 id="scanner-modes">9. Scanner Modes</h2>
+<h3 id="sales-scanner-salesscanner.jsx-salessetup.jsx">Sales Scanner
+(<code>SalesScanner.jsx</code> + <code>SalesSetup.jsx</code>)</h3>
+<p><strong>Purpose:</strong> Scan items before shipping to link barcode
+→ yellow sticker number.</p>
+<p><strong>Flow:</strong> 1. User selects show from dropdown (SalesSetup
+fetches active shows) 2. If show has excluded items (failed/cancelled),
+shows interstitial warning 3. Camera opens, scans barcode (must start
+with <code>099</code> — filters out <code>211</code> SKU barcodes) 4.
+User enters yellow sticker number via on-screen numpad 5.
+<code>check-listing-status</code> validates: is it in this show? already
+scanned? failed payment? 6. If valid: logs to Scan Sessions via
+<code>log-scan.js</code> (fire-and-forget) 7. Updates show progress via
+<code>update-show-progress</code> (fire-and-forget) 8. Shows success
+animation (0.5s), restarts camera 9. When all items scanned → completion
+screen (detected by polling <code>get-show-scanned-count</code>)</p>
+<p><strong>Multi-device support:</strong> Progress counter polls Google
+Sheets every 5 seconds. Multiple phones scanning same show see each
+other’s progress.</p>
+<h3 id="general-sort-scanner-generalsort.jsx">General Sort Scanner
+(<code>GeneralSort.jsx</code>)</h3>
+<p><strong>Purpose:</strong> Scan any barcode → find which zone it
+belongs to.</p>
+<p><strong>Flow:</strong> 1. Camera scans barcode (must start with
+<code>099</code>) 2. Calls <code>lookup-zone</code> which searches Zone
+1 TEST → Zone 2 TEST → Zone 3 TEST → Missing Items Review 3. Displays
+zone with color-coded full-screen result: - Zone 1: Purple (Premium
+$98+) - Zone 2: Teal (Standard) - Zone 3: Pink (Bundle + box number) -
+Zone 4: Amber (Needs Review) - Not Found: Red 4. User taps “Next Scan” →
+camera keeps running (no restart) 5. Logs to General Sort Log</p>
+<h3 id="bundle-sort-scanner-bundlesort.jsx">Bundle Sort Scanner
+(<code>BundleSort.jsx</code>)</h3>
+<p><strong>Purpose:</strong> Scan Zone 3 items → tell worker which
+box/bundle number.</p>
+<p><strong>Flow:</strong> 1. Loads FULL manifest into memory on mount
+(client-side lookup for speed) 2. Camera scans barcode 3. Client-side
+lookup: <code>manifest[normalizedBarcode]</code> 4. If Zone 3 item:
+shows “BOX {bundleNumber}” in large text 5. If other zone: shows “NOT A
+BUNDLE — Zone {n}” 6. Logs to Bundle Sort Log</p>
+<hr />
+<h2 id="admin-dashboard">10. Admin Dashboard</h2>
+<p><strong>Component:</strong> <code>Admin.jsx</code> — sidebar
+navigation with 5 tabs</p>
+<h3 id="dashboard-dashboard.jsx">Dashboard
+(<code>Dashboard.jsx</code>)</h3>
+<ul>
+<li>P&amp;L summary with Revenue, COGS, Gross Profit, Inventory</li>
+<li>Channel filter (Summary / Jumpstart / Kickstart)</li>
+<li>Date range presets (All time, This month, Last month, custom)</li>
+<li>Expenses and Payroll only shown on Summary view</li>
+</ul>
+<h3 id="inputs-inputs.jsx">Inputs (<code>Inputs.jsx</code>)</h3>
+<p>4 sub-tabs for data management: - <strong>Loads:</strong>
+Create/edit/delete load entries (purchase metadata) -
+<strong>Manifests:</strong> Upload vendor manifest CSV (links to a Load)
+- <strong>Shows:</strong> Upload Whatnot CSV with date/time/channel
+selection - <strong>Expenses:</strong> Upload Copilot finance CSV</p>
+<h3 id="inventory-inventory.jsx">Inventory
+(<code>Inventory.jsx</code>)</h3>
+<p>Browse all inventory items across zones with search/filter.</p>
+<h3 id="profitability-profitability.jsx">Profitability
+(<code>Profitability.jsx</code>)</h3>
+<p>Item-level profit/loss table with: - 7 summary metric cards (Items
+Sold, Hammer/Item, Net/Item, Net Revenue, Profit, Profit/Item, Margin) -
+Search by barcode, description, or sticker# - Sort by profit, margin, or
+hammer price - Full table: barcode, sticker#, description, hammer,
+coupon, buyer paid, fees, net, cost, profit, margin</p>
+<h3 id="data-validation-datavalidation.jsx">Data Validation
+(<code>DataValidation.jsx</code>)</h3>
+<p>Data quality scoring dashboard: - Overall quality score (% of items
+with complete data) - Sale price completeness - Cost data completeness -
+Visual progress bars with color coding</p>
+<hr />
+<h2 id="known-issues-edge-cases">11. Known Issues &amp; Edge Cases</h2>
+<h3 id="active-issues-as-of-stable-lock">Active Issues (as of stable
+lock)</h3>
+<ol type="1">
+<li><p><strong>76 mislabeled “2/8 morning” scans</strong> — In Scan
+Sessions, rows with Date=<code>2026-02-08</code> and
+Time=<code>morning</code> are actually evening duplicates. The session
+IDs contain <code>evening</code> but the Time column says
+<code>morning</code>. No 2/8 morning show exists. <strong>Manual cleanup
+required.</strong></p></li>
+<li><p><strong>2 stray scans</strong> — 2/12 evening #17 (no session ID,
+8:39 AM timestamp) and 2/13 evening (1 scan). Orphaned, no impact on
+calculations.</p></li>
+<li><p><strong>Debug info in API responses</strong> —
+<code>get-profitability-data.js</code> returns debug object with sample
+keys, match stats. Should be removed after stable period.</p></li>
+<li><p><strong>110 deployed functions</strong> — ~50+ are legacy
+one-time migration scripts that should be removed.</p></li>
+</ol>
+<h3 id="resolved-bugs-for-reference">Resolved Bugs (for reference)</h3>
+<ul>
+<li><strong>Double-counting coupons</strong> — CSV “Sold Price” was
+treated as hammer price; actually it’s post-coupon</li>
+<li><strong>Wrong commission rate</strong> — Used 8% (chatbot answer);
+actually 7.2% (premium seller tier)</li>
+<li><strong>CSV header matching</strong> — Whatnot headers have
+inconsistent casing; solved with <code>getField()</code></li>
+<li><strong>Multi-sticker items</strong> — Same listing# with two
+different barcode stickers; solved by using
+<code>date:timeOfDay:listing</code> as dedup key instead of including
+barcode</li>
+<li><strong>100% coupon items</strong> — BISCUIT coupon items (buyer
+pays $0) were filtered out; fixed by checking
+<code>originalHammer &gt; 0</code></li>
+<li><strong>Show date = upload date</strong> — Was using
+<code>new Date()</code> instead of manual date parameter</li>
+</ul>
+<h3 id="edge-cases-handled">Edge Cases Handled</h3>
+<ul>
+<li><strong>Failed-then-succeeded orders:</strong> Listing has multiple
+CSV rows (failed + success). System picks the successful row.</li>
+<li><strong>Cancelled orders:</strong> Excluded from scannable count and
+profitability.</li>
+<li><strong>Gift cards:</strong> Detected by product name, excluded
+entirely.</li>
+<li><strong>Multi-barcode items:</strong> Same listing has two physical
+barcode stickers. Dedup by listing, not barcode.</li>
+<li><strong>Leading zero barcodes:</strong> <code>099107846961</code> vs
+<code>99107846961</code> — normalization handles both directions.</li>
+</ul>
+<hr />
+<h2 id="deployment-operations">12. Deployment &amp; Operations</h2>
+<h3 id="deploy-process">Deploy Process</h3>
+<div class="sourceCode" id="cb11"><pre
+class="sourceCode bash"><code class="sourceCode bash"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a><span class="bu">cd</span> /Users/jeremycarter/clawd/projects/jumpstart/unified</span>
+<span id="cb11-2"><a href="#cb11-2" aria-hidden="true" tabindex="-1"></a><span class="ex">netlify</span> deploy <span class="at">--prod</span></span>
+<span id="cb11-3"><a href="#cb11-3" aria-hidden="true" tabindex="-1"></a><span class="co"># ⚠️ NEVER use --dir=. — bypasses build, publishes root instead of dist/</span></span></code></pre></div>
+<h3 id="netlify.toml">netlify.toml</h3>
+<div class="sourceCode" id="cb12"><pre
+class="sourceCode toml"><code class="sourceCode toml"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a><span class="kw">[build]</span></span>
+<span id="cb12-2"><a href="#cb12-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">publish</span> <span class="op">=</span> <span class="st">&quot;dist&quot;</span></span>
+<span id="cb12-3"><a href="#cb12-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">command</span> <span class="op">=</span> <span class="st">&quot;npm run build&quot;</span></span>
+<span id="cb12-4"><a href="#cb12-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb12-5"><a href="#cb12-5" aria-hidden="true" tabindex="-1"></a><span class="kw">[functions]</span></span>
+<span id="cb12-6"><a href="#cb12-6" aria-hidden="true" tabindex="-1"></a>  <span class="dt">node_bundler</span> <span class="op">=</span> <span class="st">&quot;esbuild&quot;</span></span>
+<span id="cb12-7"><a href="#cb12-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb12-8"><a href="#cb12-8" aria-hidden="true" tabindex="-1"></a><span class="kw">[[redirects]]</span></span>
+<span id="cb12-9"><a href="#cb12-9" aria-hidden="true" tabindex="-1"></a>  <span class="dt">from</span> <span class="op">=</span> <span class="st">&quot;/*&quot;</span></span>
+<span id="cb12-10"><a href="#cb12-10" aria-hidden="true" tabindex="-1"></a>  <span class="dt">to</span> <span class="op">=</span> <span class="st">&quot;/index.html&quot;</span></span>
+<span id="cb12-11"><a href="#cb12-11" aria-hidden="true" tabindex="-1"></a>  <span class="dt">status</span> <span class="op">=</span> <span class="dv">200</span></span></code></pre></div>
+<h3 id="environment-variables">Environment Variables</h3>
+<ul>
+<li><code>GOOGLE_SERVICE_ACCOUNT_KEY</code> — JSON string of Google
+service account credentials</li>
+</ul>
+<h3 id="critical-operations-rules">Critical Operations Rules</h3>
+<ol type="1">
+<li><strong>Zone 3 TEST: DO NOT TOUCH</strong> — Actively used by
+warehouse workers</li>
+<li><strong>Scan Sessions: No automated deletion</strong> — Too
+sensitive; manual cleanup only</li>
+<li><strong>Show Items clear:</strong> Use
+<code>clear-show-items.cjs</code> with <code>?confirm=yes</code> (has
+dry-run safety)</li>
+<li><strong>Backup before bulk operations</strong> — Google Sheets has
+limited undo</li>
+</ol>
+<h3 id="monitoring">Monitoring</h3>
+<ul>
+<li>No automated monitoring or alerting</li>
+<li>No error tracking (errors logged to Netlify function logs only)</li>
+<li>No health checks</li>
+</ul>
+<hr />
+<h2 id="stability-risks-migration-considerations">13. Stability Risks
+&amp; Migration Considerations</h2>
+<h3 id="google-sheets-limitations">Google Sheets Limitations</h3>
+<p><strong>Scalability:</strong> - Google Sheets API has rate limits
+(100 requests/100 seconds per user) - 5+ simultaneous phone users all
+polling every 5 seconds = potential throttling - Each profitability
+calculation reads 7 tabs in parallel = 7 API calls per page load - No
+pagination — reads entire tabs every time - Sheet maximum: 10 million
+cells per spreadsheet</p>
+<p><strong>Data Integrity:</strong> - No transactions — concurrent
+writes can conflict - No schema enforcement — any function can write any
+data to any column - No foreign keys — join integrity depends on
+matching string keys - No indexes — every lookup is a full tab scan -
+Append-only with no built-in dedup — must handle in application code</p>
+<p><strong>Reliability:</strong> - Google Sheets API outages (rare but
+happen) - No retry logic in most functions - No offline mode — workers
+can’t scan if Sheets is down - Service account key rotation is
+manual</p>
+<h3 id="architectural-risks">Architectural Risks</h3>
+<ol type="1">
+<li><p><strong>110 functions deployed, ~50 unused</strong> — Attack
+surface, maintenance burden, confusion about which functions are
+current. Recommendation: Delete all <code>fix-*</code>,
+<code>verify-*</code>, <code>cleanup-*</code>,
+<code>reorganize-*</code>, <code>backup-*</code>,
+<code>restore-*</code>, <code>test-*</code>, <code>compare-*</code>,
+<code>analyze-*</code>, <code>debug-*</code>, <code>diagnose-*</code>,
+<code>create-*</code> functions.</p></li>
+<li><p><strong>No caching</strong> — Every page load fetches full
+datasets from Sheets. BundleSort loads the ENTIRE manifest into memory
+on mount. As inventory grows, this will slow down.</p></li>
+<li><p><strong>Client-side state management</strong> — React useState
+only, no state management library. Complex scanner state is
+fragile.</p></li>
+<li><p><strong>No authentication</strong> — Anyone with the URL can
+access admin functions, upload data, clear tabs. The
+<code>clear-show-items</code> function requires
+<code>?confirm=yes</code> but that’s security by obscurity.</p></li>
+<li><p><strong>Fire-and-forget writes</strong> — Scan logging doesn’t
+confirm success. If Sheets API is down, scans are lost (only in
+localStorage, which is device-specific).</p></li>
+<li><p><strong>Hardcoded spreadsheet ID</strong> — Every function has
+<code>const spreadsheetId = '1oH6...'</code>. No config file.</p></li>
+<li><p><strong>Mixed module formats</strong> — Some functions are
+<code>.js</code> (ESM), others <code>.cjs</code> (CommonJS). This was
+necessary for googleapis compatibility but adds confusion.</p></li>
+<li><p><strong>Barcode normalization in multiple places</strong> —
+<code>normBarcode()</code> is defined independently in several
+functions. If logic diverges, joins break silently.</p></li>
+</ol>
+<h3 id="migration-recommendations">Migration Recommendations</h3>
+<p><strong>If migrating off Google Sheets:</strong></p>
+<p><strong>Option A: SQLite + Litestream (Simplest)</strong> - SQLite
+file on Netlify/Fly.io - Litestream for real-time replication to S3 -
+Proper schema with foreign keys - Transactions for concurrent writes -
+Indexed lookups instead of full scans</p>
+<p><strong>Option B: Supabase/PostgreSQL (Most robust)</strong> - Free
+tier handles this scale easily - Real-time subscriptions replace polling
+- Row-level security for auth - Proper migrations and schema evolution -
+PostgREST API is drop-in replacement for Sheets API calls</p>
+<p><strong>Option C: Turso (Edge SQLite)</strong> - SQLite at the edge
+(low latency for mobile) - Multi-region replication - Embedded replicas
+for offline support - Free tier: 500 databases, 9GB storage</p>
+<p><strong>Migration Priority:</strong> 1. First: Add authentication
+(any solution) 2. Second: Move Scan Sessions to a real database (highest
+write volume, concurrent access) 3. Third: Move Show Items and Manifest
+(profitability calculation speed) 4. Last: Move Zone tabs (read-only
+reference data, least urgent)</p>
+<p><strong>What to keep in Google Sheets:</strong> - Zone tab management
+could stay — it’s reference data that business users edit manually -
+Loads and Expenses could stay — low volume, admin-only access</p>
+<hr />
+<h2 id="appendix-file-inventory">Appendix: File Inventory</h2>
+<h3 id="source-files">Source Files</h3>
+<pre><code>src/
+  components/
+    Admin.jsx          — Admin dashboard shell (sidebar nav)
+    AdminHome.jsx      — (unused/legacy)
+    BundleSort.jsx     — Bundle sorting scanner
+    Dashboard.jsx      — P&amp;L metrics dashboard
+    DataValidation.jsx — Data quality scoring
+    GeneralSort.jsx    — General zone sorting scanner
+    Home.jsx           — Landing page
+    Inputs.jsx         — Data upload forms (loads, manifests, shows, expenses)
+    Inventory.jsx      — Inventory browser
+    Profitability.jsx  — Item-level profit table
+    SalesScanner.jsx   — Sales barcode scanner
+    SalesSetup.jsx     — Show selection before scanning
+    SalesSummary.jsx   — Post-scan session summary
+    SortingModeSelect.jsx — Choose general vs bundle sort</code></pre>
+<h3 id="key-reference-files">Key Reference Files</h3>
+<pre><code>STABLE-VERSION.md      — Documents the locked stable version
+DATA-FLOW.md           — Yellow sticker data flow diagram (MUST READ)
+SYSTEM-DOCUMENTATION.md — This file
+netlify.toml           — Build and deploy config
+package.json           — Dependencies</code></pre>
+</body>
+</html>
