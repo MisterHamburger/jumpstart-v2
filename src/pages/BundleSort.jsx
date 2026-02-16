@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Html5Qrcode } from 'html5-qrcode'
+import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode'
 import { supabase } from '../lib/supabase'
 import { normalizeBarcode } from '../lib/barcodes'
 
@@ -15,11 +15,17 @@ export default function BundleSort() {
   const startScanner = useCallback(async () => {
     if (scannerRef.current) return
     try {
-      const scanner = new Html5Qrcode('scanner-region')
+      const scanner = new Html5Qrcode('scanner-region', {
+        formatsToSupport: [
+          Html5QrcodeSupportedFormats.UPC_A,
+          Html5QrcodeSupportedFormats.EAN_13
+        ],
+        useBarCodeDetectorIfSupported: true
+      })
       scannerRef.current = scanner
       await scanner.start(
         { facingMode: 'environment' },
-        { fps: 10, qrbox: { width: 280, height: 150 } },
+        { fps: 60, disableFlip: true },
         onScanSuccess,
         () => {}
       )
