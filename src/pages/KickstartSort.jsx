@@ -2,382 +2,307 @@ import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 
+const PRICE_BINS = [5, 10, 15, 20, 30]
+
 export default function KickstartSort() {
   const navigate = useNavigate()
-  const [step, setStep] = useState('front') // front, back, processing, review, saved
-  const [frontPhoto, setFrontPhoto] = useState(null)
-  const [backPhoto, setBackPhoto] = useState(null)
-  const [extractedData, setExtractedData] = useState(null)
-  const [processing, setProcessing] = useState(false)
-  const [error, setError] = useState(null)
-  const [itemCount, setItemCount] = useState(0)
+  const [step, setStep] = useState('bin') // bin, capture, confirm
+  const [selectedBin, setSelectedBin] = useState(null)
+  const [customPrice, setCustomPrice] = useState('')
+  const [showCustom, setShowCustom] = useState(false)
+  const [photo, setPhoto] = useState(null)
+  const [quantity, setQuantity] = useState(1)
   const [saving, setSaving] = useState(false)
-  const frontInputRef = useRef(null)
-  const backInputRef = useRef(null)
+  const [showSaved, setShowSaved] = useState(false)
+  const [itemCount, setItemCount] = useState(0)
+  const [sessionCount, setSessionCount] = useState(0)
+  const photoInputRef = useRef(null)
 
-  // Form fields for editing
-  const [formData, setFormData] = useState({
-    upc: '',
-    brand: 'Free People',
-    style_number: '',
-    description: '',
-    color: '',
-    size: '',
-    msrp: '',
-    cost: ''
-  })
-
-  // Fetch count on mount
+  // Fetch total count on mount
   useEffect(() => {
     supabase.from('kickstart_items').select('id', { count: 'exact', head: true })
       .then(({ count }) => setItemCount(count || 0))
   }, [])
 
-  const handlePhotoCapture = async (e, side) => {
-    const file = e.target.files[0]
-    if (!file) return
-
-    // Convert to base64
-    const reader = new FileReader()
-    reader.onloadend = () => {
-      const base64 = reader.result
-      if (side === 'front') {
-        setFrontPhoto(base64)
-        setStep('back')
-      } else {
-        setBackPhoto(base64)
-        processPhotos(frontPhoto, base64)
-      }
-    }
-    reader.readAsDataURL(file)
+  const getCost = () => {
+    if (showCustom) return parseFloat(customPrice) || 0
+    return selectedBin || 0
   }
 
-  const processPhotos = async (front, back) => {
-    setStep('processing')
-    setProcessing(true)
-    setError(null)
+  const handleBinSelect = (price) => {
+    setSelectedBin(price)
+    setShowCustom(false)
+    setStep('capture')
+  }
 
-    try {
-      // Extract base64 data (remove data:image/...;base64, prefix)
-      const frontData = front.split(',')[1]
-      const backData = back.split(',')[1]
-      const frontType = front.split(';')[0].split(':')[1] || 'image/jpeg'
-      const backType = back.split(';')[0].split(':')[1] || 'image/jpeg'
+  const handleCustomSelect = () => {
+    setShowCustom(true)
+    setSelectedBin(null)
+  }
 
-      const response = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: "claude-sonnet-4-20250514",
-          max_tokens: 1000,
-          messages: [{
-            role: "user",
-            content: [
-              {
-                type: "image",
-                source: { type: "base64", media_type: frontType, data: frontData }
-              },
-              {
-                type: "image",
-                source: { type: "base64", media_type: backType, data: backData }
-              },
-              {
-                type: "text",
-                text: `These are photos of the front and back hang tags of a clothing item from a reseller called Reclectic. Extract the following information and return ONLY a JSON object with no other text:
-
-{
-  "upc": "the UPC/barcode number",
-  "brand": "the brand name (e.g. Free People, Free People Movement)",
-  "style_number": "the style number (e.g. OB1960599)",
-  "description": "the item name/description",
-  "color": "the color name",
-  "size": "the size (e.g. S, M, L, XL)",
-  "msrp": "the retail price as a number only, no dollar sign",
-  "cost": "our cost/price paid as a number only, no dollar sign"
-}
-
-The front tag (Reclectic side) typically has: our cost, comparable value/MSRP, UPC, savings percentage.
-The back tag (original brand side) typically has: brand, style number, color, size, MSRP, barcode.
-
-If you can't read a field, use an empty string. Return ONLY the JSON object.`
-              }
-            ]
-          }]
-        })
-      })
-
-      const data = await response.json()
-      const text = data.content
-        .filter(item => item.type === 'text')
-        .map(item => item.text)
-        .join('')
-
-      // Parse JSON from response
-      const cleaned = text.replace(/```json|```/g, '').trim()
-      const parsed = JSON.parse(cleaned)
-
-      setExtractedData(parsed)
-      setFormData({
-        upc: parsed.upc || '',
-        brand: parsed.brand || 'Free People',
-        style_number: parsed.style_number || '',
-        description: parsed.description || '',
-        color: parsed.color || '',
-        size: parsed.size || '',
-        msrp: parsed.msrp || '',
-        cost: parsed.cost || ''
-      })
-      setStep('review')
-    } catch (err) {
-      console.error('AI extraction error:', err)
-      setError('Could not read tags. Please enter details manually.')
-      setFormData({
-        upc: '', brand: 'Free People', style_number: '',
-        description: '', color: '', size: '', msrp: '', cost: ''
-      })
-      setStep('review')
-    } finally {
-      setProcessing(false)
+  const handleCustomConfirm = () => {
+    if (parseFloat(customPrice) > 0) {
+      setStep('capture')
     }
+  }
+
+  const handlePhotoCapture = (e) => {
+    const file = e.target.files[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onloadend = () => {
+      setPhoto(reader.result)
+      setStep('confirm')
+    }
+    reader.readAsDataURL(file)
   }
 
   const handleSave = async () => {
     setSaving(true)
     try {
-      const { error: insertError } = await supabase.from('kickstart_items').insert({
-        upc: formData.upc || null,
-        brand: formData.brand || 'Free People',
-        style_number: formData.style_number || null,
-        description: formData.description || null,
-        color: formData.color || null,
-        size: formData.size || null,
-        msrp: formData.msrp ? parseFloat(formData.msrp) : null,
-        cost: formData.cost ? parseFloat(formData.cost) : null,
-        status: 'intake'
-      })
+      const cost = getCost()
+      const photoData = photo ? photo.split(',')[1] : null
 
-      if (insertError) throw insertError
+      // Create array of rows (one per quantity)
+      const rows = Array.from({ length: quantity }, () => ({
+        cost: cost,
+        photo_data: photoData,
+        status: 'pending_enrichment',
+        brand: 'Free People'
+      }))
 
-      setItemCount(prev => prev + 1)
-      setStep('saved')
+      const { error } = await supabase.from('kickstart_items').insert(rows)
+      if (error) throw error
 
-      // Auto-reset after 1.5s
+      const newTotal = itemCount + quantity
+      setItemCount(newTotal)
+      setSessionCount(prev => prev + quantity)
+
+      // Show saved flash
+      setShowSaved(true)
       setTimeout(() => {
-        resetForNext()
-      }, 1500)
+        setShowSaved(false)
+        // Reset for next item but keep the same bin
+        setPhoto(null)
+        setQuantity(1)
+        setStep('capture')
+      }, 800)
     } catch (err) {
       console.error('Save error:', err)
-      setError('Failed to save. Try again.')
+      alert('Failed to save: ' + err.message)
     } finally {
       setSaving(false)
     }
   }
 
-  const resetForNext = () => {
-    setFrontPhoto(null)
-    setBackPhoto(null)
-    setExtractedData(null)
-    setError(null)
-    setFormData({
-      upc: '', brand: 'Free People', style_number: '',
-      description: '', color: '', size: '', msrp: '', cost: ''
-    })
-    setStep('front')
+  const handleChangeBin = () => {
+    setPhoto(null)
+    setQuantity(1)
+    setStep('bin')
   }
 
-  const updateField = (field, value) => {
-    setFormData(prev => ({ ...prev, [field]: value }))
-  }
-
-  // === SAVED CONFIRMATION ===
-  if (step === 'saved') {
+  // === SAVED FLASH ===
+  if (showSaved) {
     return (
       <div className="h-screen flex items-center justify-center bg-gradient-to-br from-emerald-500 via-green-500 to-teal-500">
         <div className="text-center">
-          <div className="text-9xl mb-6">✓</div>
-          <h2 className="text-5xl font-black text-white mb-3">Saved!</h2>
-          <p className="text-xl text-white/80">{itemCount} items logged</p>
+          <div className="text-9xl mb-4">✓</div>
+          <h2 className="text-5xl font-black text-white mb-2">Saved!</h2>
+          <p className="text-xl text-white/80">{quantity > 1 ? `${quantity} items` : '1 item'} added</p>
         </div>
       </div>
     )
   }
 
-  // === PROCESSING ===
-  if (step === 'processing') {
-    return (
-      <div className="h-screen flex flex-col items-center justify-center bg-gradient-to-br from-orange-950 via-slate-900 to-amber-950">
-        <div className="w-16 h-16 border-4 border-amber-400/30 border-t-amber-400 rounded-full animate-spin mb-6"></div>
-        <h2 className="text-2xl font-bold text-white mb-2">Reading Tags...</h2>
-        <p className="text-slate-400">AI is extracting item details</p>
-      </div>
-    )
-  }
-
-  // === REVIEW / EDIT FORM ===
-  if (step === 'review') {
-    return (
-      <div className="min-h-screen flex flex-col bg-gradient-to-br from-orange-950 via-slate-900 to-amber-950">
-        {/* Header */}
-        <div className="p-3 flex items-center justify-between backdrop-blur-xl bg-white/5 border-b border-white/10">
-          <button onClick={resetForNext} className="bg-white/10 hover:bg-white/20 backdrop-blur-lg w-10 h-10 rounded-full border border-white/20 text-white font-bold text-lg flex items-center justify-center">
-            ←
-          </button>
-          <h1 className="text-lg font-bold text-white">Confirm Details</h1>
-          <div className="bg-gradient-to-r from-amber-500/20 to-orange-500/20 backdrop-blur-lg px-3 py-1.5 rounded-full border border-amber-400/30">
-            <span className="text-amber-300 font-bold text-sm">{itemCount} items</span>
-          </div>
-        </div>
-
-        {/* Error banner */}
-        {error && (
-          <div className="mx-4 mt-3 bg-amber-500/20 border border-amber-500/50 rounded-xl p-3">
-            <p className="text-amber-200 text-sm text-center">{error}</p>
-          </div>
-        )}
-
-        {/* Photo thumbnails */}
-        <div className="flex gap-2 px-4 pt-3">
-          {frontPhoto && (
-            <div className="w-16 h-16 rounded-lg overflow-hidden border border-white/20">
-              <img src={frontPhoto} alt="Front" className="w-full h-full object-cover" />
-            </div>
-          )}
-          {backPhoto && (
-            <div className="w-16 h-16 rounded-lg overflow-hidden border border-white/20">
-              <img src={backPhoto} alt="Back" className="w-full h-full object-cover" />
-            </div>
-          )}
-        </div>
-
-        {/* Form */}
-        <div className="flex-1 overflow-y-auto px-4 pt-3 pb-4 space-y-3">
-          {[
-            { key: 'brand', label: 'Brand' },
-            { key: 'description', label: 'Description' },
-            { key: 'style_number', label: 'Style #' },
-            { key: 'color', label: 'Color' },
-            { key: 'size', label: 'Size' },
-            { key: 'msrp', label: 'MSRP ($)', type: 'number' },
-            { key: 'cost', label: 'Our Cost ($)', type: 'number' },
-            { key: 'upc', label: 'UPC' },
-          ].map(({ key, label, type }) => (
-            <div key={key}>
-              <label className="text-xs uppercase tracking-wider font-semibold text-slate-500 block mb-1">{label}</label>
-              <input
-                type={type || 'text'}
-                value={formData[key]}
-                onChange={e => updateField(key, e.target.value)}
-                className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-white placeholder-slate-500 focus:outline-none focus:border-amber-400/50"
-                style={{ fontSize: '16px' }}
-                placeholder={label}
-              />
-            </div>
-          ))}
-        </div>
-
-        {/* Save button */}
-        <div className="p-4 border-t border-white/10 bg-slate-900/80 backdrop-blur-xl">
-          <button
-            onClick={handleSave}
-            disabled={saving}
-            className={`w-full py-4 rounded-2xl font-bold text-lg transition-all ${
-              saving
-                ? 'bg-white/10 text-white/50 cursor-wait'
-                : 'bg-gradient-to-r from-amber-500 to-orange-600 text-white shadow-2xl shadow-amber-500/30 hover:scale-[1.02]'
-            }`}
-          >
-            {saving ? 'Saving...' : 'Save Item'}
-          </button>
-        </div>
-      </div>
-    )
-  }
-
-  // === CAMERA CAPTURE (front or back) ===
   return (
     <div className="h-screen flex flex-col bg-gradient-to-br from-orange-950 via-slate-900 to-amber-950">
       {/* Header */}
-      <div className="p-3 flex items-center justify-between backdrop-blur-xl bg-white/5 border-b border-white/10">
-        <button onClick={() => step === 'back' ? setStep('front') : navigate('/')} className="bg-white/10 hover:bg-white/20 backdrop-blur-lg px-4 py-2 rounded-full border border-white/20 text-white font-semibold text-sm">
-          {step === 'back' ? '← Retake Front' : '← Home'}
+      <div className="p-3 flex items-center justify-between backdrop-blur-xl bg-white/5 border-b border-white/10 shrink-0">
+        <button
+          onClick={() => step === 'bin' ? navigate('/') : handleChangeBin()}
+          className="bg-white/10 hover:bg-white/20 backdrop-blur-lg px-4 py-2 rounded-full border border-white/20 text-white font-semibold text-sm"
+        >
+          {step === 'bin' ? '← Home' : '← Change Bin'}
         </button>
-        <h1 className="text-lg font-bold text-white">Kickstart Sort</h1>
+        <h1 className="text-lg font-bold text-white">Kickstart</h1>
         <div className="bg-gradient-to-r from-amber-500/20 to-orange-500/20 backdrop-blur-lg px-3 py-1.5 rounded-full border border-amber-400/30">
-          <span className="text-amber-300 font-bold text-sm">{itemCount}</span>
+          <span className="text-amber-300 font-bold text-sm">{sessionCount} today</span>
         </div>
       </div>
 
-      {/* Main capture area */}
-      <div className="flex-1 flex flex-col items-center justify-center p-6">
-        {/* Show front photo thumbnail if on back step */}
-        {step === 'back' && frontPhoto && (
-          <div className="mb-4 flex items-center gap-3">
-            <div className="w-14 h-14 rounded-lg overflow-hidden border-2 border-emerald-400/50">
-              <img src={frontPhoto} alt="Front captured" className="w-full h-full object-cover" />
+      {/* Active bin indicator (when not on bin selection) */}
+      {step !== 'bin' && (
+        <div className="mx-4 mt-3 bg-amber-500/20 border border-amber-500/30 rounded-xl px-4 py-2 flex items-center justify-between">
+          <span className="text-amber-200 text-sm font-semibold">Active Bin</span>
+          <span className="text-amber-100 font-bold text-lg">${getCost()}</span>
+        </div>
+      )}
+
+      {/* === STEP 1: BIN SELECTION === */}
+      {step === 'bin' && (
+        <div className="flex-1 flex flex-col items-center justify-center p-6">
+          <h2 className="text-2xl font-bold text-white mb-2 tracking-tight">Select Price Bin</h2>
+          <p className="text-slate-400 mb-8">What did we pay per item?</p>
+
+          <div className="w-full max-w-sm grid grid-cols-2 gap-3 mb-4">
+            {PRICE_BINS.map(price => (
+              <button
+                key={price}
+                onClick={() => handleBinSelect(price)}
+                className="py-6 rounded-2xl bg-gradient-to-br from-amber-500/80 to-orange-600/80 border-2 border-amber-400/40 text-white font-black text-3xl shadow-xl shadow-amber-500/20 hover:scale-105 active:scale-95 transition-all"
+              >
+                ${price}
+              </button>
+            ))}
+          </div>
+
+          {/* Custom price */}
+          {!showCustom ? (
+            <button
+              onClick={handleCustomSelect}
+              className="w-full max-w-sm py-4 rounded-2xl bg-white/10 border border-white/20 text-white/70 font-semibold text-lg hover:bg-white/20 transition-all"
+            >
+              Other Amount
+            </button>
+          ) : (
+            <div className="w-full max-w-sm">
+              <div className="flex gap-2">
+                <div className="relative flex-1">
+                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-white/50 text-lg">$</span>
+                  <input
+                    type="number"
+                    value={customPrice}
+                    onChange={e => setCustomPrice(e.target.value)}
+                    placeholder="0.00"
+                    autoFocus
+                    className="w-full bg-white/10 border border-white/20 rounded-xl pl-8 pr-4 py-4 text-white text-xl font-bold placeholder-slate-500 focus:outline-none focus:border-amber-400/50"
+                    style={{ fontSize: '20px' }}
+                  />
+                </div>
+                <button
+                  onClick={handleCustomConfirm}
+                  disabled={!customPrice || parseFloat(customPrice) <= 0}
+                  className={`px-6 rounded-xl font-bold text-lg transition-all ${
+                    customPrice && parseFloat(customPrice) > 0
+                      ? 'bg-gradient-to-r from-amber-500 to-orange-600 text-white'
+                      : 'bg-white/5 text-white/30 cursor-not-allowed'
+                  }`}
+                >
+                  Go
+                </button>
+              </div>
             </div>
-            <span className="text-emerald-400 text-sm font-semibold">Front ✓</span>
-          </div>
-        )}
-
-        <div className="text-center mb-8">
-          <div className="text-6xl mb-4">
-            {step === 'front' ? '🏷️' : '🔄'}
-          </div>
-          <h2 className="text-3xl font-bold text-white mb-3 tracking-tight">
-            {step === 'front' ? 'Photo Side 1' : 'Photo Side 2'}
-          </h2>
-          <p className="text-slate-400 text-lg">
-            {step === 'front'
-              ? 'Snap the Reclectic tag (cost + UPC side)'
-              : 'Flip the tag — snap the brand side (style + size + color)'}
-          </p>
+          )}
         </div>
+      )}
 
-        {/* Hidden file inputs */}
-        <input
-          ref={frontInputRef}
-          type="file"
-          accept="image/*"
-          capture="environment"
-          onChange={e => handlePhotoCapture(e, 'front')}
-          className="hidden"
-        />
-        <input
-          ref={backInputRef}
-          type="file"
-          accept="image/*"
-          capture="environment"
-          onChange={e => handlePhotoCapture(e, 'back')}
-          className="hidden"
-        />
+      {/* === STEP 2: PHOTO CAPTURE === */}
+      {step === 'capture' && (
+        <div className="flex-1 flex flex-col items-center justify-center p-6">
+          <div className="text-center mb-8">
+            <h2 className="text-3xl font-bold text-white mb-3 tracking-tight">Snap the Tag</h2>
+            <p className="text-slate-400 text-lg">Photo the brand tag (MSRP + barcode side)</p>
+          </div>
 
-        {/* Camera button */}
-        <button
-          onClick={() => {
-            if (step === 'front') frontInputRef.current?.click()
-            else backInputRef.current?.click()
-          }}
-          className="w-24 h-24 rounded-full bg-gradient-to-br from-amber-500 to-orange-600 shadow-2xl shadow-amber-500/40 flex items-center justify-center hover:scale-105 active:scale-95 transition-all"
-        >
-          <svg className="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
-          </svg>
-        </button>
-        <p className="text-slate-500 text-sm mt-4">Tap to take photo</p>
-      </div>
+          <input
+            ref={photoInputRef}
+            type="file"
+            accept="image/*"
+            capture="environment"
+            onChange={handlePhotoCapture}
+            className="hidden"
+          />
 
-      {/* Skip to manual entry */}
-      <div className="p-4 border-t border-white/10">
-        <button
-          onClick={() => {
-            setStep('review')
-          }}
-          className="w-full py-3 rounded-2xl bg-white/5 border border-white/10 text-white/60 font-semibold text-sm hover:bg-white/10 transition-all"
-        >
-          Skip Photos — Enter Manually
-        </button>
-      </div>
+          <button
+            onClick={() => photoInputRef.current?.click()}
+            className="w-28 h-28 rounded-full bg-gradient-to-br from-amber-500 to-orange-600 shadow-2xl shadow-amber-500/40 flex items-center justify-center hover:scale-105 active:scale-95 transition-all"
+          >
+            <svg className="w-12 h-12 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+            </svg>
+          </button>
+          <p className="text-slate-500 text-sm mt-4">Tap to take photo</p>
+
+          {/* Skip photo option */}
+          <button
+            onClick={() => { setPhoto(null); setStep('confirm') }}
+            className="mt-8 text-white/40 text-sm underline"
+          >
+            Skip photo (enter data later)
+          </button>
+        </div>
+      )}
+
+      {/* === STEP 3: CONFIRM + QUANTITY === */}
+      {step === 'confirm' && (
+        <div className="flex-1 flex flex-col p-4 overflow-hidden">
+          <div className="flex-1 flex flex-col items-center justify-center">
+            {/* Photo preview */}
+            {photo && (
+              <div className="w-40 h-40 rounded-2xl overflow-hidden border-2 border-white/20 mb-4">
+                <img src={photo} alt="Tag" className="w-full h-full object-cover" />
+              </div>
+            )}
+
+            {/* Retake */}
+            {photo && (
+              <button
+                onClick={() => { setPhoto(null); setStep('capture') }}
+                className="text-amber-400 text-sm font-semibold mb-6"
+              >
+                Retake Photo
+              </button>
+            )}
+
+            {/* Cost display */}
+            <div className="bg-white/10 rounded-2xl px-6 py-3 border border-white/10 mb-6">
+              <span className="text-slate-400 text-sm">Cost per item: </span>
+              <span className="text-white font-bold text-xl">${getCost()}</span>
+            </div>
+
+            {/* Quantity selector */}
+            <div className="flex items-center gap-6 mb-8">
+              <button
+                onClick={() => setQuantity(q => Math.max(1, q - 1))}
+                className="w-14 h-14 rounded-full bg-white/10 border border-white/20 text-white text-2xl font-bold flex items-center justify-center hover:bg-white/20 active:scale-95 transition-all"
+              >
+                −
+              </button>
+              <div className="text-center">
+                <div className="text-5xl font-black text-white">{quantity}</div>
+                <div className="text-xs text-slate-500 uppercase tracking-wider mt-1">Quantity</div>
+              </div>
+              <button
+                onClick={() => setQuantity(q => q + 1)}
+                className="w-14 h-14 rounded-full bg-gradient-to-br from-amber-500 to-orange-600 text-white text-2xl font-bold flex items-center justify-center hover:scale-105 active:scale-95 transition-all shadow-lg shadow-amber-500/30"
+              >
+                +
+              </button>
+            </div>
+
+            {/* Total */}
+            {quantity > 1 && (
+              <p className="text-slate-400 text-sm mb-4">
+                Total: <span className="text-white font-bold">${(getCost() * quantity).toFixed(2)}</span> for {quantity} items
+              </p>
+            )}
+          </div>
+
+          {/* Save button */}
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            className={`w-full py-5 rounded-2xl font-bold text-xl transition-all ${
+              saving
+                ? 'bg-white/10 text-white/50 cursor-wait'
+                : 'bg-gradient-to-r from-amber-500 to-orange-600 text-white shadow-2xl shadow-amber-500/30 hover:scale-[1.02] active:scale-[0.98]'
+            }`}
+          >
+            {saving ? 'Saving...' : quantity > 1 ? `Save ${quantity} Items` : 'Save Item'}
+          </button>
+        </div>
+      )}
     </div>
   )
 }
