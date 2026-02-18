@@ -161,7 +161,7 @@ export default function SalesScanner() {
   }
 
   const onScanSuccess = async (decodedText) => {
-    if (!decodedText.startsWith('099') || decodedText.startsWith('198')) return
+    if (!decodedText.startsWith('099') && !decodedText.startsWith('198')) return
     setScannedBarcode(decodedText)
     await stopScanner()
   }
