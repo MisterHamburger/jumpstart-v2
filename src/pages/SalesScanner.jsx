@@ -161,7 +161,7 @@ export default function SalesScanner() {
   }
 
   const onScanSuccess = async (decodedText) => {
-    if (!decodedText.startsWith('099')) return
+    if (!decodedText.startsWith('099') || decodedText.startsWith('198')) return
     setScannedBarcode(decodedText)
     await stopScanner()
   }
@@ -189,7 +189,7 @@ export default function SalesScanner() {
       const { data: itemCheck } = await supabase
         .from('show_items')
         .select('*')
-        .eq('show_name', showName)
+        .eq('show_id', showId)
         .eq('listing_number', listingNumber)
         .limit(1)
 

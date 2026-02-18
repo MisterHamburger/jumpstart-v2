@@ -56,7 +56,7 @@ export default function SalesSetup() {
       const { data } = await supabase
         .from('show_items')
         .select('*')
-        .eq('show_name', show.showName)
+        .eq('show_id', show.id)
         .in('status', ['failed', 'cancelled'])
 
       if (data && data.length > 0) {
