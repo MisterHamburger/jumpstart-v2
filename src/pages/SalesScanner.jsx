@@ -161,7 +161,8 @@ export default function SalesScanner() {
   }
 
   const onScanSuccess = async (decodedText) => {
-    if (!decodedText.startsWith('099') && !decodedText.startsWith('198')) return
+    const prefix = showData?.channel === 'Kickstart' ? '198' : '099'
+    if (!decodedText.startsWith(prefix)) return
     setScannedBarcode(decodedText)
     await stopScanner()
   }
