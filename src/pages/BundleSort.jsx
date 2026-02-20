@@ -26,13 +26,13 @@ export default function BundleSort() {
     try {
       // Get all boxes
       const { data: boxRows } = await supabase
-        .from('bundle_boxes')
+        .from('jumpstart_bundle_boxes')
         .select('*')
         .order('box_number')
 
       // Get all scans grouped by box
       const { data: scanRows } = await supabase
-        .from('bundle_scans')
+        .from('jumpstart_bundle_scans')
         .select('*')
         .order('scanned_at')
 
@@ -128,7 +128,7 @@ export default function BundleSort() {
     processingRef.current = true
     try {
       // Log scan to Supabase
-      await supabase.from('bundle_scans').insert({
+      await supabase.from('jumpstart_bundle_scans').insert({
         box_number: activeBox,
         barcode: decodedText
       })
@@ -139,7 +139,7 @@ export default function BundleSort() {
 
       if (newCount >= 40) {
         // Mark box complete
-        await supabase.from('bundle_boxes')
+        await supabase.from('jumpstart_bundle_boxes')
           .update({ status: 'complete' })
           .eq('box_number', activeBox)
         await stopScanner()
@@ -160,12 +160,12 @@ export default function BundleSort() {
     // Optimistic UI
     setBoxes(prev => [...prev, { boxNumber: newBoxNum, status: 'empty', note: '', itemCount: 0, items: [] }])
     // Sync to Supabase
-    await supabase.from('bundle_boxes').insert({ box_number: newBoxNum, status: 'empty', note: '' })
+    await supabase.from('jumpstart_bundle_boxes').insert({ box_number: newBoxNum, status: 'empty', note: '' })
     fetchBoxes()
   }
 
   const saveNote = async (boxNumber) => {
-    await supabase.from('bundle_boxes')
+    await supabase.from('jumpstart_bundle_boxes')
       .update({ note: noteText })
       .eq('box_number', boxNumber)
     setEditingNote(null)
@@ -173,7 +173,7 @@ export default function BundleSort() {
   }
 
   const reopenBox = async (boxNumber) => {
-    await supabase.from('bundle_boxes')
+    await supabase.from('jumpstart_bundle_boxes')
       .update({ status: 'in-progress' })
       .eq('box_number', boxNumber)
     setViewingBox(null)
@@ -181,7 +181,7 @@ export default function BundleSort() {
   }
 
   const completeBox = async (boxNumber) => {
-    await supabase.from('bundle_boxes')
+    await supabase.from('jumpstart_bundle_boxes')
       .update({ status: 'complete' })
       .eq('box_number', boxNumber)
     closeScanner()
@@ -194,14 +194,14 @@ export default function BundleSort() {
       : `Delete Box ${box.boxNumber}? (0 items)`
     if (!confirm(msg)) return
     // Delete scans first, then box
-    await supabase.from('bundle_scans').delete().eq('box_number', box.boxNumber)
-    await supabase.from('bundle_boxes').delete().eq('box_number', box.boxNumber)
+    await supabase.from('jumpstart_bundle_scans').delete().eq('box_number', box.boxNumber)
+    await supabase.from('jumpstart_bundle_boxes').delete().eq('box_number', box.boxNumber)
     fetchBoxes()
   }
 
   const deleteItem = async (boxNumber, barcode, id) => {
     if (!confirm('Delete this item?')) return
-    await supabase.from('bundle_scans').delete().eq('id', id)
+    await supabase.from('jumpstart_bundle_scans').delete().eq('id', id)
     // Refresh the viewing box
     const allBoxes = await fetchBoxes()
     const updated = allBoxes.find(b => b.boxNumber === boxNumber)
@@ -211,7 +211,7 @@ export default function BundleSort() {
 
   const deleteActiveItem = async (barcode, id) => {
     if (!confirm('Delete this item?')) return
-    await supabase.from('bundle_scans').delete().eq('id', id)
+    await supabase.from('jumpstart_bundle_scans').delete().eq('id', id)
     await fetchActiveBoxItems()
   }
 

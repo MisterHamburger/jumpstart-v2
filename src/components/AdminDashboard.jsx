@@ -43,8 +43,8 @@ export default function AdminDashboard() {
     }
 
     // Also get inventory counts
-    const { count: totalItems } = await supabase.from('items').select('id', { count: 'exact', head: true })
-    const { count: totalScans } = await supabase.from('scans').select('id', { count: 'exact', head: true })
+    const { count: totalItems } = await supabase.from('jumpstart_manifest').select('id', { count: 'exact', head: true })
+    const { count: totalScans } = await supabase.from('jumpstart_sold_scans').select('id', { count: 'exact', head: true })
     const { count: totalShows } = await supabase.from('shows').select('id', { count: 'exact', head: true })
 
     setSummary(prev => ({ ...prev, totalItems, totalScans, totalShows }))

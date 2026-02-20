@@ -14,14 +14,14 @@ export default function GeneralSort() {
   const processingRef = useRef(false)
 
   useEffect(() => {
-    supabase.from('sort_log').select('id', { count: 'exact', head: true })
+    supabase.from('jumpstart_sort_log').select('id', { count: 'exact', head: true })
       .then(({ count }) => setSortedCount(count || 0))
       .catch(() => setSortedCount(0))
   }, [])
 
   const [totalItems, setTotalItems] = useState(4639)
   useEffect(() => {
-    supabase.from('items').select('id', { count: 'exact', head: true })
+    supabase.from('jumpstart_manifest').select('id', { count: 'exact', head: true })
       .then(({ count }) => setTotalItems(count || 4639))
   }, [])
 
@@ -87,7 +87,7 @@ export default function GeneralSort() {
 
     try {
       const { data } = await supabase
-        .from('items')
+        .from('jumpstart_manifest')
         .select('zone, bundle_number, description, category, msrp, vendor')
         .eq('barcode', barcode)
         .limit(1)
@@ -106,7 +106,7 @@ export default function GeneralSort() {
         setScannedItem(item)
         setSortedCount(prev => (prev || 0) + 1)
 
-        const { error: insertError } = await supabase.from('sort_log').insert({
+        const { error: insertError } = await supabase.from('jumpstart_sort_log').insert({
           barcode,
           zone: data.zone,
           bundle_number: data.bundle_number,

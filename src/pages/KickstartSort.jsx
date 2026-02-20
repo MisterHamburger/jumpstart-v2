@@ -20,7 +20,7 @@ export default function KickstartSort() {
 
   // Fetch total count on mount
   useEffect(() => {
-    supabase.from('kickstart_items').select('id', { count: 'exact', head: true })
+    supabase.from('kickstart_intake').select('id', { count: 'exact', head: true })
       .then(({ count }) => setItemCount(count || 0))
   }, [])
 
@@ -71,7 +71,7 @@ export default function KickstartSort() {
         brand: 'Free People'
       }))
 
-      const { error } = await supabase.from('kickstart_items').insert(rows)
+      const { error } = await supabase.from('kickstart_intake').insert(rows)
       if (error) throw error
 
       const newTotal = itemCount + quantity

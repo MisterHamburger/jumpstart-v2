@@ -9,7 +9,7 @@ export default async (req) => {
 
   try {
     // Fetch pending items (limit to 5 at a time to avoid timeout)
-    const fetchRes = await fetch(`${SUPABASE_URL}/rest/v1/kickstart_items?status=eq.pending_enrichment&limit=5&select=id,photo_data,cost`, {
+    const fetchRes = await fetch(`${SUPABASE_URL}/rest/v1/kickstart_intake?status=eq.pending_enrichment&limit=5&select=id,photo_data,cost`, {
       headers: {
         'apikey': SUPABASE_ANON_KEY,
         'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
@@ -121,7 +121,7 @@ If you can't read a field, use an empty string. Return ONLY the JSON object.`
 }
 
 async function updateItem(supabaseUrl, supabaseKey, id, updates) {
-  const response = await fetch(`${supabaseUrl}/rest/v1/kickstart_items?id=eq.${id}`, {
+  const response = await fetch(`${supabaseUrl}/rest/v1/kickstart_intake?id=eq.${id}`, {
     method: 'PATCH',
     headers: {
       'apikey': supabaseKey,

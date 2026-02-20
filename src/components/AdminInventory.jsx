@@ -12,16 +12,16 @@ export default function AdminInventory() {
   useEffect(() => { loadItems() }, [search, zoneFilter])
 
   async function loadCounts() {
-    const { count: total } = await supabase.from('items').select('id', { count: 'exact', head: true })
-    const { count: z1 } = await supabase.from('items').select('id', { count: 'exact', head: true }).eq('zone', 1)
-    const { count: z2 } = await supabase.from('items').select('id', { count: 'exact', head: true }).eq('zone', 2)
-    const { count: z3 } = await supabase.from('items').select('id', { count: 'exact', head: true }).eq('zone', 3)
+    const { count: total } = await supabase.from('jumpstart_manifest').select('id', { count: 'exact', head: true })
+    const { count: z1 } = await supabase.from('jumpstart_manifest').select('id', { count: 'exact', head: true }).eq('zone', 1)
+    const { count: z2 } = await supabase.from('jumpstart_manifest').select('id', { count: 'exact', head: true }).eq('zone', 2)
+    const { count: z3 } = await supabase.from('jumpstart_manifest').select('id', { count: 'exact', head: true }).eq('zone', 3)
     setCounts({ total: total || 0, z1: z1 || 0, z2: z2 || 0, z3: z3 || 0, unassigned: (total || 0) - (z1 || 0) - (z2 || 0) - (z3 || 0) })
   }
 
   async function loadItems() {
     setLoading(true)
-    let query = supabase.from('items')
+    let query = supabase.from('jumpstart_manifest')
       .select('barcode, description, category, size, color, msrp, cost, zone, bundle_number, load_id')
       .order('msrp', { ascending: false })
       .limit(100)

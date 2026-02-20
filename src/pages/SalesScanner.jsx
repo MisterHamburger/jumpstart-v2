@@ -69,7 +69,7 @@ export default function SalesScanner() {
     const fetchRealCount = async () => {
       try {
         const { count } = await supabase
-          .from('scans')
+          .from('jumpstart_sold_scans')
           .select('id', { count: 'exact', head: true })
           .eq('show_id', showId)
         setRealScannedCount(count || 0)
@@ -175,7 +175,7 @@ export default function SalesScanner() {
     try {
       // Check for duplicate scan
       const { data: dupCheck } = await supabase
-        .from('scans')
+        .from('jumpstart_sold_scans')
         .select('id')
         .eq('show_id', showId)
         .eq('listing_number', listingNumber)
@@ -220,7 +220,7 @@ export default function SalesScanner() {
       setScans(prev => [...prev, scan])
 
       // Fire-and-forget: log scan to Supabase
-      supabase.from('scans').insert({
+      supabase.from('jumpstart_sold_scans').insert({
         show_id: showId,
         barcode: scannedBarcode,
         listing_number: listingNumber,

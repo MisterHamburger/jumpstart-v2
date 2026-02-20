@@ -179,7 +179,7 @@ function ManifestUpload() {
         let uploaded = 0
         for (let i = 0; i < items.length; i += 500) {
           const batch = items.slice(i, i + 500)
-          const { error } = await supabase.from('items').insert(batch)
+          const { error } = await supabase.from('jumpstart_manifest').insert(batch)
           if (error) { setStatus(`❌ Error at row ${i}: ${error.message}`); return }
           uploaded += batch.length
           setProgress(Math.round((uploaded / items.length) * 100))
@@ -526,10 +526,10 @@ function ScanImport() {
 
         for (let i = 0; i < scans.length; i += 500) {
           const batch = scans.slice(i, i + 500)
-          const { error } = await supabase.from('scans').upsert(batch, { onConflict: 'show_id,listing_number', ignoreDuplicates: true })
+          const { error } = await supabase.from('jumpstart_sold_scans').upsert(batch, { onConflict: 'show_id,listing_number', ignoreDuplicates: true })
           if (error) {
             for (const scan of batch) {
-              const { error: rowErr } = await supabase.from('scans').insert(scan)
+              const { error: rowErr } = await supabase.from('jumpstart_sold_scans').insert(scan)
               if (rowErr) dupes++; else uploaded++
             }
           } else {
