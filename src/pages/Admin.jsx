@@ -15,32 +15,42 @@ export default function Admin() {
   const navigate = useNavigate()
   const location = useLocation()
 
-  // Determine active tab from URL
   const activeTab = TABS.find(t => t.path !== '/admin' && location.pathname.startsWith(t.path))?.id
     || (location.pathname === '/admin' || location.pathname === '/admin/' ? 'dashboard' : 'dashboard')
 
   return (
-    <div className="min-h-screen flex flex-col md:flex-row">
-      {/* Sidebar / mobile nav */}
-      <nav className="md:w-56 bg-slate-800 md:min-h-screen">
+    <div className="min-h-screen flex flex-col md:flex-row bg-[#0a0f1a]">
+      {/* Gradient overlay */}
+      <div className="fixed inset-0 bg-gradient-to-br from-purple-900/10 via-transparent to-cyan-900/5 pointer-events-none" />
+      
+      {/* Sidebar */}
+      <nav className="relative z-10 md:w-56 bg-[#080c14] border-b md:border-b-0 md:border-r border-white/[0.06]">
         <div className="p-4">
-          <button onClick={() => navigate('/')} className="text-slate-400 hover:text-white text-sm mb-4 block">
-            ← Home
+          <button 
+            onClick={() => navigate('/')} 
+            className="flex items-center gap-2 text-slate-500 hover:text-white text-sm mb-6 transition-colors"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+            </svg>
+            Home
           </button>
-          <h2 className="text-lg font-bold mb-4">Admin</h2>
+          <h2 className="text-xl font-bold text-white mb-1">Admin</h2>
+          <p className="text-slate-600 text-xs">Management & Reports</p>
         </div>
-        <div className="flex md:flex-col overflow-x-auto md:overflow-visible px-2 pb-2 md:pb-0 gap-1">
+        
+        <div className="flex md:flex-col overflow-x-auto md:overflow-visible px-3 pb-3 md:pb-0 gap-1">
           {TABS.map(tab => (
             <button
               key={tab.id}
               onClick={() => navigate(tab.path)}
-              className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium whitespace-nowrap transition-colors
+              className={`flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium whitespace-nowrap transition-all
                 ${activeTab === tab.id
-                  ? 'bg-slate-700 text-white'
-                  : 'text-slate-400 hover:text-white hover:bg-slate-700/50'
+                  ? 'bg-gradient-to-r from-purple-600/20 to-cyan-600/20 text-white border border-purple-500/20'
+                  : 'text-slate-500 hover:text-white hover:bg-white/[0.04]'
                 }`}
             >
-              <span>{tab.icon}</span>
+              <span className="text-base">{tab.icon}</span>
               <span>{tab.label}</span>
             </button>
           ))}
@@ -48,7 +58,7 @@ export default function Admin() {
       </nav>
 
       {/* Main content */}
-      <main className="flex-1 p-4 md:p-8 overflow-auto">
+      <main className="relative z-10 flex-1 p-4 md:p-6 overflow-auto">
         {activeTab === 'dashboard' && <AdminDashboard />}
         {activeTab === 'inputs' && <AdminInputs />}
         {activeTab === 'inventory' && <AdminInventory />}

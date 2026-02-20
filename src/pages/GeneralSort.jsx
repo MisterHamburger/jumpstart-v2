@@ -13,21 +13,18 @@ export default function GeneralSort() {
   const html5QrcodeRef = useRef(null)
   const processingRef = useRef(false)
 
-  // Fetch sort count on mount
   useEffect(() => {
     supabase.from('sort_log').select('id', { count: 'exact', head: true })
       .then(({ count }) => setSortedCount(count || 0))
       .catch(() => setSortedCount(0))
   }, [])
 
-  // Total items count
   const [totalItems, setTotalItems] = useState(4639)
   useEffect(() => {
     supabase.from('items').select('id', { count: 'exact', head: true })
       .then(({ count }) => setTotalItems(count || 4639))
   }, [])
 
-  // Start scanner on mount
   useEffect(() => {
     startScanner()
     return () => { stopScanner() }
@@ -48,7 +45,11 @@ export default function GeneralSort() {
       
       await html5QrCode.start(
         { facingMode: "environment" },
-        { fps: 60 },
+        { 
+          fps: 60,
+          disableFlip: true,
+          experimentalFeatures: { useBarCodeDetectorIfSupported: true }
+        },
         onScanSuccess,
         () => {}
       )
@@ -105,13 +106,15 @@ export default function GeneralSort() {
         setScannedItem(item)
         setSortedCount(prev => (prev || 0) + 1)
 
-        // Log to sort_log (fire and forget)
-        supabase.from('sort_log').insert({
+        const { error: insertError } = await supabase.from('sort_log').insert({
           barcode,
           zone: data.zone,
           bundle_number: data.bundle_number,
           sort_type: 'general'
         })
+        if (insertError) {
+          console.error('INSERT ERROR:', insertError)
+        }
       } else {
         setScannedItem({
           barcode: decodedText,
@@ -140,13 +143,15 @@ export default function GeneralSort() {
     switch (scannedItem.zone) {
       case 1:
         return {
-          gradient: 'from-purple-500/95 via-purple-600/95 to-blue-600/95',
+          gradient: 'from-violet-600 via-purple-600 to-fuchsia-600',
+          glow: 'shadow-purple-500/50',
           text: 'ZONE 1',
           subtext: 'Premium Items ($98+)'
         }
       case 2:
         return {
-          gradient: 'from-teal-500/95 via-cyan-500/95 to-blue-500/95',
+          gradient: 'from-cyan-500 via-teal-500 to-emerald-500',
+          glow: 'shadow-cyan-500/50',
           text: 'ZONE 2',
           subtext: 'Standard Items'
         }
@@ -155,21 +160,24 @@ export default function GeneralSort() {
           ? 'Bundle Leftover'
           : `Bundle #${scannedItem.bundleNumber}`
         return {
-          gradient: 'from-pink-500/95 via-rose-500/95 to-orange-500/95',
+          gradient: 'from-pink-500 via-rose-500 to-fuchsia-500',
+          glow: 'shadow-pink-500/50',
           text: 'ZONE 3',
           subtext: bundleText
         }
       case 4:
         return {
-          gradient: 'from-amber-500/95 via-orange-500/95 to-yellow-500/95',
+          gradient: 'from-fuchsia-500 via-pink-500 to-rose-500',
+          glow: 'shadow-fuchsia-500/50',
           text: 'ZONE 4',
-          subtext: 'Needs Review / Manual Sort'
+          subtext: 'Needs Review'
         }
       default:
         return {
-          gradient: 'from-red-600/95 via-red-700/95 to-red-800/95',
+          gradient: 'from-slate-600 via-slate-700 to-slate-800',
+          glow: 'shadow-slate-500/30',
           text: 'NOT FOUND',
-          subtext: 'Barcode not in any zone'
+          subtext: 'Barcode not in system'
         }
     }
   }
@@ -177,53 +185,61 @@ export default function GeneralSort() {
   const zoneDisplay = getZoneDisplay()
 
   return (
-    <div className="min-h-screen flex flex-col bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900">
+    <div className="min-h-screen flex flex-col bg-[#0a0f1a]">
+      {/* Gradient overlay */}
+      <div className="fixed inset-0 bg-gradient-to-br from-purple-900/20 via-transparent to-cyan-900/10 pointer-events-none" />
+      
       {/* Header */}
-      <div className="p-6 flex items-center justify-between backdrop-blur-xl bg-slate-900/50 border-b border-white/5">
+      <div className="relative z-10 p-4 flex items-center justify-between border-b border-white/[0.06]">
         <div className="flex items-center gap-3">
           <button 
             onClick={() => { stopScanner(); navigate('/') }}
-            className="bg-white/10 hover:bg-white/20 backdrop-blur-lg px-4 py-2 rounded-full border border-white/20 transition-colors flex items-center gap-2"
+            className="flex items-center gap-2 bg-white/[0.06] hover:bg-white/[0.1] backdrop-blur-xl px-4 py-2 rounded-xl border border-white/[0.08] transition-all"
           >
-            <span className="text-white text-lg">←</span>
-            <span className="text-white text-base font-semibold">Home</span>
+            <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+            </svg>
+            <span className="text-white text-sm font-medium">Home</span>
           </button>
-          <h1 className="text-xl font-bold text-white">General Sort</h1>
+          <h1 className="text-lg font-semibold text-white">Sort</h1>
         </div>
-        <div className="bg-white/10 backdrop-blur-lg px-4 py-2 rounded-full border border-white/20">
-          <span className="text-white text-lg font-semibold">
-            {sortedCount !== null ? sortedCount : '…'} / {totalItems}
+        <div className="bg-white/[0.06] backdrop-blur-xl px-4 py-2 rounded-xl border border-white/[0.08]">
+          <span className="text-white text-sm font-semibold">
+            <span className="text-cyan-400">{sortedCount !== null ? sortedCount : '…'}</span>
+            <span className="text-slate-500"> / {totalItems}</span>
           </span>
         </div>
       </div>
 
-      {/* Scanner - always in DOM */}
-      <div className={`flex-1 flex flex-col items-center justify-center p-4 ${scannedItem ? 'hidden' : ''}`}>
-        <div className="mb-4 text-center">
-          <h2 className="text-2xl font-bold text-white mb-2 tracking-tight">Scan Item Barcode</h2>
-          <p className="text-slate-400 text-base">Position barcode in the frame</p>
+      {/* Scanner */}
+      <div className={`relative z-10 flex-1 flex flex-col items-center justify-center p-4 ${scannedItem ? 'hidden' : ''}`}>
+        <div className="mb-6 text-center">
+          <h2 className="text-2xl font-bold text-white mb-2 tracking-tight">Scan Barcode</h2>
+          <p className="text-slate-500 text-sm">Position barcode in frame</p>
         </div>
         <div 
           id="qr-reader" 
-          className="w-full max-w-lg rounded-3xl overflow-hidden shadow-2xl border border-white/10"
-          style={{ maxHeight: '50vh' }}
-        ></div>
+          className="w-full max-w-md rounded-2xl overflow-hidden border border-white/[0.08] shadow-2xl shadow-black/50"
+          style={{ maxHeight: '55vh' }}
+        />
       </div>
 
       {/* Zone Display */}
       {scannedItem && (
-        <div className={`flex-1 flex flex-col items-center justify-center p-6 bg-gradient-to-br ${zoneDisplay.gradient}`}>
-          <div className="text-center mb-12">
-            <h2 className="text-6xl font-black text-white mb-6 tracking-tight">
+        <div className={`relative z-10 flex-1 flex flex-col items-center justify-center p-6 bg-gradient-to-br ${zoneDisplay.gradient}`}>
+          <div className={`absolute inset-0 ${zoneDisplay.glow} shadow-[0_0_120px_40px] opacity-30`} />
+          
+          <div className="relative text-center mb-10">
+            <h2 className="text-7xl font-black text-white mb-4 tracking-tight drop-shadow-lg">
               {zoneDisplay.text}
             </h2>
-            <p className="text-2xl text-white/90 font-medium">{zoneDisplay.subtext}</p>
+            <p className="text-2xl text-white/80 font-medium">{zoneDisplay.subtext}</p>
           </div>
 
           <button
             onClick={handleNext}
-            className="bg-white hover:bg-white/90 text-gray-900 font-bold text-2xl px-20 py-5 rounded-full
-                       shadow-xl hover:scale-105 transition-all"
+            className="relative bg-white hover:bg-white/95 text-slate-900 font-bold text-xl px-16 py-4 rounded-2xl
+                       shadow-2xl shadow-black/30 hover:scale-[1.03] active:scale-[0.98] transition-all"
           >
             Next Scan
           </button>

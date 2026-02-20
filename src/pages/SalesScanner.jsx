@@ -266,26 +266,27 @@ export default function SalesScanner() {
   // Excluded items interstitial
   if (showExcludedModal) {
     return (
-      <div className="h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 p-6">
-        <div className="w-full max-w-md">
-          <div className="bg-amber-500/20 border-2 border-amber-500/50 rounded-3xl p-6 mb-6">
+      <div className="h-screen flex items-center justify-center bg-[#0a0f1a] p-6">
+        <div className="fixed inset-0 bg-gradient-to-br from-pink-900/20 via-transparent to-fuchsia-900/10 pointer-events-none" />
+        <div className="relative z-10 w-full max-w-md">
+          <div className="bg-pink-500/10 border border-pink-500/30 rounded-2xl p-6 mb-6">
             <div className="text-center mb-4">
               <div className="text-5xl mb-3">⚠️</div>
-              <h2 className="text-2xl font-bold text-amber-200">Items Removed</h2>
-              <p className="text-amber-200/70 text-sm mt-1">Skip these when scanning — they failed or were cancelled</p>
+              <h2 className="text-2xl font-bold text-pink-200">Items Removed</h2>
+              <p className="text-pink-200/60 text-sm mt-1">Skip these when scanning — they failed or were cancelled</p>
             </div>
             <div className="space-y-2 mb-4">
               {excludedItems.map((item, i) => (
-                <div key={i} className="bg-amber-500/20 rounded-xl p-3 flex items-center justify-between">
+                <div key={i} className="bg-pink-500/10 rounded-xl p-3 flex items-center justify-between">
                   <div>
-                    <span className="text-amber-100 font-bold text-lg">#{item.listingNum}</span>
-                    <span className="text-amber-200/70 text-sm ml-2">{item.productName}</span>
+                    <span className="text-pink-100 font-bold text-lg">#{item.listingNum}</span>
+                    <span className="text-pink-200/60 text-sm ml-2">{item.productName}</span>
                   </div>
-                  <span className="text-amber-300/60 text-xs uppercase font-semibold">{item.status}</span>
+                  <span className="text-pink-300/50 text-xs uppercase font-semibold">{item.status}</span>
                 </div>
               ))}
             </div>
-            <p className="text-center text-amber-200/60 text-sm">
+            <p className="text-center text-pink-200/50 text-sm">
               Scanning {totalItems} of {totalItems + excludedItems.length} listings
             </p>
           </div>
@@ -294,9 +295,9 @@ export default function SalesScanner() {
               setShowExcludedModal(false)
               startScanner()
             }}
-            className="w-full py-5 rounded-2xl font-bold text-xl bg-gradient-to-r from-teal-500 to-cyan-500 text-white shadow-2xl shadow-teal-500/50 hover:scale-[1.02] transition-all"
+            className="w-full py-4 rounded-2xl font-bold text-lg bg-gradient-to-r from-cyan-600 to-teal-600 text-white shadow-lg shadow-cyan-500/30 hover:scale-[1.02] active:scale-[0.98] transition-all"
           >
-            Done
+            Got It
           </button>
         </div>
       </div>
@@ -306,16 +307,16 @@ export default function SalesScanner() {
   // Completion screen
   if (showCompletion) {
     return (
-      <div className="h-screen flex items-center justify-center bg-gradient-to-br from-teal-500/95 via-emerald-500/95 to-green-500/95">
+      <div className="h-screen flex items-center justify-center bg-gradient-to-br from-cyan-600 via-teal-500 to-emerald-500">
         <div className="text-center p-8">
           <div className="text-9xl mb-6">🎉</div>
           <h2 className="text-6xl font-black text-white mb-4">All Done!</h2>
-          <p className="text-2xl text-white/90 mb-8">
+          <p className="text-2xl text-white/80 mb-8">
             {totalItems} of {totalItems} items scanned
           </p>
           <button
             onClick={() => navigate('/sales')}
-            className="bg-white text-teal-600 px-12 py-5 rounded-full font-bold text-2xl hover:scale-105 transition-all shadow-2xl"
+            className="bg-white text-slate-900 px-12 py-4 rounded-2xl font-bold text-xl hover:scale-105 active:scale-95 transition-all shadow-2xl"
           >
             Back to Shows
           </button>
@@ -325,7 +326,8 @@ export default function SalesScanner() {
   }
 
   return (
-    <div className="h-screen overflow-hidden flex flex-col bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900">
+    <div className="h-screen overflow-hidden flex flex-col bg-[#0a0f1a]">
+      <div className="fixed inset-0 bg-gradient-to-br from-cyan-900/20 via-transparent to-teal-900/10 pointer-events-none" />
 
       {!scannedBarcode ? (
         <div className="flex-1 flex flex-col overflow-hidden">

@@ -104,7 +104,7 @@ export default function KickstartSort() {
   // === SAVED FLASH ===
   if (showSaved) {
     return (
-      <div className="h-screen flex items-center justify-center bg-gradient-to-br from-emerald-500 via-green-500 to-teal-500">
+      <div className="h-screen flex items-center justify-center bg-gradient-to-br from-cyan-600 via-teal-500 to-emerald-500">
         <div className="text-center">
           <div className="text-9xl mb-4">✓</div>
           <h2 className="text-5xl font-black text-white mb-2">Saved!</h2>
@@ -115,7 +115,9 @@ export default function KickstartSort() {
   }
 
   return (
-    <div className="h-screen flex flex-col bg-gradient-to-br from-orange-950 via-slate-900 to-amber-950">
+    <div className="h-screen flex flex-col bg-[#0a0f1a]">
+      {/* Subtle gradient overlay */}
+      <div className="fixed inset-0 bg-gradient-to-br from-fuchsia-900/20 via-transparent to-pink-900/10 pointer-events-none" />
       {/* Header */}
       <div className="p-3 flex items-center justify-between backdrop-blur-xl bg-white/5 border-b border-white/10 shrink-0">
         <button
@@ -125,16 +127,16 @@ export default function KickstartSort() {
           {step === 'bin' ? '← Home' : '← Change Bin'}
         </button>
         <h1 className="text-lg font-bold text-white">Kickstart</h1>
-        <div className="bg-gradient-to-r from-amber-500/20 to-orange-500/20 backdrop-blur-lg px-3 py-1.5 rounded-full border border-amber-400/30">
-          <span className="text-amber-300 font-bold text-sm">{sessionCount} today</span>
+        <div className="bg-gradient-to-r from-fuchsia-500/20 to-pink-500/20 backdrop-blur-lg px-3 py-1.5 rounded-full border border-fuchsia-400/30">
+          <span className="text-fuchsia-300 font-bold text-sm">{sessionCount} today</span>
         </div>
       </div>
 
       {/* Active bin indicator (when not on bin selection) */}
       {step !== 'bin' && (
-        <div className="mx-4 mt-3 bg-amber-500/20 border border-amber-500/30 rounded-xl px-4 py-2 flex items-center justify-between">
-          <span className="text-amber-200 text-sm font-semibold">Active Bin</span>
-          <span className="text-amber-100 font-bold text-lg">${getCost()}</span>
+        <div className="mx-4 mt-3 bg-fuchsia-500/20 border border-fuchsia-500/30 rounded-xl px-4 py-2 flex items-center justify-between">
+          <span className="text-fuchsia-200 text-sm font-semibold">Active Bin</span>
+          <span className="text-fuchsia-100 font-bold text-lg">${getCost()}</span>
         </div>
       )}
 
@@ -149,7 +151,7 @@ export default function KickstartSort() {
               <button
                 key={price}
                 onClick={() => handleBinSelect(price)}
-                className="py-6 rounded-2xl bg-gradient-to-br from-amber-500/80 to-orange-600/80 border-2 border-amber-400/40 text-white font-black text-3xl shadow-xl shadow-amber-500/20 hover:scale-105 active:scale-95 transition-all"
+                className="py-6 rounded-2xl bg-gradient-to-br from-fuchsia-500/80 to-pink-500/80 border-2 border-fuchsia-400/40 text-white font-black text-3xl shadow-xl shadow-fuchsia-500/20 hover:scale-105 active:scale-95 transition-all"
               >
                 ${price}
               </button>
@@ -175,7 +177,7 @@ export default function KickstartSort() {
                     onChange={e => setCustomPrice(e.target.value)}
                     placeholder="0.00"
                     autoFocus
-                    className="w-full bg-white/10 border border-white/20 rounded-xl pl-8 pr-4 py-4 text-white text-xl font-bold placeholder-slate-500 focus:outline-none focus:border-amber-400/50"
+                    className="w-full bg-white/10 border border-white/20 rounded-xl pl-8 pr-4 py-4 text-white text-xl font-bold placeholder-slate-500 focus:outline-none focus:border-fuchsia-400/50"
                     style={{ fontSize: '20px' }}
                   />
                 </div>
@@ -184,7 +186,7 @@ export default function KickstartSort() {
                   disabled={!customPrice || parseFloat(customPrice) <= 0}
                   className={`px-6 rounded-xl font-bold text-lg transition-all ${
                     customPrice && parseFloat(customPrice) > 0
-                      ? 'bg-gradient-to-r from-amber-500 to-orange-600 text-white'
+                      ? 'bg-gradient-to-r from-fuchsia-500 to-pink-500 text-white'
                       : 'bg-white/5 text-white/30 cursor-not-allowed'
                   }`}
                 >
@@ -215,7 +217,7 @@ export default function KickstartSort() {
 
           <button
             onClick={() => photoInputRef.current?.click()}
-            className="w-28 h-28 rounded-full bg-gradient-to-br from-amber-500 to-orange-600 shadow-2xl shadow-amber-500/40 flex items-center justify-center hover:scale-105 active:scale-95 transition-all"
+            className="w-28 h-28 rounded-full bg-gradient-to-br from-fuchsia-500 to-pink-500 shadow-2xl shadow-fuchsia-500/40 flex items-center justify-center hover:scale-105 active:scale-95 transition-all"
           >
             <svg className="w-12 h-12 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
@@ -249,7 +251,7 @@ export default function KickstartSort() {
             {photo && (
               <button
                 onClick={() => { setPhoto(null); setStep('capture') }}
-                className="text-amber-400 text-sm font-semibold mb-6"
+                className="text-fuchsia-400 text-sm font-semibold mb-6"
               >
                 Retake Photo
               </button>
@@ -275,7 +277,7 @@ export default function KickstartSort() {
               </div>
               <button
                 onClick={() => setQuantity(q => q + 1)}
-                className="w-14 h-14 rounded-full bg-gradient-to-br from-amber-500 to-orange-600 text-white text-2xl font-bold flex items-center justify-center hover:scale-105 active:scale-95 transition-all shadow-lg shadow-amber-500/30"
+                className="w-14 h-14 rounded-full bg-gradient-to-br from-fuchsia-500 to-pink-500 text-white text-2xl font-bold flex items-center justify-center hover:scale-105 active:scale-95 transition-all shadow-lg shadow-fuchsia-500/30"
               >
                 +
               </button>
@@ -296,7 +298,7 @@ export default function KickstartSort() {
             className={`w-full py-5 rounded-2xl font-bold text-xl transition-all ${
               saving
                 ? 'bg-white/10 text-white/50 cursor-wait'
-                : 'bg-gradient-to-r from-amber-500 to-orange-600 text-white shadow-2xl shadow-amber-500/30 hover:scale-[1.02] active:scale-[0.98]'
+                : 'bg-gradient-to-r from-fuchsia-500 to-pink-500 text-white shadow-2xl shadow-fuchsia-500/30 hover:scale-[1.02] active:scale-[0.98]'
             }`}
           >
             {saving ? 'Saving...' : quantity > 1 ? `Save ${quantity} Items` : 'Save Item'}

@@ -4,13 +4,13 @@ import { supabase } from '../lib/supabase'
 import { normalizeBarcode } from '../lib/barcodes'
 
 export default function AdminInputs() {
-  const [activeSection, setActiveSection] = useState('loads')
+  const [activeSection, setActiveSection] = useState('manifests')
 
   return (
     <div>
       <h2 className="text-2xl font-bold mb-6">Data Inputs</h2>
       <div className="flex gap-2 mb-6 overflow-x-auto">
-        {['loads', 'manifests', 'shows', 'scans', 'expenses'].map(s => (
+        {['manifests', 'shows', 'scans', 'expenses'].map(s => (
           <button key={s} onClick={() => setActiveSection(s)}
             className={`px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors
               ${activeSection === s ? 'bg-slate-700 text-white' : 'text-slate-400 hover:bg-slate-700/50'}`}>
@@ -18,7 +18,6 @@ export default function AdminInputs() {
           </button>
         ))}
       </div>
-      {activeSection === 'loads' && <LoadsSection />}
       {activeSection === 'manifests' && <ManifestUpload />}
       {activeSection === 'shows' && <ShowUpload />}
       {activeSection === 'scans' && <ScanImport />}
@@ -54,7 +53,7 @@ function DropZone({ onFile, accept = '.csv', label = 'Drop CSV here or click to 
       onDrop={handleDrop}
       onClick={handleClick}
       className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-colors
-        ${dragging ? 'border-blue-400 bg-blue-900/20' : 'border-slate-600 hover:border-slate-400'}`}
+        ${dragging ? 'border-purple-400 bg-purple-900/20' : 'border-slate-600 hover:border-slate-400'}`}
     >
       <input ref={inputRef} type="file" accept={accept} onChange={handleChange} className="hidden" />
       <div className="text-3xl mb-2">{dragging ? '📂' : '📄'}</div>
@@ -79,144 +78,318 @@ function getField(row, ...names) {
   return null
 }
 
-// ── LOADS ──────────────────────────────────────────
-function LoadsSection() {
+// ── MANIFESTS (Combined Load + Upload) ──────────────────────────────────────────
+function ManifestUpload() {
   const [loads, setLoads] = useState([])
-  const [form, setForm] = useState({ id: '', date: '', vendor: '', quantity: '', total_cost: '', notes: '' })
-  const [msg, setMsg] = useState('')
+  const [form, setForm] = useState({ date: '', channel: 'Jumpstart', notes: '' })
+  const [status, setStatus] = useState('')
+  const [progress, setProgress] = useState(null)
+  const [pendingFile, setPendingFile] = useState(null)
+  const [pendingRows, setPendingRows] = useState(null)
+  const [pendingItemCount, setPendingItemCount] = useState(0)
 
   useEffect(() => { refreshLoads() }, [])
 
   async function refreshLoads() {
-    const { data } = await supabase.from('loads').select('*').order('date', { ascending: false })
+    const { data } = await supabase.from('loads').select('*').order('id', { ascending: false })
     setLoads(data || [])
   }
 
-  async function saveLoad(e) {
-    e.preventDefault()
-    const loadId = form.id || `LOAD-${form.date}-001`
-    const { error } = await supabase.from('loads').upsert({
-      id: loadId, date: form.date, vendor: form.vendor,
-      quantity: parseInt(form.quantity) || null,
-      total_cost: parseFloat(form.total_cost) || null,
-      notes: form.notes
-    })
-    if (error) { setMsg(`Error: ${error.message}`); return }
-    setMsg('Load saved!')
-    setForm({ id: '', date: '', vendor: '', quantity: '', total_cost: '', notes: '' })
-    refreshLoads()
-  }
-
-  return (
-    <div>
-      <form onSubmit={saveLoad} className="bg-slate-800 rounded-xl p-4 mb-6 space-y-3">
-        <h3 className="font-bold mb-2">Add / Edit Load</h3>
-        <div className="grid grid-cols-2 gap-3">
-          <input placeholder="Load ID (auto)" value={form.id} onChange={e => setForm({...form, id: e.target.value})} className="bg-slate-700 rounded-lg px-3 py-2 text-sm" />
-          <input type="date" value={form.date} onChange={e => setForm({...form, date: e.target.value})} className="bg-slate-700 rounded-lg px-3 py-2 text-sm" required />
-          <input placeholder="Vendor" value={form.vendor} onChange={e => setForm({...form, vendor: e.target.value})} className="bg-slate-700 rounded-lg px-3 py-2 text-sm" required />
-          <input placeholder="Quantity" type="number" value={form.quantity} onChange={e => setForm({...form, quantity: e.target.value})} className="bg-slate-700 rounded-lg px-3 py-2 text-sm" />
-          <input placeholder="Total Cost" type="number" step="0.01" value={form.total_cost} onChange={e => setForm({...form, total_cost: e.target.value})} className="bg-slate-700 rounded-lg px-3 py-2 text-sm" />
-          <input placeholder="Notes" value={form.notes} onChange={e => setForm({...form, notes: e.target.value})} className="bg-slate-700 rounded-lg px-3 py-2 text-sm" />
-        </div>
-        <button type="submit" className="bg-blue-600 hover:bg-blue-500 px-4 py-2 rounded-lg text-sm font-medium">Save Load</button>
-        {msg && <p className="text-sm text-green-400">{msg}</p>}
-      </form>
-      <div className="space-y-2">
-        {loads.map(l => (
-          <div key={l.id} className="bg-slate-800 rounded-lg p-3">
-            <div className="font-medium text-sm">{l.id}</div>
-            <div className="text-xs text-slate-400">{l.vendor} · {l.date} · {l.quantity} items · ${Number(l.total_cost).toLocaleString()}</div>
-          </div>
-        ))}
-      </div>
-    </div>
-  )
-}
-
-// ── MANIFEST UPLOAD ───────────────────────────────
-function ManifestUpload() {
-  const [loadId, setLoadId] = useState('')
-  const [loads, setLoads] = useState([])
-  const [status, setStatus] = useState('')
-  const [progress, setProgress] = useState(null)
-
-  useEffect(() => {
-    supabase.from('loads').select('id').order('date', { ascending: false })
-      .then(({ data }) => setLoads(data || []))
-  }, [])
-
-  async function handleFile(file) {
-    if (!loadId) { setStatus('⚠️ Select a load first'); return }
+  function handleFile(file) {
     setStatus('Parsing CSV...')
     Papa.parse(file, {
       header: true, skipEmptyLines: true,
-      complete: async (results) => {
-        const rows = results.data
-        setStatus(`Parsed ${rows.length} rows. Uploading...`)
-
-        const items = rows.map(row => {
-          const barcode = getField(row, 'Unique ID', 'Universal ID', 'UPC', 'Barcode') || ''
-          const zoneStr = (getField(row, 'Zone') || '').toString()
-          let zone = null
-          if (zoneStr.includes('1')) zone = 1
-          else if (zoneStr.includes('2')) zone = 2
-          else if (zoneStr.includes('3')) zone = 3
-
-          return {
-            barcode: normalizeBarcode(barcode), barcode_raw: barcode,
-            description: getField(row, 'Description', 'Product Name') || '',
-            category: getField(row, 'Category') || '', subclass: getField(row, 'Subclass') || '',
-            size: getField(row, 'Size') || '', color: getField(row, 'Color') || '',
-            vendor: getField(row, 'Vendor', 'Brand') || '', part_number: getField(row, 'Part Number', 'Item') || '',
-            msrp: parseDollar(getField(row, 'MSRP')) || null,
-            cost: parseDollar(getField(row, 'Cost')) || null,
-            cost_freight: parseDollar(getField(row, 'Cost+Freight')) || null,
-            zone, bundle_number: getField(row, 'Bundle #', 'Bundle') || null, load_id: loadId
-          }
-        }).filter(item => item.barcode)
-
-        let uploaded = 0
-        for (let i = 0; i < items.length; i += 500) {
-          const batch = items.slice(i, i + 500)
-          const { error } = await supabase.from('items').insert(batch)
-          if (error) { setStatus(`❌ Error at row ${i}: ${error.message}`); return }
-          uploaded += batch.length
-          setProgress(Math.round((uploaded / items.length) * 100))
+      complete: (results) => {
+        const rows = results.data.filter(row => {
+          const barcode = getField(row, 'UNIVERSAL ID', 'Unique ID', 'UPC', 'Barcode')
+          return barcode && barcode.toString().trim()
+        })
+        
+        // Calculate total items including SCAN QUANTITY
+        let totalItems = 0
+        for (const row of rows) {
+          const qty = parseInt(getField(row, 'SCAN QUANTITY', 'Scan Quantity', 'Quantity', 'Qty')) || 1
+          totalItems += qty
         }
-        setStatus(`✅ Uploaded ${items.length} items to ${loadId}`)
-        setProgress(null)
+        
+        setPendingFile(file)
+        setPendingRows(rows)
+        setPendingItemCount(totalItems)
+        setStatus(`Found ${totalItems} items to upload.`)
+      },
+      error: (err) => {
+        setStatus(`❌ Error parsing CSV: ${err.message}`)
       }
     })
   }
 
+  async function handleUpload() {
+    if (!form.date) { setStatus('⚠️ Please select Date Paid'); return }
+    if (!pendingRows || pendingRows.length === 0) { setStatus('⚠️ No items to upload'); return }
+
+    setStatus('Creating load...')
+    
+    // Get next load number
+    const { data: maxLoad } = await supabase
+      .from('loads')
+      .select('id')
+      .order('id', { ascending: false })
+      .limit(1)
+    
+    const nextId = maxLoad && maxLoad.length > 0 ? String(parseInt(maxLoad[0].id) + 1) : '1'
+    
+    // Create the load
+    const { data: loadData, error: loadError } = await supabase
+      .from('loads')
+      .insert({
+        id: nextId,
+        date: form.date,
+        channel: form.channel,
+        notes: form.notes || null
+      })
+      .select()
+      .single()
+
+    if (loadError) {
+      setStatus(`❌ Error creating load: ${loadError.message}`)
+      return
+    }
+
+    const loadId = loadData.id
+    setStatus(`Load #${loadId} created. Uploading ${pendingRows.length} items...`)
+
+    // Process items - handle SCAN QUANTITY for multiples
+    const items = []
+    for (const row of pendingRows) {
+      const barcode = getField(row, 'UNIVERSAL ID', 'Unique ID', 'UPC', 'Barcode') || ''
+      const msrp = parseDollar(getField(row, 'Unit Retail', 'MSRP')) || null
+      const cogs = parseDollar(getField(row, 'COGS', 'Cost', 'Cost+Freight')) || null
+      const category = getField(row, 'Category (Department)', 'Category', 'DEPARTMENT NAME') || ''
+      const scanQty = parseInt(getField(row, 'SCAN QUANTITY', 'Scan Quantity', 'Quantity', 'Qty')) || 1
+      
+      // Zone assignment based on MSRP
+      let zone = null
+      if (msrp >= 98) zone = 1
+      else if (msrp >= 40) zone = 2
+      else zone = 3
+
+      const baseItem = {
+        barcode: normalizeBarcode(barcode),
+        barcode_raw: barcode,
+        description: getField(row, 'DESCRIPTION', 'Description', 'Product Name') || '',
+        category: category,
+        subclass: getField(row, 'Subclass') || '',
+        size: getField(row, 'SIZE', 'Size') || '',
+        color: getField(row, 'COLOR', 'Color') || '',
+        style: getField(row, 'STYLE', 'Style') || '',
+        vendor: getField(row, 'Vendor', 'Brand') || '',
+        part_number: getField(row, 'Part Number', 'Item') || '',
+        gender: getField(row, 'Gender') || '',
+        department: getField(row, 'DEPARTMENT NAME') || '',
+        msrp: msrp,
+        cost_freight: cogs,
+        zone: zone,
+        load_id: loadId,
+        channel: form.channel
+      }
+
+      // Create multiple records if SCAN QUANTITY > 1
+      for (let i = 0; i < scanQty; i++) {
+        items.push({ ...baseItem })
+      }
+    }
+
+    // Upload in batches
+    let uploaded = 0
+    let errors = 0
+
+    for (let i = 0; i < items.length; i += 500) {
+      const batch = items.slice(i, i + 500)
+      const { error } = await supabase.from('items').insert(batch)
+      if (error) {
+        console.error('Batch error:', error)
+        errors += batch.length
+      } else {
+        uploaded += batch.length
+      }
+      setProgress(Math.round(((i + batch.length) / items.length) * 100))
+    }
+
+    // Update load with item count
+    await supabase.from('loads').update({ item_count: uploaded }).eq('id', loadId)
+
+    if (errors > 0) {
+      setStatus(`⚠️ Load #${loadId}: ${uploaded} items uploaded, ${errors} failed.`)
+    } else {
+      setStatus(`✅ Load #${loadId} created with ${uploaded} items`)
+    }
+    
+    setProgress(null)
+    setPendingFile(null)
+    setPendingRows(null)
+    setForm({ date: '', channel: 'Jumpstart', freight_cost: '', notes: '' })
+    refreshLoads()
+  }
+
+  function formatDate(dateStr) {
+    if (!dateStr) return ''
+    const d = new Date(dateStr + 'T12:00:00')
+    return `${d.getMonth() + 1}.${d.getDate()}.${String(d.getFullYear()).slice(2)}`
+  }
+
+  async function deleteLoad(id) {
+    if (!confirm(`Delete Load #${id} and all its items?`)) return
+    await supabase.from('items').delete().eq('load_id', id)
+    await supabase.from('loads').delete().eq('id', id)
+    refreshLoads()
+  }
+
   return (
-    <div className="bg-slate-800 rounded-xl p-4">
-      <h3 className="font-bold mb-3">Upload Manifest CSV</h3>
-      <div className="space-y-3">
-        <select value={loadId} onChange={e => setLoadId(e.target.value)} className="w-full bg-slate-700 rounded-lg px-3 py-2 text-sm">
-          <option value="">Select a load...</option>
-          {loads.map(l => <option key={l.id} value={l.id}>{l.id}</option>)}
-        </select>
+    <div className="space-y-6">
+      {/* Upload Section */}
+      <div className="bg-slate-800 rounded-xl p-5">
+        <h3 className="font-bold mb-4 text-lg">Upload Manifest</h3>
+        
+        <div className="grid grid-cols-3 gap-4 mb-4">
+          <div>
+            <label className="block text-xs text-slate-400 mb-1">Date Paid *</label>
+            <input 
+              type="date" 
+              value={form.date} 
+              onChange={e => setForm({...form, date: e.target.value})} 
+              className="w-full bg-slate-700 rounded-lg px-3 py-2.5 text-sm" 
+            />
+          </div>
+          <div>
+            <label className="block text-xs text-slate-400 mb-1">Channel *</label>
+            <select 
+              value={form.channel} 
+              onChange={e => setForm({...form, channel: e.target.value})}
+              className="w-full bg-slate-700 rounded-lg px-3 py-2.5 text-sm"
+            >
+              <option value="Jumpstart">Jumpstart</option>
+              <option value="Kickstart">Kickstart</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs text-slate-400 mb-1">Notes</label>
+            <input 
+              placeholder="e.g., JCrew Rural Hall"
+              value={form.notes} 
+              onChange={e => setForm({...form, notes: e.target.value})} 
+              className="w-full bg-slate-700 rounded-lg px-3 py-2.5 text-sm" 
+            />
+          </div>
+        </div>
+
         <DropZone onFile={handleFile} label="Drop manifest CSV here or click to browse" />
-        {progress !== null && (
-          <div className="w-full bg-slate-700 rounded-full h-2">
-            <div className="bg-blue-500 h-2 rounded-full transition-all" style={{width: `${progress}%`}} />
+
+        {/* Preview / Confirm */}
+        {pendingRows && (
+          <div className="mt-4 bg-slate-900 rounded-lg p-4">
+            <div className="flex items-center justify-between mb-3">
+              <div>
+                <span className="text-cyan-400 font-bold text-lg">{pendingItemCount}</span>
+                <span className="text-slate-400 ml-2">items ready</span>
+              </div>
+              {form.date && (
+                <span className="text-sm text-slate-500">
+                  Will create Load #{loads.length > 0 && loads[0].id ? parseInt(loads[0].id) + 1 : 1}
+                </span>
+              )}
+            </div>
+            <button 
+              onClick={handleUpload}
+              className="w-full bg-purple-600 hover:bg-purple-500 py-3 rounded-lg font-semibold transition-colors"
+            >
+              Upload Manifest
+            </button>
           </div>
         )}
-        {status && <p className="text-sm text-slate-300">{status}</p>}
+
+        {progress !== null && (
+          <div className="w-full bg-slate-700 rounded-full h-2 mt-4">
+            <div className="bg-purple-500 h-2 rounded-full transition-all" style={{width: `${progress}%`}} />
+          </div>
+        )}
+
+        {status && (
+          <p className={`text-sm mt-3 ${
+            status.includes('❌') ? 'text-red-400' : 
+            status.includes('⚠️') ? 'text-amber-400' : 
+            status.includes('✅') ? 'text-green-400' : 
+            'text-slate-300'
+          }`}>{status}</p>
+        )}
+      </div>
+
+      {/* Existing Loads */}
+      <div className="bg-slate-800 rounded-xl p-5">
+        <h3 className="font-bold mb-4">Uploaded Loads ({loads.length})</h3>
+        {loads.length === 0 ? (
+          <p className="text-sm text-slate-400">No loads uploaded yet.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-slate-700">
+                  <th className="text-left py-2 px-3 text-slate-400 font-medium">#</th>
+                  <th className="text-left py-2 px-3 text-slate-400 font-medium">Date Paid</th>
+                  <th className="text-left py-2 px-3 text-slate-400 font-medium">Channel</th>
+                  <th className="text-right py-2 px-3 text-slate-400 font-medium">Items</th>
+                  <th className="text-right py-2 px-3 text-slate-400 font-medium">Freight</th>
+                  <th className="text-left py-2 px-3 text-slate-400 font-medium">Notes</th>
+                  <th className="text-right py-2 px-3"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {loads.map(l => (
+                  <tr key={l.id} className="border-b border-slate-700/50 hover:bg-slate-700/30">
+                    <td className="py-3 px-3 font-bold text-white">{l.id}</td>
+                    <td className="py-3 px-3 text-white">{formatDate(l.date)}</td>
+                    <td className="py-3 px-3">
+                      <span className={`px-2 py-0.5 rounded text-xs font-medium ${
+                        l.channel === 'Kickstart' ? 'bg-fuchsia-500/20 text-fuchsia-300' : 'bg-cyan-500/20 text-cyan-300'
+                      }`}>
+                        {l.channel}
+                      </span>
+                    </td>
+                    <td className="py-3 px-3 text-right text-slate-300">{l.item_count?.toLocaleString() || '—'}</td>
+                    <td className="py-3 px-3 text-right text-slate-300">
+                      {l.freight_cost ? `$${Number(l.freight_cost).toLocaleString()}` : '—'}
+                    </td>
+                    <td className="py-3 px-3 text-slate-400">{l.notes || '—'}</td>
+                    <td className="py-3 px-3 text-right">
+                      <button 
+                        onClick={() => deleteLoad(l.id)}
+                        className="text-red-400 hover:text-red-300 text-xs"
+                      >
+                        Delete
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   )
 }
 
-// ── SHOW CSV UPLOAD (Auto-detect date & time) ─────
+
+// ── SHOW CSV UPLOAD (Auto-detect date, manual streamer select) ─────
 function ShowUpload() {
   const [channel, setChannel] = useState('Jumpstart')
+  const [streamer, setStreamer] = useState('')
   const [status, setStatus] = useState('')
-  const [detected, setDetected] = useState(null) // { date, timeOfDay, orderCount }
+  const [detected, setDetected] = useState(null)
   const [pendingFile, setPendingFile] = useState(null)
   const [existingShows, setExistingShows] = useState([])
+  
+  // Hardcoded streamers for now - can make this dynamic later
+  const streamers = ['Bri', 'Laura', 'Josh', 'Hannah']
 
   useEffect(() => { refreshShows() }, [])
 
@@ -226,6 +399,11 @@ function ShowUpload() {
   }
 
   function handleFile(file) {
+    if (!streamer) {
+      setStatus('⚠️ Please select a streamer first')
+      return
+    }
+    
     setStatus('Analyzing CSV...')
     setDetected(null)
     setPendingFile(null)
@@ -234,8 +412,6 @@ function ShowUpload() {
       header: true, skipEmptyLines: true,
       complete: (results) => {
         const rows = results.data
-
-        // Collect all timestamps
         const timestamps = []
         for (const row of rows) {
           const t = getField(row, 'placed at', 'Placed At')
@@ -243,52 +419,46 @@ function ShowUpload() {
         }
 
         if (timestamps.length === 0) {
-          setStatus('❌ No timestamps found in CSV. Cannot auto-detect date/time.')
+          setStatus('❌ No timestamps found in CSV. Cannot auto-detect date.')
           return
         }
 
-        // Parse first timestamp to determine date and time of day
-        // Timestamps are UTC. Central Time = UTC - 6
-        const firstTs = new Date(timestamps[0])
-        const centralHour = (firstTs.getUTCHours() - 6 + 24) % 24
-
-        // Morning shows: orders placed ~10am-2pm Central (16:00-20:00 UTC)
-        // Evening shows: orders placed ~7pm-11pm Central (01:00-05:00 UTC next day)
-        let timeOfDay
-        if (centralHour >= 8 && centralHour < 17) {
-          timeOfDay = 'morning'
-        } else {
-          timeOfDay = 'evening'
-        }
-
-        // For evening shows, the UTC date is the next day, so the actual show date is UTC date - 1
+        // Parse timestamp to get the date
+        const firstTsStr = timestamps[0]
         let showDate
-        if (timeOfDay === 'evening') {
-          const d = new Date(firstTs)
-          d.setUTCDate(d.getUTCDate() - 1)
-          showDate = d.toISOString().split('T')[0]
+        
+        // Try to parse date from timestamp string directly
+        const dateMatch = firstTsStr.match(/(\d{4})-(\d{2})-(\d{2})/)
+        if (dateMatch) {
+          const [, year, month, day] = dateMatch
+          // Format as MM-DD-YYYY for American reading
+          showDate = `${month}-${day}-${year}`
         } else {
-          showDate = firstTs.toISOString().split('T')[0]
+          // Fallback to Date parsing
+          const parsed = new Date(firstTsStr)
+          const month = String(parsed.getMonth() + 1).padStart(2, '0')
+          const day = String(parsed.getDate()).padStart(2, '0')
+          const year = parsed.getFullYear()
+          showDate = `${month}-${day}-${year}`
         }
 
-        // Count valid listings (not gift cards)
+        // Count valid listings
         let orderCount = 0
         const seen = new Set()
         for (const row of rows) {
           const productName = getField(row, 'product name', 'Product Name') || ''
-          const match = productName.match(/#(\d+)/)
-          if (!match) continue
+          const matchNum = productName.match(/#(\d+)/)
+          if (!matchNum) continue
           const lowerName = productName.toLowerCase()
           if (lowerName.includes('gift card') || lowerName.includes('account credit') || lowerName.includes('store credit')) continue
-          const listing = match[1]
+          const listing = matchNum[1]
           if (!seen.has(listing)) { seen.add(listing); orderCount++ }
         }
 
-        // Check if this show already exists
-        const showName = `${showDate}-${channel}-${timeOfDay}`
+        const showName = `${showDate}-${channel}-${streamer}`
         const alreadyExists = existingShows.some(s => s.name === showName)
 
-        setDetected({ date: showDate, timeOfDay, orderCount, showName, alreadyExists, firstOrder: timestamps[0], lastOrder: timestamps[timestamps.length - 1] })
+        setDetected({ date: showDate, orderCount, showName, alreadyExists })
         setPendingFile({ file, rows })
         setStatus('')
       }
@@ -298,14 +468,17 @@ function ShowUpload() {
   async function confirmUpload() {
     if (!pendingFile || !detected) return
 
-    const { file, rows } = pendingFile
-    const { date, timeOfDay, showName } = detected
+    const { rows } = pendingFile
+    const { date, showName } = detected
 
     setStatus('Creating show...')
+    
+    // Parse date back to YYYY-MM-DD for database storage
+    const [month, day, year] = date.split('-')
+    const dbDate = `${year}-${month}-${day}`
 
-    // Create show record
     const { data: showData, error: showError } = await supabase.from('shows').insert({
-      name: showName, date, time_of_day: timeOfDay, channel, status: 'pending'
+      name: showName, date: dbDate, streamer: streamer, channel, status: 'pending'
     }).select().single()
 
     if (showError) {
@@ -313,7 +486,6 @@ function ShowUpload() {
       return
     }
 
-    // Group by listing number
     const byListing = {}
     for (const row of rows) {
       const productName = getField(row, 'product name', 'Product Name') || ''
@@ -366,6 +538,7 @@ function ShowUpload() {
     setStatus(`✅ "${showName}" — ${validCount} scannable, ${failed} failed, ${cancelled} cancelled`)
     setDetected(null)
     setPendingFile(null)
+    setStreamer('')
     refreshShows()
   }
 
@@ -374,58 +547,46 @@ function ShowUpload() {
       <div className="bg-slate-800 rounded-xl p-4">
         <h3 className="font-bold mb-3">Upload Whatnot Show CSV</h3>
         <div className="space-y-3">
-          <div>
-            <label className="text-xs text-slate-400 block mb-1">Channel</label>
-            <select value={channel} onChange={e => setChannel(e.target.value)} className="w-full bg-slate-700 rounded-lg px-3 py-2 text-sm max-w-xs">
-              <option value="Jumpstart">Jumpstart</option>
-              <option value="Kickstart">Kickstart</option>
-            </select>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs text-slate-400 block mb-1">Channel</label>
+              <select value={channel} onChange={e => setChannel(e.target.value)} className="w-full bg-slate-700 rounded-lg px-3 py-2 text-sm">
+                <option value="Jumpstart">Jumpstart</option>
+                <option value="Kickstart">Kickstart</option>
+              </select>
+            </div>
+            <div>
+              <label className="text-xs text-slate-400 block mb-1">Streamer *</label>
+              <select value={streamer} onChange={e => setStreamer(e.target.value)} className="w-full bg-slate-700 rounded-lg px-3 py-2 text-sm">
+                <option value="">Select streamer...</option>
+                {streamers.map(s => <option key={s} value={s}>{s}</option>)}
+              </select>
+            </div>
           </div>
 
           <DropZone onFile={handleFile} label="Drop Whatnot CSV here or click to browse" />
 
-          {/* Auto-detection confirmation */}
           {detected && (
             <div className={`rounded-xl p-4 ${detected.alreadyExists ? 'bg-red-900/30 border border-red-600' : 'bg-slate-700'}`}>
               <div className="text-sm font-bold mb-2">
-                {detected.alreadyExists ? '⚠️ This show already exists!' : '📋 Auto-detected show info:'}
+                {detected.alreadyExists ? '⚠️ This show already exists!' : '📋 Show info:'}
               </div>
               <div className="grid grid-cols-2 gap-2 text-sm mb-3">
-                <div>
-                  <span className="text-slate-400">Date: </span>
-                  <span className="font-medium">{detected.date}</span>
-                </div>
-                <div>
-                  <span className="text-slate-400">Time: </span>
-                  <span className={`font-medium px-2 py-0.5 rounded text-xs ${detected.timeOfDay === 'morning' ? 'bg-yellow-600' : 'bg-indigo-600'}`}>
-                    {detected.timeOfDay.toUpperCase()}
-                  </span>
-                </div>
-                <div>
-                  <span className="text-slate-400">Channel: </span>
-                  <span className="font-medium">{channel}</span>
-                </div>
-                <div>
-                  <span className="text-slate-400">Listings: </span>
-                  <span className="font-medium">{detected.orderCount}</span>
-                </div>
+                <div><span className="text-slate-400">Date: </span><span className="font-medium">{detected.date}</span></div>
+                <div><span className="text-slate-400">Streamer: </span><span className="font-medium">{streamer}</span></div>
+                <div><span className="text-slate-400">Channel: </span><span className="font-medium">{channel}</span></div>
+                <div><span className="text-slate-400">Listings: </span><span className="font-medium">{detected.orderCount}</span></div>
               </div>
-              <div className="text-xs text-slate-500 mb-3">
-                Show name: <span className="font-mono">{detected.showName}</span>
-              </div>
+              <div className="text-xs text-slate-500 mb-3">Show name: <span className="font-mono">{detected.showName}</span></div>
 
               {detected.alreadyExists ? (
-                <div className="text-sm text-red-400">
-                  This show has already been uploaded. If you need to re-upload, delete the existing show first.
-                </div>
+                <div className="text-sm text-red-400">This show has already been uploaded. Delete the existing one first if you need to re-upload.</div>
               ) : (
                 <div className="flex gap-3">
-                  <button onClick={confirmUpload}
-                    className="bg-green-600 hover:bg-green-500 px-4 py-2 rounded-lg text-sm font-medium">
+                  <button onClick={confirmUpload} className="bg-green-600 hover:bg-green-500 px-4 py-2 rounded-lg text-sm font-medium">
                     ✓ Looks right — Upload
                   </button>
-                  <button onClick={() => { setDetected(null); setPendingFile(null) }}
-                    className="bg-slate-600 hover:bg-slate-500 px-4 py-2 rounded-lg text-sm font-medium">
+                  <button onClick={() => { setDetected(null); setPendingFile(null) }} className="bg-slate-600 hover:bg-slate-500 px-4 py-2 rounded-lg text-sm font-medium">
                     ✗ Cancel
                   </button>
                 </div>
@@ -433,11 +594,10 @@ function ShowUpload() {
             </div>
           )}
 
-          {status && <p className="text-sm text-slate-300">{status}</p>}
+          {status && <p className={`text-sm ${status.includes('❌') ? 'text-red-400' : status.includes('⚠️') ? 'text-amber-400' : 'text-slate-300'}`}>{status}</p>}
         </div>
       </div>
 
-      {/* Existing shows list */}
       <div className="bg-slate-800 rounded-xl p-4">
         <h3 className="font-bold mb-3">Uploaded Shows ({existingShows.length})</h3>
         {existingShows.length === 0 ? (
@@ -448,11 +608,9 @@ function ShowUpload() {
               <div key={show.id} className="flex justify-between items-center py-2 px-3 rounded-lg bg-slate-700/50">
                 <div>
                   <div className="text-sm font-medium">{show.name}</div>
-                  <div className="text-xs text-slate-400">
-                    {show.channel} · {show.time_of_day} · {show.total_items || 0} items
-                  </div>
+                  <div className="text-xs text-slate-400">{show.channel} · {show.streamer || show.time_of_day || 'unknown'} · {show.total_items || 0} items</div>
                 </div>
-                <div className="text-right">
+                <div className="flex items-center gap-3">
                   <span className={`text-xs px-2 py-1 rounded ${
                     show.status === 'completed' ? 'bg-green-900 text-green-400' :
                     show.status === 'scanning' ? 'bg-yellow-900 text-yellow-400' :
@@ -460,6 +618,19 @@ function ShowUpload() {
                   }`}>
                     {show.scanned_count || 0}/{show.total_items || 0} scanned
                   </span>
+                  <button 
+                    onClick={async () => {
+                      if (confirm(`Delete "${show.name}" and all its data? This cannot be undone.`)) {
+                        await supabase.from('scans').delete().eq('show_id', show.id)
+                        await supabase.from('show_items').delete().eq('show_id', show.id)
+                        await supabase.from('shows').delete().eq('id', show.id)
+                        refreshShows()
+                      }
+                    }}
+                    className="text-red-400 hover:text-red-300 text-xs"
+                  >
+                    Delete
+                  </button>
                 </div>
               </div>
             ))}
@@ -493,7 +664,10 @@ function ScanImport() {
         const showByDateTime = {}
         for (const s of shows) {
           showByName[s.name.toLowerCase()] = s
-          showByDateTime[`${s.date}-${s.time_of_day}`.toLowerCase()] = s
+          // Also index by old format for backwards compatibility
+          if (s.time_of_day) {
+            showByDateTime[`${s.date}-${s.time_of_day}`.toLowerCase()] = s
+          }
         }
 
         const scans = []
@@ -507,9 +681,10 @@ function ScanImport() {
           const time = (row['Time'] || '').trim().toLowerCase()
           if (!barcode || !listing || !date || !time) { skipped++; continue }
 
-          const showName = `${date}-Jumpstart-${time}`.toLowerCase()
+          // Try multiple name formats to find the show
+          const showNameOld = `${date}-Jumpstart-${time}`.toLowerCase()
           const dateTimeKey = `${date}-${time}`.toLowerCase()
-          const show = showByName[showName] || showByDateTime[dateTimeKey]
+          const show = showByName[showNameOld] || showByDateTime[dateTimeKey]
           if (!show) { noShow++; continue }
 
           scans.push({ show_id: show.id, barcode: normalizeBarcode(barcode), listing_number: listing, scanned_by: 'migration' })

@@ -275,12 +275,12 @@ export default function BundleSort() {
 
               {/* Scan result overlay */}
               {lastScan && (
-                <div className="absolute inset-0 flex flex-col items-center justify-center bg-gradient-to-br from-emerald-500 via-green-500 to-teal-500 z-10">
+                <div className="absolute inset-0 flex flex-col items-center justify-center bg-gradient-to-br from-cyan-500 via-teal-500 to-emerald-500 z-10">
                   <div className="text-center mb-10">
                     <h2 className="text-6xl font-black text-white mb-4 tracking-tight">SCANNED ✓</h2>
                     <p className="text-2xl text-white/90 font-semibold">Place in Box {activeBox}</p>
                   </div>
-                  <button onClick={handleNext} className="bg-white/95 hover:bg-white text-gray-900 font-bold text-xl px-16 py-4 rounded-full shadow-2xl shadow-black/30 hover:scale-105 transition-all active:scale-95">
+                  <button onClick={handleNext} className="bg-white/95 hover:bg-white text-slate-900 font-bold text-xl px-16 py-4 rounded-2xl shadow-2xl shadow-black/30 hover:scale-105 transition-all active:scale-95">
                     Next Scan
                   </button>
                 </div>
@@ -298,7 +298,9 @@ export default function BundleSort() {
     const pct = progressPercent(viewingBox.itemCount)
     const items = viewingBox.items || []
     return (
-      <div className="min-h-screen flex flex-col bg-gradient-to-br from-violet-950 via-slate-900 to-fuchsia-950">
+      <div className="min-h-screen flex flex-col bg-[#0a0f1a]">
+        {/* Gradient overlay */}
+        <div className="fixed inset-0 bg-gradient-to-br from-pink-900/20 via-transparent to-fuchsia-900/10 pointer-events-none" />
         {/* Header */}
         <div className="p-3 flex items-center justify-between backdrop-blur-xl bg-white/5 border-b border-white/10">
           <button onClick={() => { setViewingBox(null); fetchBoxes() }} className="bg-white/10 hover:bg-white/20 backdrop-blur-lg w-10 h-10 rounded-full border border-white/20 text-white font-bold text-lg flex items-center justify-center">
@@ -365,7 +367,9 @@ export default function BundleSort() {
 
   // === BOX LIST ===
   return (
-    <div className="min-h-screen flex flex-col bg-gradient-to-br from-violet-950 via-slate-900 to-fuchsia-950 overflow-x-hidden max-w-full">
+    <div className="min-h-screen flex flex-col bg-[#0a0f1a] overflow-x-hidden max-w-full">
+      {/* Gradient overlay */}
+      <div className="fixed inset-0 bg-gradient-to-br from-pink-900/20 via-transparent to-fuchsia-900/10 pointer-events-none" />
       {/* Header */}
       <div className="p-3 backdrop-blur-xl bg-white/5 border-b border-white/10">
         <div className="flex items-center justify-between">
