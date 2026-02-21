@@ -612,197 +612,195 @@ function ShowUpload() {
 
 // ── SCAN MONITOR ─────────────────────────────────
 function ScanMonitor() {
-  const [stats, setStats] = useState({ total: 0, today: 0, byShow: [] })
-  const [recentScans, setRecentScans] = useState([])
-  const [loading, setLoading] = useState(true)
+  const [scanners, setScanners] = useState({
+    jumpstartSort: [],
+    jumpstartBundle: [],
+    jumpstartSales: [],
+    kickstartSales: []
+  })
+  const [now, setNow] = useState(new Date())
 
   useEffect(() => {
-    loadStats()
-    loadRecentScans()
-    // Auto-refresh every 30 seconds
+    loadLatestScans()
+    // Refresh every 5 seconds
     const interval = setInterval(() => {
-      loadStats()
-      loadRecentScans()
-    }, 30000)
+      loadLatestScans()
+      setNow(new Date())
+    }, 5000)
     return () => clearInterval(interval)
   }, [])
 
-  async function loadStats() {
-    // Total scans
-    const { count: total } = await supabase.from('jumpstart_sold_scans').select('id', { count: 'exact', head: true })
-    
-    // Today's scans
-    const today = new Date().toISOString().split('T')[0]
-    const { count: todayCount } = await supabase
-      .from('jumpstart_sold_scans')
-      .select('id', { count: 'exact', head: true })
-      .gte('scanned_at', today)
-    
-    // Scans by show (recent 10 shows)
-    const { data: shows } = await supabase
-      .from('shows')
-      .select('id, name, date, time_of_day, channel')
-      .order('date', { ascending: false })
+  async function loadLatestScans() {
+    // Jumpstart Sort - last 10 from sort_log
+    const { data: sortData } = await supabase
+      .from('jumpstart_sort_log')
+      .select('barcode, sorted_at, zone')
+      .order('sorted_at', { ascending: false })
       .limit(10)
     
-    if (shows) {
-      const byShow = await Promise.all(shows.map(async (show) => {
-        const { count: scanCount } = await supabase
-          .from('jumpstart_sold_scans')
-          .select('id', { count: 'exact', head: true })
-          .eq('show_id', show.id)
-        
-        const { count: itemCount } = await supabase
-          .from('show_items')
-          .select('id', { count: 'exact', head: true })
-          .eq('show_id', show.id)
-          .eq('status', 'valid')
-        
-        return {
-          ...show,
-          scanned: scanCount || 0,
-          total: itemCount || 0
-        }
-      }))
-      
-      setStats({ total: total || 0, today: todayCount || 0, byShow })
-    }
-    
-    setLoading(false)
-  }
-
-  async function loadRecentScans() {
-    const { data } = await supabase
-      .from('jumpstart_sold_scans')
-      .select('id, barcode, listing_number, scanned_at, show_id')
+    // Jumpstart Bundle - last 10 from bundle_scans
+    const { data: bundleData } = await supabase
+      .from('jumpstart_bundle_scans')
+      .select('barcode, scanned_at, box_number')
       .order('scanned_at', { ascending: false })
-      .limit(20)
+      .limit(10)
     
-    if (data) {
-      // Get show names for these scans
-      const showIds = [...new Set(data.map(s => s.show_id))]
-      const { data: shows } = await supabase
-        .from('shows')
-        .select('id, name')
-        .in('id', showIds)
-      
-      const showMap = {}
-      shows?.forEach(s => showMap[s.id] = s.name)
-      
-      setRecentScans(data.map(scan => ({
-        ...scan,
-        show_name: showMap[scan.show_id] || 'Unknown'
-      })))
-    }
+    // Jumpstart Sales - last 10 from jumpstart_sold_scans
+    const { data: jumpstartData } = await supabase
+      .from('jumpstart_sold_scans')
+      .select('barcode, scanned_at, listing_number')
+      .order('scanned_at', { ascending: false })
+      .limit(10)
+    
+    // Kickstart Sales - last 10 from kickstart_sold_scans
+    const { data: kickstartData } = await supabase
+      .from('kickstart_sold_scans')
+      .select('barcode, scanned_at, listing_number')
+      .order('scanned_at', { ascending: false })
+      .limit(10)
+    
+    setScanners({
+      jumpstartSort: sortData?.map(s => ({
+        time: new Date(s.sorted_at),
+        barcode: s.barcode,
+        extra: s.zone ? `Z${s.zone}` : null
+      })) || [],
+      jumpstartBundle: bundleData?.map(s => ({
+        time: new Date(s.scanned_at),
+        barcode: s.barcode,
+        extra: s.box_number ? `Box ${s.box_number}` : null
+      })) || [],
+      jumpstartSales: jumpstartData?.map(s => ({
+        time: new Date(s.scanned_at),
+        barcode: s.barcode,
+        extra: s.listing_number ? `#${s.listing_number}` : null
+      })) || [],
+      kickstartSales: kickstartData?.map(s => ({
+        time: new Date(s.scanned_at),
+        barcode: s.barcode,
+        extra: s.listing_number ? `#${s.listing_number}` : null
+      })) || []
+    })
   }
 
-  function formatShowName(name) {
-    if (!name) return 'Unknown'
-    // New format: 02-19-2026-Jumpstart-Bri
-    const newMatch = name.match(/^(\d{2})-(\d{2})-(\d{4})-(\w+)-(\w+)$/)
-    if (newMatch) {
-      const [, month, day, year, channel, streamer] = newMatch
-      return `${month}/${day} - ${streamer}`
-    }
-    // Old format: 2026-02-19-Jumpstart-evening
-    const oldMatch = name.match(/(\d{4})-(\d{2})-(\d{2})-(\w+)-(\w+)/)
-    if (oldMatch) {
-      const [, year, month, day, channel, time] = oldMatch
-      return `${month}/${day} - ${time}`
-    }
-    return name
+  function timeAgo(date) {
+    if (!date) return ''
+    const seconds = Math.floor((now - date) / 1000)
+    if (seconds < 5) return 'Just now'
+    if (seconds < 60) return `${seconds}s`
+    const minutes = Math.floor(seconds / 60)
+    if (minutes < 60) return `${minutes}m`
+    const hours = Math.floor(minutes / 60)
+    if (hours < 24) return `${hours}h`
+    const days = Math.floor(hours / 24)
+    return `${days}d`
   }
 
-  function formatTime(ts) {
-    if (!ts) return '—'
-    const d = new Date(ts)
-    return d.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+  function isActive(scans) {
+    if (!scans || scans.length === 0) return false
+    const seconds = Math.floor((now - scans[0].time) / 1000)
+    return seconds < 30
   }
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center py-12">
-        <div className="relative">
-          <div className="w-10 h-10 border-2 border-cyan-500/20 rounded-full" />
-          <div className="absolute inset-0 w-10 h-10 border-2 border-transparent border-t-cyan-500 rounded-full animate-spin" />
-        </div>
-      </div>
-    )
+  function isRecent(scans) {
+    if (!scans || scans.length === 0) return false
+    const seconds = Math.floor((now - scans[0].time) / 1000)
+    return seconds < 300
   }
 
   return (
     <div className="space-y-6">
-      {/* Stats Cards */}
+      <div className="flex items-center justify-between">
+        <h3 className="text-lg font-bold">Live Scanner Status</h3>
+        <span className="text-xs text-slate-500">Auto-refreshes every 5s</span>
+      </div>
+
       <div className="grid grid-cols-2 gap-4">
-        <div className="relative overflow-hidden rounded-2xl bg-gradient-to-b from-slate-800/60 to-slate-900/40 border border-white/[0.08] p-5 shadow-xl shadow-black/30">
-          <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent" />
-          <div className="text-[10px] uppercase tracking-[0.15em] font-semibold text-slate-500 mb-1">Total Scans</div>
-          <div className="text-3xl font-bold text-white">{stats.total.toLocaleString()}</div>
-        </div>
-        <div className="relative overflow-hidden rounded-2xl bg-gradient-to-b from-slate-800/60 to-slate-900/40 border border-white/[0.08] p-5 shadow-xl shadow-black/30">
-          <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent" />
-          <div className="text-[10px] uppercase tracking-[0.15em] font-semibold text-slate-500 mb-1">Today</div>
-          <div className="text-3xl font-bold text-cyan-400">{stats.today.toLocaleString()}</div>
-        </div>
+        <ScannerFeed
+          title="Jumpstart Sort"
+          subtitle="Zone sorting"
+          scans={scanners.jumpstartSort}
+          timeAgo={timeAgo}
+          isActive={isActive(scanners.jumpstartSort)}
+          isRecent={isRecent(scanners.jumpstartSort)}
+          color="purple"
+        />
+        <ScannerFeed
+          title="Jumpstart Bundle"
+          subtitle="Bundle packing"
+          scans={scanners.jumpstartBundle}
+          timeAgo={timeAgo}
+          isActive={isActive(scanners.jumpstartBundle)}
+          isRecent={isRecent(scanners.jumpstartBundle)}
+          color="teal"
+        />
+        <ScannerFeed
+          title="Jumpstart Sales"
+          subtitle="J.Crew / Madewell"
+          scans={scanners.jumpstartSales}
+          timeAgo={timeAgo}
+          isActive={isActive(scanners.jumpstartSales)}
+          isRecent={isRecent(scanners.jumpstartSales)}
+          color="cyan"
+        />
+        <ScannerFeed
+          title="Kickstart Sales"
+          subtitle="Free People"
+          scans={scanners.kickstartSales}
+          timeAgo={timeAgo}
+          isActive={isActive(scanners.kickstartSales)}
+          isRecent={isRecent(scanners.kickstartSales)}
+          color="pink"
+        />
       </div>
 
-      {/* Scans by Show */}
-      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-b from-slate-800/60 to-slate-900/40 border border-white/[0.08] p-5 shadow-xl shadow-black/30">
-        <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent" />
-        <h3 className="font-bold text-lg mb-4">Scan Progress by Show</h3>
-        <div className="space-y-3">
-          {stats.byShow.map(show => {
-            const pct = show.total > 0 ? Math.round((show.scanned / show.total) * 100) : 0
-            const isComplete = pct >= 100
-            return (
-              <div key={show.id} className="rounded-xl bg-slate-800/30 border border-white/[0.04] p-3">
-                <div className="flex justify-between items-center mb-2">
-                  <span className="font-medium text-white">{formatShowName(show.name)}</span>
-                  <span className={`text-sm font-semibold ${isComplete ? 'text-emerald-400' : 'text-slate-400'}`}>
-                    {show.scanned}/{show.total} ({pct}%)
-                  </span>
-                </div>
-                <div className="h-2 rounded-full bg-slate-700 overflow-hidden">
-                  <div 
-                    className={`h-full rounded-full transition-all ${isComplete ? 'bg-emerald-500' : 'bg-cyan-500'}`}
-                    style={{ width: `${Math.min(pct, 100)}%` }}
-                  />
-                </div>
-              </div>
-            )
-          })}
+      <p className="text-xs text-slate-500 text-center">
+        Green dot = active (last 30s) · Yellow = recent (last 5m) · Shows last 10 scans per scanner
+      </p>
+    </div>
+  )
+}
+
+function ScannerFeed({ title, subtitle, scans, timeAgo, isActive, isRecent, color }) {
+  const colors = {
+    purple: { border: 'border-purple-500/50', glow: 'shadow-purple-500/20' },
+    teal: { border: 'border-teal-500/50', glow: 'shadow-teal-500/20' },
+    cyan: { border: 'border-cyan-500/50', glow: 'shadow-cyan-500/20' },
+    pink: { border: 'border-pink-500/50', glow: 'shadow-pink-500/20' }
+  }
+  const c = colors[color]
+
+  return (
+    <div className={`relative overflow-hidden rounded-2xl bg-gradient-to-b from-slate-800/60 to-slate-900/40 border ${isActive ? c.border : 'border-white/[0.08]'} p-4 shadow-xl shadow-black/30 ${isActive ? c.glow : ''}`}>
+      <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent" />
+      
+      {/* Header with status dot */}
+      <div className="flex items-center justify-between mb-3">
+        <div>
+          <div className="text-sm font-semibold text-white">{title}</div>
+          <div className="text-xs text-slate-500">{subtitle}</div>
         </div>
+        <div className={`w-3 h-3 rounded-full ${isActive ? 'bg-emerald-500 animate-pulse' : isRecent ? 'bg-yellow-500' : 'bg-slate-600'}`} />
       </div>
 
-      {/* Recent Scans */}
-      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-b from-slate-800/60 to-slate-900/40 border border-white/[0.08] p-5 shadow-xl shadow-black/30">
-        <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent" />
-        <div className="flex justify-between items-center mb-4">
-          <h3 className="font-bold text-lg">Recent Scans</h3>
-          <span className="text-xs text-slate-500">Auto-refreshes every 30s</span>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-white/[0.08]">
-                <th className="text-left py-2 px-3 text-[11px] uppercase tracking-wider font-semibold text-slate-400">Barcode</th>
-                <th className="text-left py-2 px-3 text-[11px] uppercase tracking-wider font-semibold text-slate-400">Listing</th>
-                <th className="text-left py-2 px-3 text-[11px] uppercase tracking-wider font-semibold text-slate-400">Show</th>
-                <th className="text-left py-2 px-3 text-[11px] uppercase tracking-wider font-semibold text-slate-400">Scanned</th>
-              </tr>
-            </thead>
-            <tbody>
-              {recentScans.map(scan => (
-                <tr key={scan.id} className="border-b border-white/[0.04] hover:bg-white/[0.02]">
-                  <td className="py-2 px-3 font-mono text-xs text-slate-300">{scan.barcode}</td>
-                  <td className="py-2 px-3 text-cyan-400">#{scan.listing_number}</td>
-                  <td className="py-2 px-3 text-slate-400">{formatShowName(scan.show_name)}</td>
-                  <td className="py-2 px-3 text-slate-500 text-xs">{formatTime(scan.scanned_at)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+      {/* Scan feed */}
+      <div className="space-y-1 max-h-48 overflow-y-auto">
+        {scans.length === 0 ? (
+          <div className="text-slate-500 text-sm py-2">No scans yet</div>
+        ) : (
+          scans.map((scan, i) => (
+            <div 
+              key={i} 
+              className={`flex items-center justify-between text-xs py-1.5 px-2 rounded-lg ${i === 0 && isActive ? 'bg-emerald-500/10' : 'bg-slate-800/30'}`}
+            >
+              <span className="font-mono text-slate-300 truncate flex-1">{scan.barcode}</span>
+              {scan.extra && <span className="text-cyan-400 mx-2">{scan.extra}</span>}
+              <span className={`${i === 0 && isActive ? 'text-emerald-400' : 'text-slate-500'} ml-2 whitespace-nowrap`}>
+                {timeAgo(scan.time)}
+              </span>
+            </div>
+          ))
+        )}
       </div>
     </div>
   )
