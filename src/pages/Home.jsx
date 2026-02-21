@@ -4,22 +4,15 @@ import { supabase } from '../lib/supabase'
 
 export default function Home() {
   const navigate = useNavigate()
-  const [dbStatus, setDbStatus] = useState('checking')
-
-  useEffect(() => {
-    supabase.from('loads').select('id', { count: 'exact', head: true })
-      .then(({ error }) => { setDbStatus(error ? 'error' : 'connected') })
-      .catch(() => setDbStatus('error'))
-  }, [])
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-start px-4 py-8 bg-[#0a0f1a]">
+    <div className="h-screen flex flex-col items-center justify-start px-4 py-6 bg-[#0a0f1a] overflow-hidden">
       {/* Subtle gradient overlay */}
       <div className="fixed inset-0 bg-gradient-to-br from-purple-900/20 via-transparent to-cyan-900/10 pointer-events-none" />
       
       <div className="w-full max-w-md flex flex-col items-center relative z-10">
         {/* Logo / Header */}
-        <div className="mb-8 text-center">
+        <div className="mb-6 text-center">
           <h1 className="text-4xl font-extrabold text-white mb-1 tracking-tight">Jumpstart</h1>
           <p className="text-slate-500 text-sm font-medium">Inventory Management</p>
         </div>
@@ -106,7 +99,7 @@ export default function Home() {
             </div>
           </button>
 
-          {/* Kickstart Button - now pink/magenta instead of orange */}
+          {/* Kickstart Button */}
           <button
             onClick={() => navigate('/kickstart')}
             className="group w-full p-5 rounded-2xl relative overflow-hidden
@@ -159,12 +152,6 @@ export default function Home() {
               </svg>
             </div>
           </button>
-        </div>
-
-        {/* DB status - more subtle */}
-        <div className="mt-8 flex items-center gap-2 text-xs text-slate-600">
-          <div className={`w-1.5 h-1.5 rounded-full ${dbStatus === 'connected' ? 'bg-cyan-500' : dbStatus === 'error' ? 'bg-pink-500' : 'bg-purple-500 animate-pulse'}`} />
-          <span>{dbStatus === 'connected' ? 'Connected' : dbStatus === 'error' ? 'Connection error' : 'Connecting...'}</span>
         </div>
       </div>
     </div>

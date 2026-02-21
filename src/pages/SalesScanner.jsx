@@ -33,6 +33,9 @@ export default function SalesScanner() {
   const totalItems = showData?.totalItems || 0
   const scannedCount = realScannedCount
   const remainingCount = Math.max(0, totalItems - scannedCount)
+  
+  // Determine which table to use based on channel
+  const scansTable = showData?.channel === 'Kickstart' ? 'kickstart_sold_scans' : 'jumpstart_sold_scans'
 
   // Load show data if we don't have it from navigation state
   useEffect(() => {
@@ -64,12 +67,13 @@ export default function SalesScanner() {
 
   // Poll for real scanned count (multi-device support)
   useEffect(() => {
-    if (showExcludedModal || !showName) return
+    if (showExcludedModal || !showName || !showData?.channel) return
 
     const fetchRealCount = async () => {
       try {
+        const table = showData.channel === 'Kickstart' ? 'kickstart_sold_scans' : 'jumpstart_sold_scans'
         const { count } = await supabase
-          .from('jumpstart_sold_scans')
+          .from(table)
           .select('id', { count: 'exact', head: true })
           .eq('show_id', showId)
         setRealScannedCount(count || 0)
@@ -81,7 +85,7 @@ export default function SalesScanner() {
     fetchRealCount()
     const interval = setInterval(fetchRealCount, 5000)
     return () => clearInterval(interval)
-  }, [showName, showExcludedModal, showId])
+  }, [showName, showExcludedModal, showId, showData?.channel])
 
   // Check for completion
   useEffect(() => {
@@ -171,11 +175,14 @@ export default function SalesScanner() {
     if (e) e.preventDefault()
     if (submitting) return
 
+    const isKickstart = showData?.channel === 'Kickstart'
+    const table = isKickstart ? 'kickstart_sold_scans' : 'jumpstart_sold_scans'
+
     // Check listing number status
     try {
       // Check for duplicate scan
       const { data: dupCheck } = await supabase
-        .from('jumpstart_sold_scans')
+        .from(table)
         .select('id')
         .eq('show_id', showId)
         .eq('listing_number', listingNumber)
@@ -219,13 +226,31 @@ export default function SalesScanner() {
 
       setScans(prev => [...prev, scan])
 
-      // Fire-and-forget: log scan to Supabase
-      supabase.from('jumpstart_sold_scans').insert({
+      // Build insert object
+      const insertData = {
         show_id: showId,
         barcode: scannedBarcode,
         listing_number: listingNumber,
         scanned_by: 'phone'
-      }).then(() => {
+      }
+
+      // For Kickstart, look up the intake_id by matching UPC
+      if (isKickstart) {
+        const { data: intakeMatch } = await supabase
+          .from('kickstart_intake')
+          .select('id')
+          .eq('upc', scannedBarcode)
+          .eq('status', 'enriched')
+          .is('sale_price', null)  // Not yet sold
+          .limit(1)
+        
+        if (intakeMatch && intakeMatch.length > 0) {
+          insertData.intake_id = intakeMatch[0].id
+        }
+      }
+
+      // Fire-and-forget: log scan to Supabase
+      supabase.from(table).insert(insertData).then(() => {
         // Update show progress
         supabase.from('shows')
           .update({ scanned_count: scannedCount + 1 })
@@ -278,26 +303,22 @@ export default function SalesScanner() {
             <div className="space-y-2 mb-4">
               {excludedItems.map((item, i) => (
                 <div key={i} className="bg-pink-500/10 rounded-xl p-3 flex items-center justify-between">
-                  <div>
-                    <span className="text-pink-100 font-bold text-lg">#{item.listingNum}</span>
-                    <span className="text-pink-200/60 text-sm ml-2">{item.productName}</span>
+                  <div className="flex-1">
+                    <p className="text-pink-100 text-sm font-semibold">#{item.listingNum}</p>
+                    <p className="text-pink-200/60 text-xs truncate">{item.productName}</p>
                   </div>
-                  <span className="text-pink-300/50 text-xs uppercase font-semibold">{item.status}</span>
+                  <span className={`text-xs px-2 py-1 rounded-full ${item.status === 'failed' ? 'bg-red-500/30 text-red-300' : 'bg-amber-500/30 text-amber-300'}`}>
+                    {item.status}
+                  </span>
                 </div>
               ))}
             </div>
-            <p className="text-center text-pink-200/50 text-sm">
-              Scanning {totalItems} of {totalItems + excludedItems.length} listings
-            </p>
           </div>
           <button
-            onClick={() => {
-              setShowExcludedModal(false)
-              startScanner()
-            }}
-            className="w-full py-4 rounded-2xl font-bold text-lg bg-gradient-to-r from-cyan-600 to-teal-600 text-white shadow-lg shadow-cyan-500/30 hover:scale-[1.02] active:scale-[0.98] transition-all"
+            onClick={() => { setShowExcludedModal(false); startScanner(); }}
+            className="w-full py-4 px-8 rounded-2xl font-bold text-lg bg-gradient-to-r from-cyan-600 to-teal-600 text-white shadow-lg shadow-cyan-500/30 hover:scale-[1.02] active:scale-[0.98] transition-all"
           >
-            Got It
+            Got it — Start Scanning
           </button>
         </div>
       </div>
@@ -307,16 +328,14 @@ export default function SalesScanner() {
   // Completion screen
   if (showCompletion) {
     return (
-      <div className="h-screen flex items-center justify-center bg-gradient-to-br from-cyan-600 via-teal-500 to-emerald-500">
-        <div className="text-center p-8">
+      <div className="h-screen flex items-center justify-center bg-gradient-to-br from-green-600 via-emerald-500 to-teal-500 p-6">
+        <div className="text-center">
           <div className="text-9xl mb-6">🎉</div>
-          <h2 className="text-6xl font-black text-white mb-4">All Done!</h2>
-          <p className="text-2xl text-white/80 mb-8">
-            {totalItems} of {totalItems} items scanned
-          </p>
+          <h2 className="text-4xl font-black text-white mb-2">All Done!</h2>
+          <p className="text-white/80 text-lg mb-8">{totalItems} items scanned</p>
           <button
             onClick={() => navigate('/sales')}
-            className="bg-white text-slate-900 px-12 py-4 rounded-2xl font-bold text-xl hover:scale-105 active:scale-95 transition-all shadow-2xl"
+            className="px-8 py-4 bg-white/20 backdrop-blur rounded-2xl text-white font-bold text-lg hover:bg-white/30 transition-all"
           >
             Back to Shows
           </button>
@@ -325,42 +344,33 @@ export default function SalesScanner() {
     )
   }
 
+  // Accent colors based on channel
+  const isKickstart = showData?.channel === 'Kickstart'
+  const gradientFrom = isKickstart ? 'from-fuchsia-600' : 'from-cyan-600'
+  const gradientTo = isKickstart ? 'to-pink-600' : 'to-teal-600'
+  const shadowColor = isKickstart ? 'shadow-fuchsia-500/30' : 'shadow-cyan-500/30'
+
   return (
-    <div className="h-screen overflow-hidden flex flex-col bg-[#0a0f1a]">
-      <div className="fixed inset-0 bg-gradient-to-br from-cyan-900/20 via-transparent to-teal-900/10 pointer-events-none" />
+    <div className="h-screen flex flex-col bg-[#0a0f1a]">
+      <div className={`fixed inset-0 bg-gradient-to-br ${isKickstart ? 'from-fuchsia-900/20 via-transparent to-pink-900/10' : 'from-cyan-900/20 via-transparent to-teal-900/10'} pointer-events-none`} />
 
+      {/* Header */}
+      <div className="relative z-10 bg-slate-800/80 backdrop-blur-xl px-4 py-3 flex items-center justify-between border-b border-white/5">
+        <button onClick={handleFinish} className="bg-white/10 px-4 py-2 rounded-full text-white text-sm font-semibold">
+          ← Exit
+        </button>
+        <div className="text-center flex-1 px-2">
+          <p className="text-white font-semibold text-sm truncate">{showName}</p>
+          <p className="text-white/50 text-xs">{remainingCount} remaining</p>
+        </div>
+        <div className={`bg-gradient-to-r ${gradientFrom} ${gradientTo} px-4 py-2 rounded-full`}>
+          <span className="text-white font-bold">{scannedCount}/{totalItems}</span>
+        </div>
+      </div>
+
+      {/* Main Content */}
       {!scannedBarcode ? (
-        <div className="flex-1 flex flex-col overflow-hidden">
-          {/* Header with Progress Counter */}
-          <div className="bg-slate-800 px-4 py-3 border-b border-white/5">
-            <div className="flex items-center justify-between mb-2">
-              <button onClick={() => navigate('/sales')} className="text-white/80 hover:text-white text-2xl transition-colors">←</button>
-              <div className="text-center">
-                <h2 className="text-base font-bold text-white">{showName}</h2>
-              </div>
-              <div className="w-8"></div>
-            </div>
-            
-            {/* Progress Counter */}
-            <div className="flex items-center justify-center gap-4 mt-2">
-              <div className="text-center">
-                <div className="text-3xl font-black text-teal-400">{scannedCount}</div>
-                <div className="text-xs text-white/50">Scanned</div>
-              </div>
-              <div className="text-white/30 text-2xl">/</div>
-              <div className="text-center">
-                <div className="text-3xl font-black text-white">{totalItems}</div>
-                <div className="text-xs text-white/50">Total</div>
-              </div>
-              <div className="text-white/30 text-2xl">→</div>
-              <div className="text-center">
-                <div className="text-3xl font-black text-amber-400">{remainingCount}</div>
-                <div className="text-xs text-white/50">Remaining</div>
-              </div>
-            </div>
-          </div>
-
-          {/* Camera */}
+        <div className="relative z-10 flex-1 flex flex-col">
           {cameraError ? (
             <div className="flex-1 flex items-center justify-center bg-slate-900">
               <div className="text-center">
@@ -394,15 +404,14 @@ export default function SalesScanner() {
             </button>
             <button
               onClick={handleFinish}
-              className="bg-teal-500 hover:bg-teal-600 px-8 py-3 rounded-full text-white font-bold text-lg
-                         shadow-xl transition-colors"
+              className={`bg-gradient-to-r ${gradientFrom} ${gradientTo} px-8 py-3 rounded-full text-white font-bold text-lg shadow-xl transition-colors`}
             >
               Finish
             </button>
           </div>
         </div>
       ) : showSuccess ? (
-        <div className="flex-1 flex items-center justify-center bg-gradient-to-br from-green-500/95 via-emerald-500/95 to-teal-500/95">
+        <div className={`flex-1 flex items-center justify-center bg-gradient-to-br ${isKickstart ? 'from-fuchsia-500/95 via-pink-500/95 to-rose-500/95' : 'from-green-500/95 via-emerald-500/95 to-teal-500/95'}`}>
           <div className="text-center">
             <div className="text-9xl mb-6">✓</div>
             <h2 className="text-6xl font-black text-white">Saved!</h2>
@@ -411,7 +420,7 @@ export default function SalesScanner() {
       ) : (
         <div className="flex-1 flex flex-col items-center justify-center p-4 overflow-hidden">
           <div className="w-full max-w-md flex flex-col" style={{ maxHeight: 'calc(100vh - 120px)' }}>
-            <div className="bg-gradient-to-br from-teal-500/20 via-cyan-500/20 to-blue-500/20 backdrop-blur-lg rounded-3xl p-4 mb-4 border border-cyan-400/30">
+            <div className={`bg-gradient-to-br ${isKickstart ? 'from-fuchsia-500/20 via-pink-500/20 to-rose-500/20 border-fuchsia-400/30' : 'from-teal-500/20 via-cyan-500/20 to-blue-500/20 border-cyan-400/30'} backdrop-blur-lg rounded-3xl p-4 mb-4 border`}>
               <p className="text-xs text-white/70 mb-1">Scanned Barcode</p>
               <p className="text-xl font-bold text-white break-all">{scannedBarcode}</p>
             </div>
@@ -442,7 +451,7 @@ export default function SalesScanner() {
                       setListingNumber(prev => prev + num.toString())
                       setShowWarning(null)
                     }}
-                    className="py-3 text-2xl font-semibold bg-gradient-to-br from-teal-500 to-cyan-500 text-white border-2 border-cyan-400/50 rounded-xl hover:scale-105 transition-all shadow-xl shadow-teal-500/30"
+                    className={`py-3 text-2xl font-semibold bg-gradient-to-br ${isKickstart ? 'from-fuchsia-500 to-pink-500 border-fuchsia-400/50 shadow-fuchsia-500/30' : 'from-teal-500 to-cyan-500 border-cyan-400/50 shadow-teal-500/30'} text-white border-2 rounded-xl hover:scale-105 transition-all shadow-xl`}
                   >
                     {num}
                   </button>
@@ -486,7 +495,7 @@ export default function SalesScanner() {
                   disabled={showWarning ? false : (!listingNumber || submitting)}
                   className={`flex-1 py-4 px-6 rounded-2xl font-bold text-lg transition-all ${
                     showWarning || (listingNumber && !submitting)
-                      ? 'bg-gradient-to-r from-teal-500 to-cyan-500 border-2 border-cyan-400/60 text-white shadow-2xl shadow-teal-500/50 hover:scale-105'
+                      ? `bg-gradient-to-r ${gradientFrom} ${gradientTo} border-2 ${isKickstart ? 'border-fuchsia-400/60' : 'border-cyan-400/60'} text-white shadow-2xl ${shadowColor} hover:scale-105`
                       : 'bg-white/5 border-2 border-white/10 text-white/30 cursor-not-allowed'
                   }`}
                 >

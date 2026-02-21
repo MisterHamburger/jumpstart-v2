@@ -14,15 +14,8 @@ export default function KickstartSort() {
   const [quantity, setQuantity] = useState(1)
   const [saving, setSaving] = useState(false)
   const [showSaved, setShowSaved] = useState(false)
-  const [itemCount, setItemCount] = useState(0)
   const [sessionCount, setSessionCount] = useState(0)
   const photoInputRef = useRef(null)
-
-  // Fetch total count on mount
-  useEffect(() => {
-    supabase.from('kickstart_intake').select('id', { count: 'exact', head: true })
-      .then(({ count }) => setItemCount(count || 0))
-  }, [])
 
   const getCost = () => {
     if (showCustom) return parseFloat(customPrice) || 0
@@ -74,8 +67,6 @@ export default function KickstartSort() {
       const { error } = await supabase.from('kickstart_intake').insert(rows)
       if (error) throw error
 
-      const newTotal = itemCount + quantity
-      setItemCount(newTotal)
       setSessionCount(prev => prev + quantity)
 
       // Show saved flash
@@ -115,14 +106,15 @@ export default function KickstartSort() {
   }
 
   return (
-    <div className="h-screen flex flex-col bg-[#0a0f1a]">
+    <div className="h-screen flex flex-col bg-[#0a0f1a] overflow-hidden">
       {/* Subtle gradient overlay */}
       <div className="fixed inset-0 bg-gradient-to-br from-fuchsia-900/20 via-transparent to-pink-900/10 pointer-events-none" />
-      {/* Header */}
-      <div className="p-3 flex items-center justify-between backdrop-blur-xl bg-white/5 border-b border-white/10 shrink-0">
+      
+      {/* Header - compact */}
+      <div className="relative z-10 px-3 py-2 flex items-center justify-between border-b border-white/10 shrink-0">
         <button
           onClick={() => step === 'bin' ? navigate('/') : handleChangeBin()}
-          className="bg-white/10 hover:bg-white/20 backdrop-blur-lg px-4 py-2 rounded-full border border-white/20 text-white font-semibold text-sm"
+          className="bg-white/10 hover:bg-white/20 backdrop-blur-lg px-3 py-1.5 rounded-full border border-white/20 text-white font-semibold text-sm"
         >
           {step === 'bin' ? '← Home' : '← Change Bin'}
         </button>
@@ -134,7 +126,7 @@ export default function KickstartSort() {
 
       {/* Active bin indicator (when not on bin selection) */}
       {step !== 'bin' && (
-        <div className="mx-4 mt-3 bg-fuchsia-500/20 border border-fuchsia-500/30 rounded-xl px-4 py-2 flex items-center justify-between">
+        <div className="relative z-10 mx-3 mt-2 bg-fuchsia-500/20 border border-fuchsia-500/30 rounded-xl px-4 py-2 flex items-center justify-between shrink-0">
           <span className="text-fuchsia-200 text-sm font-semibold">Active Bin</span>
           <span className="text-fuchsia-100 font-bold text-lg">${getCost()}</span>
         </div>
@@ -142,16 +134,16 @@ export default function KickstartSort() {
 
       {/* === STEP 1: BIN SELECTION === */}
       {step === 'bin' && (
-        <div className="flex-1 flex flex-col items-center justify-center p-6">
-          <h2 className="text-2xl font-bold text-white mb-2 tracking-tight">Select Price Bin</h2>
-          <p className="text-slate-400 mb-8">What did we pay per item?</p>
+        <div className="relative z-10 flex-1 flex flex-col items-center pt-4 px-4">
+          <h2 className="text-xl font-bold text-white mb-1 tracking-tight">Select Price Bin</h2>
+          <p className="text-slate-400 mb-4 text-sm">What did we pay per item?</p>
 
-          <div className="w-full max-w-sm grid grid-cols-2 gap-3 mb-4">
+          <div className="w-full max-w-sm grid grid-cols-2 gap-3 mb-3">
             {PRICE_BINS.map(price => (
               <button
                 key={price}
                 onClick={() => handleBinSelect(price)}
-                className="py-6 rounded-2xl bg-gradient-to-br from-fuchsia-500/80 to-pink-500/80 border-2 border-fuchsia-400/40 text-white font-black text-3xl shadow-xl shadow-fuchsia-500/20 hover:scale-105 active:scale-95 transition-all"
+                className="py-5 rounded-2xl bg-gradient-to-br from-fuchsia-500/80 to-pink-500/80 border-2 border-fuchsia-400/40 text-white font-black text-3xl shadow-xl shadow-fuchsia-500/20 hover:scale-105 active:scale-95 transition-all"
               >
                 ${price}
               </button>
@@ -162,7 +154,7 @@ export default function KickstartSort() {
           {!showCustom ? (
             <button
               onClick={handleCustomSelect}
-              className="w-full max-w-sm py-4 rounded-2xl bg-white/10 border border-white/20 text-white/70 font-semibold text-lg hover:bg-white/20 transition-all"
+              className="w-full max-w-sm py-3 rounded-2xl bg-white/10 border border-white/20 text-white/70 font-semibold text-lg hover:bg-white/20 transition-all"
             >
               Other Amount
             </button>
@@ -177,8 +169,7 @@ export default function KickstartSort() {
                     onChange={e => setCustomPrice(e.target.value)}
                     placeholder="0.00"
                     autoFocus
-                    className="w-full bg-white/10 border border-white/20 rounded-xl pl-8 pr-4 py-4 text-white text-xl font-bold placeholder-slate-500 focus:outline-none focus:border-fuchsia-400/50"
-                    style={{ fontSize: '20px' }}
+                    className="w-full bg-white/10 border border-white/20 rounded-xl pl-8 pr-4 py-3 text-white text-xl font-bold placeholder-slate-500 focus:outline-none focus:border-fuchsia-400/50"
                   />
                 </div>
                 <button
@@ -200,10 +191,10 @@ export default function KickstartSort() {
 
       {/* === STEP 2: PHOTO CAPTURE === */}
       {step === 'capture' && (
-        <div className="flex-1 flex flex-col items-center justify-center p-6">
-          <div className="text-center mb-8">
-            <h2 className="text-3xl font-bold text-white mb-3 tracking-tight">Snap the Tag</h2>
-            <p className="text-slate-400 text-lg">Photo the brand tag (MSRP + barcode side)</p>
+        <div className="relative z-10 flex-1 flex flex-col items-center justify-center px-4">
+          <div className="text-center mb-6">
+            <h2 className="text-2xl font-bold text-white mb-2 tracking-tight">Snap the Tag</h2>
+            <p className="text-slate-400 text-base">Photo the brand tag (MSRP + barcode side)</p>
           </div>
 
           <input
@@ -217,19 +208,19 @@ export default function KickstartSort() {
 
           <button
             onClick={() => photoInputRef.current?.click()}
-            className="w-28 h-28 rounded-full bg-gradient-to-br from-fuchsia-500 to-pink-500 shadow-2xl shadow-fuchsia-500/40 flex items-center justify-center hover:scale-105 active:scale-95 transition-all"
+            className="w-24 h-24 rounded-full bg-gradient-to-br from-fuchsia-500 to-pink-500 shadow-2xl shadow-fuchsia-500/40 flex items-center justify-center hover:scale-105 active:scale-95 transition-all"
           >
-            <svg className="w-12 h-12 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
             </svg>
           </button>
-          <p className="text-slate-500 text-sm mt-4">Tap to take photo</p>
+          <p className="text-slate-500 text-sm mt-3">Tap to take photo</p>
 
           {/* Skip photo option */}
           <button
             onClick={() => { setPhoto(null); setStep('confirm') }}
-            className="mt-8 text-white/40 text-sm underline"
+            className="mt-6 text-white/40 text-sm underline"
           >
             Skip photo (enter data later)
           </button>
@@ -238,11 +229,11 @@ export default function KickstartSort() {
 
       {/* === STEP 3: CONFIRM + QUANTITY === */}
       {step === 'confirm' && (
-        <div className="flex-1 flex flex-col p-4 overflow-hidden">
+        <div className="relative z-10 flex-1 flex flex-col p-4">
           <div className="flex-1 flex flex-col items-center justify-center">
             {/* Photo preview */}
             {photo && (
-              <div className="w-40 h-40 rounded-2xl overflow-hidden border-2 border-white/20 mb-4">
+              <div className="w-32 h-32 rounded-2xl overflow-hidden border-2 border-white/20 mb-3">
                 <img src={photo} alt="Tag" className="w-full h-full object-cover" />
               </div>
             )}
@@ -251,33 +242,33 @@ export default function KickstartSort() {
             {photo && (
               <button
                 onClick={() => { setPhoto(null); setStep('capture') }}
-                className="text-fuchsia-400 text-sm font-semibold mb-6"
+                className="text-fuchsia-400 text-sm font-semibold mb-4"
               >
                 Retake Photo
               </button>
             )}
 
             {/* Cost display */}
-            <div className="bg-white/10 rounded-2xl px-6 py-3 border border-white/10 mb-6">
+            <div className="bg-white/10 rounded-2xl px-5 py-2 border border-white/10 mb-4">
               <span className="text-slate-400 text-sm">Cost per item: </span>
-              <span className="text-white font-bold text-xl">${getCost()}</span>
+              <span className="text-white font-bold text-lg">${getCost()}</span>
             </div>
 
             {/* Quantity selector */}
-            <div className="flex items-center gap-6 mb-8">
+            <div className="flex items-center gap-5 mb-6">
               <button
                 onClick={() => setQuantity(q => Math.max(1, q - 1))}
-                className="w-14 h-14 rounded-full bg-white/10 border border-white/20 text-white text-2xl font-bold flex items-center justify-center hover:bg-white/20 active:scale-95 transition-all"
+                className="w-12 h-12 rounded-full bg-white/10 border border-white/20 text-white text-2xl font-bold flex items-center justify-center hover:bg-white/20 active:scale-95 transition-all"
               >
                 −
               </button>
               <div className="text-center">
-                <div className="text-5xl font-black text-white">{quantity}</div>
+                <div className="text-4xl font-black text-white">{quantity}</div>
                 <div className="text-xs text-slate-500 uppercase tracking-wider mt-1">Quantity</div>
               </div>
               <button
                 onClick={() => setQuantity(q => q + 1)}
-                className="w-14 h-14 rounded-full bg-gradient-to-br from-fuchsia-500 to-pink-500 text-white text-2xl font-bold flex items-center justify-center hover:scale-105 active:scale-95 transition-all shadow-lg shadow-fuchsia-500/30"
+                className="w-12 h-12 rounded-full bg-gradient-to-br from-fuchsia-500 to-pink-500 text-white text-2xl font-bold flex items-center justify-center hover:scale-105 active:scale-95 transition-all shadow-lg shadow-fuchsia-500/30"
               >
                 +
               </button>
@@ -285,7 +276,7 @@ export default function KickstartSort() {
 
             {/* Total */}
             {quantity > 1 && (
-              <p className="text-slate-400 text-sm mb-4">
+              <p className="text-slate-400 text-sm mb-3">
                 Total: <span className="text-white font-bold">${(getCost() * quantity).toFixed(2)}</span> for {quantity} items
               </p>
             )}
@@ -295,7 +286,7 @@ export default function KickstartSort() {
           <button
             onClick={handleSave}
             disabled={saving}
-            className={`w-full py-5 rounded-2xl font-bold text-xl transition-all ${
+            className={`w-full py-4 rounded-2xl font-bold text-xl transition-all shrink-0 ${
               saving
                 ? 'bg-white/10 text-white/50 cursor-wait'
                 : 'bg-gradient-to-r from-fuchsia-500 to-pink-500 text-white shadow-2xl shadow-fuchsia-500/30 hover:scale-[1.02] active:scale-[0.98]'

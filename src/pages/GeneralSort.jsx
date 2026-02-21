@@ -7,23 +7,10 @@ import { normalizeBarcode } from '../lib/barcodes'
 export default function GeneralSort() {
   const navigate = useNavigate()
   const [scannedItem, setScannedItem] = useState(null)
-  const [sortedCount, setSortedCount] = useState(null)
   const [isScanning, setIsScanning] = useState(false)
   const [cameraError, setCameraError] = useState(null)
   const html5QrcodeRef = useRef(null)
   const processingRef = useRef(false)
-
-  useEffect(() => {
-    supabase.from('jumpstart_sort_log').select('id', { count: 'exact', head: true })
-      .then(({ count }) => setSortedCount(count || 0))
-      .catch(() => setSortedCount(0))
-  }, [])
-
-  const [totalItems, setTotalItems] = useState(4639)
-  useEffect(() => {
-    supabase.from('jumpstart_manifest').select('id', { count: 'exact', head: true })
-      .then(({ count }) => setTotalItems(count || 4639))
-  }, [])
 
   useEffect(() => {
     startScanner()
@@ -104,7 +91,6 @@ export default function GeneralSort() {
           vendor: data.vendor || ''
         }
         setScannedItem(item)
-        setSortedCount(prev => (prev || 0) + 1)
 
         const { error: insertError } = await supabase.from('jumpstart_sort_log').insert({
           barcode,
@@ -145,39 +131,31 @@ export default function GeneralSort() {
         return {
           gradient: 'from-violet-600 via-purple-600 to-fuchsia-600',
           glow: 'shadow-purple-500/50',
-          text: 'ZONE 1',
-          subtext: 'Premium Items ($98+)'
+          text: 'ZONE 1'
         }
       case 2:
         return {
           gradient: 'from-cyan-500 via-teal-500 to-emerald-500',
           glow: 'shadow-cyan-500/50',
-          text: 'ZONE 2',
-          subtext: 'Standard Items'
+          text: 'ZONE 2'
         }
       case 3:
-        const bundleText = scannedItem.bundleNumber === 'Leftover'
-          ? 'Bundle Leftover'
-          : `Bundle #${scannedItem.bundleNumber}`
         return {
           gradient: 'from-pink-500 via-rose-500 to-fuchsia-500',
           glow: 'shadow-pink-500/50',
-          text: 'ZONE 3',
-          subtext: bundleText
+          text: 'ZONE 3'
         }
       case 4:
         return {
           gradient: 'from-fuchsia-500 via-pink-500 to-rose-500',
           glow: 'shadow-fuchsia-500/50',
-          text: 'ZONE 4',
-          subtext: 'Needs Review'
+          text: 'ZONE 4'
         }
       default:
         return {
           gradient: 'from-slate-600 via-slate-700 to-slate-800',
           glow: 'shadow-slate-500/30',
-          text: 'NOT FOUND',
-          subtext: 'Barcode not in system'
+          text: 'NOT FOUND'
         }
     }
   }
@@ -185,55 +163,46 @@ export default function GeneralSort() {
   const zoneDisplay = getZoneDisplay()
 
   return (
-    <div className="min-h-screen flex flex-col bg-[#0a0f1a]">
+    <div className="h-screen flex flex-col bg-[#0a0f1a] overflow-hidden">
       {/* Gradient overlay */}
       <div className="fixed inset-0 bg-gradient-to-br from-purple-900/20 via-transparent to-cyan-900/10 pointer-events-none" />
       
-      {/* Header */}
-      <div className="relative z-10 p-4 flex items-center justify-between border-b border-white/[0.06]">
-        <div className="flex items-center gap-3">
-          <button 
-            onClick={() => { stopScanner(); navigate('/') }}
-            className="flex items-center gap-2 bg-white/[0.06] hover:bg-white/[0.1] backdrop-blur-xl px-4 py-2 rounded-xl border border-white/[0.08] transition-all"
-          >
-            <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-            </svg>
-            <span className="text-white text-sm font-medium">Home</span>
-          </button>
-          <h1 className="text-lg font-semibold text-white">Sort</h1>
-        </div>
-        <div className="bg-white/[0.06] backdrop-blur-xl px-4 py-2 rounded-xl border border-white/[0.08]">
-          <span className="text-white text-sm font-semibold">
-            <span className="text-cyan-400">{sortedCount !== null ? sortedCount : '…'}</span>
-            <span className="text-slate-500"> / {totalItems}</span>
-          </span>
-        </div>
+      {/* Header - compact */}
+      <div className="relative z-10 px-3 py-2 flex items-center border-b border-white/[0.06] shrink-0">
+        <button 
+          onClick={() => { stopScanner(); navigate('/') }}
+          className="flex items-center gap-2 bg-white/[0.06] hover:bg-white/[0.1] backdrop-blur-xl px-3 py-1.5 rounded-xl border border-white/[0.08] transition-all"
+        >
+          <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+          </svg>
+          <span className="text-white text-sm font-medium">Home</span>
+        </button>
+        <h1 className="ml-3 text-lg font-semibold text-white">Sort</h1>
       </div>
 
-      {/* Scanner */}
-      <div className={`relative z-10 flex-1 flex flex-col items-center justify-center p-4 ${scannedItem ? 'hidden' : ''}`}>
-        <div className="mb-6 text-center">
-          <h2 className="text-2xl font-bold text-white mb-2 tracking-tight">Scan Barcode</h2>
+      {/* Scanner - minimal top padding */}
+      <div className={`relative z-10 flex-1 flex flex-col items-center pt-2 px-4 ${scannedItem ? 'hidden' : ''}`}>
+        <div className="mb-2 text-center">
+          <h2 className="text-xl font-bold text-white mb-1 tracking-tight">Scan Barcode</h2>
           <p className="text-slate-500 text-sm">Position barcode in frame</p>
         </div>
         <div 
           id="qr-reader" 
-          className="w-full max-w-md rounded-2xl overflow-hidden border border-white/[0.08] shadow-2xl shadow-black/50"
-          style={{ maxHeight: '55vh' }}
+          className="w-full max-w-md flex-1 rounded-2xl overflow-hidden border border-white/[0.08] shadow-2xl shadow-black/50"
+          style={{ maxHeight: '65vh' }}
         />
       </div>
 
-      {/* Zone Display */}
+      {/* Zone Display - full screen takeover */}
       {scannedItem && (
-        <div className={`relative z-10 flex-1 flex flex-col items-center justify-center p-6 bg-gradient-to-br ${zoneDisplay.gradient}`}>
+        <div className={`relative z-10 flex-1 flex flex-col items-center justify-center p-4 bg-gradient-to-br ${zoneDisplay.gradient}`}>
           <div className={`absolute inset-0 ${zoneDisplay.glow} shadow-[0_0_120px_40px] opacity-30`} />
           
-          <div className="relative text-center mb-10">
-            <h2 className="text-7xl font-black text-white mb-4 tracking-tight drop-shadow-lg">
+          <div className="relative text-center mb-8">
+            <h2 className="text-8xl font-black text-white tracking-tight drop-shadow-lg">
               {zoneDisplay.text}
             </h2>
-            <p className="text-2xl text-white/80 font-medium">{zoneDisplay.subtext}</p>
           </div>
 
           <button

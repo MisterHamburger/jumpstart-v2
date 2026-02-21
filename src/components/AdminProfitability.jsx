@@ -3,20 +3,40 @@ import { supabase } from '../lib/supabase'
 
 function formatShowName(name) {
   if (!name) return 'All Shows'
-  const match = name.match(/(\d{4})-(\d{2})-(\d{2})-(\w+)-(\w+)/)
-  if (!match) return name
-  const [, year, month, day, channel, time] = match
-  const monthNames = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-  return `${monthNames[parseInt(month)]} ${parseInt(day)} ${time.charAt(0).toUpperCase() + time.slice(1)}`
+  // New format: 02-19-2026-Jumpstart-Bri
+  const newMatch = name.match(/^(\d{2})-(\d{2})-(\d{4})-(\w+)-(\w+)$/)
+  if (newMatch) {
+    const [, month, day, year, channel, streamer] = newMatch
+    const monthNames = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+    return `${monthNames[parseInt(month)]} ${parseInt(day)} - ${streamer}`
+  }
+  // Old format: 2026-02-19-Jumpstart-evening
+  const oldMatch = name.match(/(\d{4})-(\d{2})-(\d{2})-(\w+)-(\w+)/)
+  if (oldMatch) {
+    const [, year, month, day, channel, time] = oldMatch
+    const monthNames = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+    return `${monthNames[parseInt(month)]} ${parseInt(day)} - ${time.charAt(0).toUpperCase() + time.slice(1)}`
+  }
+  return name
 }
 
 function formatShowNameFull(name) {
   if (!name) return 'All Shows'
-  const match = name.match(/(\d{4})-(\d{2})-(\d{2})-(\w+)-(\w+)/)
-  if (!match) return name
-  const [, year, month, day, channel, time] = match
-  const monthNames = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-  return `${monthNames[parseInt(month)]} ${parseInt(day)} - ${channel} ${time.charAt(0).toUpperCase() + time.slice(1)}`
+  // New format: 02-19-2026-Jumpstart-Bri
+  const newMatch = name.match(/^(\d{2})-(\d{2})-(\d{4})-(\w+)-(\w+)$/)
+  if (newMatch) {
+    const [, month, day, year, channel, streamer] = newMatch
+    const monthNames = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+    return `${monthNames[parseInt(month)]} ${parseInt(day)} - ${channel} - ${streamer}`
+  }
+  // Old format: 2026-02-19-Jumpstart-evening
+  const oldMatch = name.match(/(\d{4})-(\d{2})-(\d{2})-(\w+)-(\w+)/)
+  if (oldMatch) {
+    const [, year, month, day, channel, time] = oldMatch
+    const monthNames = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+    return `${monthNames[parseInt(month)]} ${parseInt(day)} - ${channel} - ${time.charAt(0).toUpperCase() + time.slice(1)}`
+  }
+  return name
 }
 
 const SORT_OPTIONS = [
@@ -44,13 +64,13 @@ export default function AdminProfitability() {
 
   useEffect(() => {
     async function loadShows() {
-      const { data } = await supabase.from('profitability').select('show_name, channel')
+      // Get unique shows directly from shows table to avoid row limits
+      const { data } = await supabase.from('shows').select('name, channel').order('date', { ascending: false })
       if (data) {
-        const uniqueShows = [...new Set(data.map(d => JSON.stringify({ show_name: d.show_name, channel: d.channel })))]
-          .map(s => JSON.parse(s))
-          .filter(s => s.show_name)
-          .sort((a, b) => b.show_name.localeCompare(a.show_name))
-        setAllShows(uniqueShows)
+        const shows = data
+          .filter(s => s.name)
+          .map(s => ({ show_name: s.name, channel: s.channel }))
+        setAllShows(shows)
       }
     }
     loadShows()
@@ -87,26 +107,25 @@ export default function AdminProfitability() {
   const [fullSummary, setFullSummary] = useState(null)
   useEffect(() => {
     async function loadFullSummary() {
-      let query = supabase.from('profitability').select('profit, net_payout, original_hammer, show_name')
-      if (channel !== 'all') query = query.eq('channel', channel)
-      if (selectedShow !== 'all') query = query.eq('show_name', selectedShow)
-      if (search) query = query.or(`description.ilike.%${search}%,barcode.ilike.%${search}%,category.ilike.%${search}%,product_name.ilike.%${search}%`)
-      if (dateFrom) query = query.gte('show_name', dateFrom)
-      if (dateTo) query = query.lte('show_name', dateTo + '-z')
-      const { data } = await query
-      if (data && data.length > 0) {
-        const totalProfit = data.reduce((sum, item) => sum + Number(item.profit || 0), 0)
-        const totalRevenue = data.reduce((sum, item) => sum + Number(item.net_payout || 0), 0)
-        const totalHammer = data.reduce((sum, item) => sum + Number(item.original_hammer || 0), 0)
-        const count = data.length
+      // Use database function with all filters
+      const { data, error } = await supabase.rpc('get_profitability_summary', {
+        p_channel: channel === 'all' ? null : channel,
+        p_show_name: selectedShow === 'all' ? null : selectedShow,
+        p_search: search || null,
+        p_date_from: dateFrom || null,
+        p_date_to: dateTo || null
+      })
+      
+      if (data && data.length > 0 && !error) {
+        const row = data[0]
         setFullSummary({
-          items_sold: count,
-          total_profit: totalProfit,
-          total_net_revenue: totalRevenue,
-          avg_hammer: count ? totalHammer / count : 0,
-          avg_net: count ? totalRevenue / count : 0,
-          avg_profit_per_item: count ? totalProfit / count : 0,
-          avg_margin: totalRevenue > 0 ? (totalProfit / totalRevenue * 100) : 0,
+          items_sold: row.items_sold,
+          total_profit: row.total_profit,
+          total_net_revenue: row.total_net_revenue,
+          avg_hammer: row.avg_hammer,
+          avg_net: row.avg_net,
+          avg_profit_per_item: row.avg_profit_per_item,
+          avg_margin: row.avg_margin,
         })
       } else {
         setFullSummary(null)
@@ -117,21 +136,20 @@ export default function AdminProfitability() {
 
   const s = fullSummary
 
-  // Styled dropdown classes
+  // Styled dropdown classes - clean style without left border accent
   const dropdownStyles = `
-    relative bg-[#131a2b]
-    border-l-2 border-l-purple-500/50 border-t border-r border-b border-white/[0.08]
+    relative bg-slate-800/50
+    border border-white/[0.08]
     rounded-xl px-4 py-3 text-sm text-white 
-    focus:outline-none focus:border-l-purple-400 focus:border-purple-500/30
+    focus:outline-none focus:border-cyan-500/50
     transition-all duration-200 cursor-pointer
-    shadow-[0_4px_12px_rgba(0,0,0,0.3)]
-    hover:shadow-[0_6px_16px_rgba(0,0,0,0.4)]
-    hover:border-l-purple-400 hover:bg-[#1a2235]
+    shadow-lg shadow-black/20
+    hover:bg-slate-700/50 hover:border-white/[0.12]
     appearance-none
   `
 
   const dropdownArrow = {
-    backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%238b5cf6'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E")`,
+    backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%2394a3b8'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E")`,
     backgroundRepeat: 'no-repeat',
     backgroundPosition: 'right 12px center',
     backgroundSize: '16px',
@@ -223,9 +241,8 @@ export default function AdminProfitability() {
       {/* Filter Bar */}
       <div className="flex gap-3 mb-5 items-center flex-wrap">
         {/* Search Input */}
-        <div className="relative flex-1 min-w-[240px] group">
-          <div className="absolute inset-0 bg-gradient-to-r from-purple-500/20 to-cyan-500/20 rounded-xl blur-sm opacity-0 group-focus-within:opacity-100 transition-opacity" />
-          <div className="relative flex items-center bg-[#131a2b] border-l-2 border-l-cyan-500/50 border-t border-r border-b border-white/[0.08] rounded-xl shadow-[0_4px_12px_rgba(0,0,0,0.3)] group-focus-within:border-l-cyan-400 group-focus-within:border-cyan-500/30 group-focus-within:bg-[#1a2235] transition-all">
+        <div className="relative flex-1 min-w-[240px]">
+          <div className="relative flex items-center bg-slate-800/50 border border-white/[0.08] rounded-xl shadow-lg shadow-black/20 focus-within:border-cyan-500/50 transition-all">
             <svg className="ml-4 w-4 h-4 text-slate-500 group-focus-within:text-cyan-400 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
             </svg>
@@ -252,14 +269,14 @@ export default function AdminProfitability() {
         </select>
 
         {/* Date Range */}
-        <div className="flex items-center bg-[#131a2b] border-l-2 border-l-fuchsia-500/50 border-t border-r border-b border-white/[0.08] rounded-xl px-4 py-2 shadow-[0_4px_12px_rgba(0,0,0,0.3)] hover:border-l-fuchsia-400 hover:bg-[#1a2235] transition-all">
+        <div className="flex items-center bg-slate-800/50 border border-white/[0.08] rounded-xl px-4 py-2 shadow-lg shadow-black/20 hover:border-white/[0.12] transition-all">
           <input
             type="date"
             value={dateFrom}
             onChange={e => { setDateFrom(e.target.value); setPage(0) }}
             className="bg-transparent text-sm text-white focus:outline-none [color-scheme:dark] w-[115px]"
           />
-          <svg className="mx-2 w-4 h-4 text-fuchsia-400/60" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg className="mx-2 w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
           </svg>
           <input
@@ -326,12 +343,15 @@ export default function AdminProfitability() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-white/[0.08]">
-                    <th className="text-left py-4 px-6 text-[11px] uppercase tracking-wider font-semibold text-slate-400 bg-white/[0.02]">Description</th>
-                    <th className="text-right py-4 px-6 text-[11px] uppercase tracking-wider font-semibold text-slate-400 bg-white/[0.02]">Hammer</th>
-                    <th className="text-right py-4 px-6 text-[11px] uppercase tracking-wider font-semibold text-slate-400 bg-white/[0.02]">Net</th>
-                    <th className="text-right py-4 px-6 text-[11px] uppercase tracking-wider font-semibold text-slate-400 bg-white/[0.02]">Cost</th>
-                    <th className="text-right py-4 px-6 text-[11px] uppercase tracking-wider font-semibold text-slate-400 bg-white/[0.02]">Profit</th>
-                    <th className="text-right py-4 px-6 text-[11px] uppercase tracking-wider font-semibold text-slate-400 bg-white/[0.02]">Margin</th>
+                    <th className="text-left py-4 px-4 text-[11px] uppercase tracking-wider font-semibold text-slate-400 bg-white/[0.02]">Description</th>
+                    <th className="text-right py-4 px-3 text-[11px] uppercase tracking-wider font-semibold text-slate-400 bg-white/[0.02]">Hammer</th>
+                    <th className="text-right py-4 px-3 text-[11px] uppercase tracking-wider font-semibold text-slate-400 bg-white/[0.02]">Coupon</th>
+                    <th className="text-right py-4 px-3 text-[11px] uppercase tracking-wider font-semibold text-slate-400 bg-white/[0.02]">Buyer Paid</th>
+                    <th className="text-right py-4 px-3 text-[11px] uppercase tracking-wider font-semibold text-slate-400 bg-white/[0.02]">Fees</th>
+                    <th className="text-right py-4 px-3 text-[11px] uppercase tracking-wider font-semibold text-slate-400 bg-white/[0.02]">Net</th>
+                    <th className="text-right py-4 px-3 text-[11px] uppercase tracking-wider font-semibold text-slate-400 bg-white/[0.02]">Cost</th>
+                    <th className="text-right py-4 px-3 text-[11px] uppercase tracking-wider font-semibold text-slate-400 bg-white/[0.02]">Profit</th>
+                    <th className="text-right py-4 px-3 text-[11px] uppercase tracking-wider font-semibold text-slate-400 bg-white/[0.02]">Margin</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -339,6 +359,7 @@ export default function AdminProfitability() {
                     const isExp = expanded === i
                     const profitNum = Number(item.profit)
                     const marginNum = Number(item.margin)
+                    const couponAmt = Number(item.coupon_amount || 0)
                     return (
                       <Fragment key={i}>
                         <tr 
@@ -349,27 +370,30 @@ export default function AdminProfitability() {
                             ${isExp ? 'bg-gradient-to-r from-purple-600/15 via-purple-600/10 to-transparent' : ''}
                           `}
                         >
-                          <td className="py-4 px-6 max-w-[300px] truncate text-white font-medium">{item.description || item.product_name}</td>
-                          <td className="py-4 px-6 text-right text-slate-300 font-medium">${Number(item.original_hammer).toFixed(2)}</td>
-                          <td className="py-4 px-6 text-right text-slate-300">${Number(item.net_payout).toFixed(2)}</td>
-                          <td className="py-4 px-6 text-right text-slate-500">${Number(item.cost_freight || 0).toFixed(2)}</td>
-                          <td className={`py-4 px-6 text-right font-bold ${profitNum >= 0 ? 'text-cyan-400' : 'text-pink-400'}`}>
+                          <td className="py-4 px-4 max-w-[280px] truncate text-white font-medium">{item.description || item.product_name}</td>
+                          <td className="py-4 px-3 text-right text-slate-300">${Number(item.original_hammer).toFixed(2)}</td>
+                          <td className={`py-4 px-3 text-right ${couponAmt > 0 ? 'text-pink-400' : 'text-slate-600'}`}>
+                            {couponAmt > 0 ? `-$${couponAmt.toFixed(2)}` : '—'}
+                          </td>
+                          <td className="py-4 px-3 text-right text-slate-300">${Number(item.buyer_paid).toFixed(2)}</td>
+                          <td className="py-4 px-3 text-right text-slate-500">-${Number(item.total_fees).toFixed(2)}</td>
+                          <td className="py-4 px-3 text-right text-slate-300">${Number(item.net_payout).toFixed(2)}</td>
+                          <td className="py-4 px-3 text-right text-slate-500">${Number(item.cost_freight || 0).toFixed(2)}</td>
+                          <td className={`py-4 px-3 text-right font-bold ${profitNum >= 0 ? 'text-cyan-400' : 'text-pink-400'}`}>
                             ${profitNum.toFixed(2)}
                           </td>
-                          <td className={`py-4 px-6 text-right font-semibold ${marginNum >= 0 ? 'text-cyan-400' : 'text-pink-400'}`}>
+                          <td className={`py-4 px-3 text-right font-semibold ${marginNum >= 0 ? 'text-cyan-400' : 'text-pink-400'}`}>
                             {marginNum.toFixed(1)}%
                           </td>
                         </tr>
                         {isExp && (
                           <tr className="bg-gradient-to-r from-[#12061f] via-[#0a0e17] to-[#0a0e17]">
-                            <td colSpan={6} className="px-6 py-5">
+                            <td colSpan={9} className="px-6 py-5">
                               <div className="flex gap-8 text-xs flex-wrap items-center">
                                 <DetailChip label="Barcode" value={item.barcode} mono />
                                 <DetailChip label="Listing" value={`#${item.listing_number}`} highlight />
                                 <DetailChip label="Show" value={formatShowNameFull(item.show_name)} />
                                 {item.category && <DetailChip label="Category" value={item.category} />}
-                                <DetailChip label="Coupon" value={Number(item.coupon_amount) > 0 ? `-$${Number(item.coupon_amount).toFixed(2)}` : '—'} dim={!Number(item.coupon_amount)} />
-                                <DetailChip label="Fees" value={`-$${Number(item.total_fees).toFixed(2)}`} />
                                 {item.msrp && <DetailChip label="MSRP" value={`$${Number(item.msrp).toFixed(0)}`} />}
                               </div>
                             </td>
@@ -419,30 +443,12 @@ export default function AdminProfitability() {
 }
 
 function GlassStatCard({ label, value, accent, positive }) {
-  const accentColors = {
-    slate: 'from-slate-500/10',
-    purple: 'from-purple-500/15',
-    fuchsia: 'from-fuchsia-500/10',
-    cyan: 'from-cyan-500/15',
-  }
-  const borderColors = {
-    slate: 'border-l-slate-500/30',
-    purple: 'border-l-purple-500/50',
-    fuchsia: 'border-l-fuchsia-500/40',
-    cyan: 'border-l-cyan-500/50',
-  }
-  
   const valueColor = positive === false ? 'text-pink-400' : positive === true ? 'text-cyan-400' : 'text-white'
   
   return (
-    <div className={`
-      relative overflow-hidden rounded-xl 
-      bg-gradient-to-br ${accentColors[accent]} to-[#0a0e17]
-      border-l-2 ${borderColors[accent]} border-t border-r border-b border-white/[0.06]
-      p-4 shadow-lg shadow-black/20
-    `}>
+    <div className="relative overflow-hidden rounded-2xl bg-gradient-to-b from-slate-800/60 to-slate-900/40 border border-white/[0.08] p-4 shadow-xl shadow-black/30">
       {/* Inner highlight */}
-      <div className="absolute inset-x-0 top-0 h-[1px] bg-gradient-to-r from-transparent via-white/10 to-transparent" />
+      <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent" />
       
       <div className="relative">
         <div className="text-[10px] uppercase tracking-[0.2em] font-semibold text-slate-500 mb-1.5">{label}</div>
