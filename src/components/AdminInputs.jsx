@@ -7,19 +7,29 @@ export default function AdminInputs() {
   const [activeSection, setActiveSection] = useState('shows')
 
   return (
-    <div>
-      <h2 className="text-2xl font-bold mb-6">Data Inputs</h2>
-      <div className="flex gap-2 mb-6 overflow-x-auto">
-        {['shows', 'scans', 'manifests', 'expenses'].map(s => (
-          <button key={s} onClick={() => setActiveSection(s)}
-            className={`px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors
-              ${activeSection === s ? 'bg-slate-700 text-white' : 'text-slate-400 hover:bg-slate-700/50'}`}>
-            {s.charAt(0).toUpperCase() + s.slice(1)}
-          </button>
-        ))}
+    <div className="space-y-6">
+      <h2 className="text-2xl font-extrabold tracking-tight text-white">Inputs</h2>
+      
+      {/* Tab pills - below title */}
+      <div className="relative p-[1px] rounded-2xl bg-gradient-to-r from-cyan-500/40 via-purple-500/40 to-pink-500/40 shadow-lg w-fit">
+        <div className="flex gap-1 bg-[#080c14] rounded-2xl p-1.5">
+          {['shows', 'manifests', 'expenses'].map(s => (
+            <button 
+              key={s} 
+              onClick={() => setActiveSection(s)}
+              className={`px-4 py-2 rounded-xl text-sm font-semibold transition-all duration-200 ${
+                activeSection === s 
+                  ? 'bg-gradient-to-r from-cyan-600 via-purple-600 to-cyan-600 text-white shadow-lg shadow-purple-500/20' 
+                  : 'text-slate-400 hover:text-white hover:bg-white/5'
+              }`}
+            >
+              {s.charAt(0).toUpperCase() + s.slice(1)}
+            </button>
+          ))}
+        </div>
       </div>
+
       {activeSection === 'shows' && <ShowUpload />}
-      {activeSection === 'scans' && <ScanMonitor />}
       {activeSection === 'manifests' && <ManifestUpload />}
       {activeSection === 'expenses' && <ExpenseUpload />}
     </div>
@@ -52,12 +62,21 @@ function DropZone({ onFile, accept = '.csv', label = 'Drop CSV here or click to 
       onDragLeave={() => setDragging(false)}
       onDrop={handleDrop}
       onClick={handleClick}
-      className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-colors
-        ${dragging ? 'border-blue-400 bg-blue-900/20' : 'border-slate-600 hover:border-slate-400'}`}
+      className={`relative overflow-hidden border-2 border-dashed rounded-2xl p-8 text-center cursor-pointer transition-all duration-300
+        ${dragging 
+          ? 'border-cyan-400 bg-cyan-500/10 shadow-lg shadow-cyan-500/20' 
+          : 'border-white/[0.15] hover:border-cyan-500/50 hover:bg-white/[0.02]'}`}
     >
       <input ref={inputRef} type="file" accept={accept} onChange={handleChange} className="hidden" />
-      <div className="text-3xl mb-2">{dragging ? '📂' : '📄'}</div>
-      <div className="text-sm text-slate-400">{fileName || label}</div>
+      <div className={`text-4xl mb-3 transition-transform duration-300 ${dragging ? 'scale-110' : ''}`}>
+        {dragging ? '📂' : '📄'}
+      </div>
+      <div className={`text-sm font-medium ${fileName ? 'text-cyan-400' : 'text-slate-400'}`}>
+        {fileName || label}
+      </div>
+      {!fileName && (
+        <div className="text-xs text-slate-500 mt-2">or click to browse</div>
+      )}
     </div>
   )
 }
@@ -234,30 +253,36 @@ function ManifestUpload() {
         
         {/* Load List */}
         <div className="space-y-2">
-          {loads.map(l => (
-            <div 
-              key={l.id} 
-              onClick={() => setLoadId(l.id)}
-              className={`rounded-xl p-4 cursor-pointer transition-all ${
-                loadId === l.id 
-                  ? 'bg-cyan-600/20 border border-cyan-500/50' 
-                  : 'bg-slate-800/30 border border-white/[0.04] hover:bg-slate-800/50'
-              }`}
-            >
-              <div className="flex justify-between items-start">
-                <div>
-                  <div className="font-semibold text-white">{l.id}</div>
-                  <div className="text-xs text-slate-500 mt-1">
-                    {l.vendor} · {l.date}
+          {loads.map((l, index) => {
+            // Format date as MM-DD-YYYY
+            const dateParts = l.date ? l.date.split('-') : null
+            const formattedDate = dateParts ? `${dateParts[1]}-${dateParts[2]}-${dateParts[0]}` : '—'
+            
+            return (
+              <div 
+                key={l.id} 
+                onClick={() => setLoadId(l.id)}
+                className={`rounded-xl p-4 cursor-pointer transition-all ${
+                  loadId === l.id 
+                    ? 'bg-cyan-600/20 border border-cyan-500/50' 
+                    : 'bg-slate-800/30 border border-white/[0.04] hover:bg-slate-800/50'
+                }`}
+              >
+                <div className="flex justify-between items-start">
+                  <div>
+                    <div className="font-semibold text-white">Load {l.id.replace('Load ', '')}</div>
+                    <div className="text-xs text-slate-500 mt-1">
+                      Date Paid: {formattedDate}
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-lg font-bold text-slate-300">{l.item_count.toLocaleString()} items</div>
+                    <div className="text-xs text-slate-500">${Number(l.total_cost_actual).toLocaleString(undefined, {minimumFractionDigits: 2})}</div>
                   </div>
                 </div>
-                <div className="text-right">
-                  <div className="text-lg font-bold text-slate-300">{l.item_count.toLocaleString()} items</div>
-                  <div className="text-xs text-slate-500">${Number(l.total_cost_actual).toLocaleString(undefined, {minimumFractionDigits: 2})}</div>
-                </div>
               </div>
-            </div>
-          ))}
+            )
+          })}
         </div>
       </div>
 
@@ -830,11 +855,12 @@ function ExpenseUpload() {
   }
 
   return (
-    <div className="bg-slate-800 rounded-xl p-4">
-      <h3 className="font-bold mb-3">Upload Expenses CSV</h3>
-      <p className="text-xs text-slate-400 mb-3">Upload Copilot transactions CSV. Only EXPENSES and PAYROLL categories are used in the P&L.</p>
-      <DropZone onFile={handleFile} label="Drop expenses CSV here or click to browse" />
-      {status && <p className="text-sm text-slate-300 mt-2">{status}</p>}
+    <div className="relative overflow-hidden rounded-2xl bg-gradient-to-b from-slate-800/60 to-slate-900/40 border border-white/[0.08] p-5 shadow-xl shadow-black/30">
+      <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent" />
+      <h3 className="font-bold text-lg mb-2">Upload Expenses CSV</h3>
+      <p className="text-sm text-slate-400 mb-4">Upload Copilot transactions CSV. Only EXPENSES and PAYROLL categories are used in the P&L.</p>
+      <DropZone onFile={handleFile} label="Drop expenses CSV here" />
+      {status && <p className="text-sm text-slate-300 mt-3">{status}</p>}
     </div>
   )
 }

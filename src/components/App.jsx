@@ -16,7 +16,7 @@ export default function App() {
         <Route path="/sorting" element={<SortingSelect />} />
         <Route path="/sorting/general" element={<GeneralSort />} />
         <Route path="/kickstart" element={<KickstartSort />} />
-            <Route path="/sorting/bundle" element={<BundleSort />} />
+        <Route path="/sorting/bundle" element={<BundleSort />} />
         <Route path="/sales" element={<SalesSetup />} />
         <Route path="/sales/:showId" element={<SalesScanner />} />
         <Route path="/admin" element={<Admin />} />
