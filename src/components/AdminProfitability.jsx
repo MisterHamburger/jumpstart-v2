@@ -97,8 +97,8 @@ export default function AdminProfitability() {
     if (channel !== 'all') query = query.eq('channel', channel)
     if (selectedShow !== 'all') query = query.eq('show_name', selectedShow)
     if (search) query = query.or(`description.ilike.%${search}%,barcode.ilike.%${search}%,category.ilike.%${search}%,product_name.ilike.%${search}%`)
-    if (dateFrom) query = query.gte('show_name', dateFrom)
-    if (dateTo) query = query.lte('show_name', dateTo + '-z')
+    if (dateFrom) query = query.gte('show_date', dateFrom)
+    if (dateTo) query = query.lte('show_date', dateTo)
     const { data } = await query
     setItems(data || [])
     setLoading(false)
