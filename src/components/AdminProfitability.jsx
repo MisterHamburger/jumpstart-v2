@@ -185,7 +185,7 @@ export default function AdminProfitability() {
       {s && (
         <div className="mb-6 space-y-4">
           {/* Hero Card */}
-          <div className="relative overflow-hidden rounded-3xl shadow-2xl shadow-purple-900/20">
+          <div className="relative rounded-3xl shadow-2xl shadow-purple-900/20">
             {/* Gradient border */}
             <div className="absolute inset-0 bg-gradient-to-r from-purple-600 via-fuchsia-500 to-cyan-500 rounded-3xl" />
             
@@ -332,16 +332,16 @@ export default function AdminProfitability() {
       ) : (
         <>
           {/* Table */}
-          <div className="relative rounded-2xl overflow-hidden shadow-xl shadow-black/20">
+          <div className="relative rounded-2xl shadow-xl shadow-black/20">
             {/* Gradient border effect */}
             <div className="absolute inset-0 bg-gradient-to-b from-purple-500/30 via-transparent to-cyan-500/20 rounded-2xl pointer-events-none" />
             
-            <div className="relative bg-gradient-to-b from-[#0d1320] to-[#080c14] border border-white/[0.06] rounded-2xl overflow-hidden">
+            <div className="relative bg-gradient-to-b from-[#0d1320] to-[#080c14] border border-white/[0.06] rounded-2xl overflow-auto" style={{maxHeight: "calc(100vh - 280px)"}}>
               {/* Inner highlight */}
               <div className="absolute inset-x-0 top-0 h-[1px] bg-gradient-to-r from-transparent via-white/10 to-transparent" />
               
               <table className="w-full text-sm">
-                <thead>
+                <thead className="bg-slate-800/95 backdrop-blur-xl border-b border-white/10 sticky top-0 z-10">
                   <tr className="border-b border-white/[0.08]">
                     <th className="text-left py-4 px-4 text-[11px] uppercase tracking-wider font-semibold text-slate-400 bg-white/[0.02]">Description</th>
                     <th className="text-right py-4 px-3 text-[11px] uppercase tracking-wider font-semibold text-slate-400 bg-white/[0.02]">Hammer</th>
