@@ -24,7 +24,6 @@ export default function KickstartSort() {
   }
 
   const handleBinSelect = (price) => {
-    if (!selectedBrand) { alert('Select a brand first'); return }
     setSelectedBin(price)
     setShowCustom(false)
     setStep('capture')
@@ -139,13 +138,28 @@ export default function KickstartSort() {
       </div>
 
       {/* Active bin indicator (when not on bin selection) */}
-      {step !== 'bin' && (
-        <div className="relative z-10 mx-3 mt-2 bg-fuchsia-500/20 border border-fuchsia-500/30 rounded-xl px-4 py-2 flex items-center justify-between shrink-0">
-          <span className="text-fuchsia-200 text-sm font-semibold">{selectedBrand || "Active Bin"}</span>
-          <span className="text-fuchsia-100 font-bold text-lg">${getCost()}</span>
-        </div>
-      )}
-
+        {step !== 'bin' && (
+          <div className="relative z-10 mx-3 mt-2 bg-fuchsia-500/20 border border-fuchsia-500/30 rounded-xl px-3 py-2 shrink-0">
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-fuchsia-200 text-sm font-semibold">Bin: ${getCost()}</span>
+            </div>
+            <div className="flex gap-1">
+              {['Free People', 'Urban Outfitters', 'Anthropologie'].map(brand => (
+                <button
+                  key={brand}
+                  onClick={() => setSelectedBrand(brand)}
+                  className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition-all active:scale-95 ${
+                    selectedBrand === brand
+                      ? 'bg-fuchsia-500 text-white'
+                      : 'bg-white/10 text-white/50'
+                  }`}
+                >
+                  {brand === 'Urban Outfitters' ? 'UO' : brand === 'Anthropologie' ? 'Anthro' : 'FP'}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
       {/* === STEP 1: BIN SELECTION === */}
       {step === 'bin' && (
         <div className="relative z-10 flex-1 flex flex-col items-center pt-4 px-4">
