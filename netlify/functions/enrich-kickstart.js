@@ -89,9 +89,20 @@ async function readTagWithClaude(apiKey, photoBase64) {
           },
           {
             type: "text",
-            text: `This is a photo of a clothing hang tag from Free People or Free People Movement. Extract the following information and return ONLY a JSON object with no other text:
+            text: `This is a photo of a clothing hang tag from Free People, Urban Outfitters, or Anthropologie. Read ALL text on the tag carefully.
 
-{"upc": "the UPC/barcode number (digits only)", "style_number": "the style number", "description": "the item name", "color": "the color name", "size": "the size (XS, S, M, L, XL, etc)", "msrp": "the retail price as a number only, no dollar sign"}
+Rules for extracting data:
+- UPC: the number printed BELOW the barcode lines at the bottom of the tag (usually 12-13 digits). If you cannot see a barcode or numbers below it, return empty string. Do NOT use any S/C/V codes as the UPC.
+- Style number: the code starting with OB, C, or CS (e.g. OB1364600, C8130, CS151). On some tags this appears after "S " prefix — use the code WITHOUT the "S " prefix.
+- Color: the color NAME written in words (e.g. PP MOTIF, SMOKEY GRAPE, LAPIS, BLACK). This is usually on its own line. NEVER use the C code number (like C 0115) — that is a code, not a color name.
+- Size: XS, S, M, L, XL, or ALL
+- MSRP: the HIGHEST dollar amount on the tag (no dollar sign)
+- Brand: if you see "Urban Outfitters" or "Anthropologie" anywhere, use that. Otherwise use "Free People".
+- Description: the product name if visible. Often not on the tag — use empty string if not found.
+
+Return ONLY a JSON object with no other text:
+
+{"upc": "the UPC/barcode number (digits only)", "brand": "the brand name (Free People, Urban Outfitters, Anthropologie, etc)", "style_number": "the style number (for Free People this starts with OB, C, or similar — NOT the V vendor code or S codes)", "description": "the item/product name if visible on the tag", "color": "the color name (often after C on Free People tags)", "size": "the size (XS, S, M, L, XL, etc)", "msrp": "the highest retail price on the tag as a number only, no dollar sign"}
 
 If you can't read a field, use an empty string. Return ONLY the JSON object.`
           }

@@ -8,6 +8,7 @@ export default function KickstartSort() {
   const navigate = useNavigate()
   const [step, setStep] = useState('bin') // bin, capture, confirm
   const [selectedBin, setSelectedBin] = useState(null)
+  const [selectedBrand, setSelectedBrand] = useState(null)
   const [customPrice, setCustomPrice] = useState('')
   const [showCustom, setShowCustom] = useState(false)
   const [photo, setPhoto] = useState(null)
@@ -23,6 +24,7 @@ export default function KickstartSort() {
   }
 
   const handleBinSelect = (price) => {
+    if (!selectedBrand) { alert('Select a brand first'); return }
     setSelectedBin(price)
     setShowCustom(false)
     setStep('capture')
@@ -42,12 +44,21 @@ export default function KickstartSort() {
   const handlePhotoCapture = (e) => {
     const file = e.target.files[0]
     if (!file) return
-    const reader = new FileReader()
-    reader.onloadend = () => {
-      setPhoto(reader.result)
+    const img = new Image()
+    img.onload = () => {
+      const canvas = document.createElement('canvas')
+      const MAX_WIDTH = 800
+      const scale = Math.min(1, MAX_WIDTH / img.width)
+      canvas.width = img.width * scale
+      canvas.height = img.height * scale
+      const ctx = canvas.getContext('2d')
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
+      const compressed = canvas.toDataURL('image/jpeg', 0.7)
+      setPhoto(compressed)
       setStep('confirm')
+      URL.revokeObjectURL(img.src)
     }
-    reader.readAsDataURL(file)
+    img.src = URL.createObjectURL(file)
   }
 
   const handleSave = async () => {
@@ -61,7 +72,7 @@ export default function KickstartSort() {
         cost: cost,
         photo_data: photoData,
         status: 'pending_enrichment',
-        brand: 'Free People'
+        brand: selectedBrand || 'Free People'
       }))
 
       const { error } = await supabase.from('kickstart_intake').insert(rows)
@@ -130,7 +141,7 @@ export default function KickstartSort() {
       {/* Active bin indicator (when not on bin selection) */}
       {step !== 'bin' && (
         <div className="relative z-10 mx-3 mt-2 bg-fuchsia-500/20 border border-fuchsia-500/30 rounded-xl px-4 py-2 flex items-center justify-between shrink-0">
-          <span className="text-fuchsia-200 text-sm font-semibold">Active Bin</span>
+          <span className="text-fuchsia-200 text-sm font-semibold">{selectedBrand || "Active Bin"}</span>
           <span className="text-fuchsia-100 font-bold text-lg">${getCost()}</span>
         </div>
       )}
