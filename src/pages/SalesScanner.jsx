@@ -27,6 +27,8 @@ export default function SalesScanner() {
   const [showExcludedModal, setShowExcludedModal] = useState(
     (sessionState.excludedItems || []).length > 0
   )
+  const [showNoBarcodeInput, setShowNoBarcodeInput] = useState(false)
+  const [manualBarcode, setManualBarcode] = useState('')
   const html5QrcodeRef = useRef(null)
   const initialScannedRef = useRef(null)
 
@@ -118,7 +120,6 @@ export default function SalesScanner() {
   const handleAutoComplete = async () => {
     await stopScanner()
     setShowCompletion(true)
-    // Update show status
     try {
       await supabase.from('shows')
         .update({ status: 'completed', scanned_count: scannedCount })
@@ -171,6 +172,26 @@ export default function SalesScanner() {
     await stopScanner()
   }
 
+  // No Barcode handlers
+  const handleNoBarcode = async () => {
+    await stopScanner()
+    setShowNoBarcodeInput(true)
+  }
+
+  const handleManualSubmit = () => {
+    if (!manualBarcode.trim()) return
+    setScannedBarcode(manualBarcode.trim())
+    setShowNoBarcodeInput(false)
+    setManualBarcode('')
+  }
+
+  const handleCancelManual = async () => {
+    setShowNoBarcodeInput(false)
+    setManualBarcode('')
+    setScannerKey(prev => prev + 1)
+    await startScanner()
+  }
+
   const handleSubmit = async (e) => {
     if (e) e.preventDefault()
     if (submitting) return
@@ -178,7 +199,6 @@ export default function SalesScanner() {
     const isKickstart = showData?.channel === 'Kickstart'
     const table = isKickstart ? 'kickstart_sold_scans' : 'jumpstart_sold_scans'
 
-    // Check listing number status
     try {
       // Check for duplicate scan
       const { data: dupCheck } = await supabase
@@ -241,7 +261,7 @@ export default function SalesScanner() {
           .select('id')
           .eq('upc', scannedBarcode)
           .eq('status', 'enriched')
-          .is('sale_price', null)  // Not yet sold
+          .is('sale_price', null)
           .limit(1)
         
         if (intakeMatch && intakeMatch.length > 0) {
@@ -251,7 +271,6 @@ export default function SalesScanner() {
 
       // Fire-and-forget: log scan to Supabase
       supabase.from(table).insert(insertData).then(() => {
-        // Update show progress
         supabase.from('shows')
           .update({ scanned_count: scannedCount + 1 })
           .eq('id', showId)
@@ -282,10 +301,8 @@ export default function SalesScanner() {
   }
 
   const handleFinish = async () => {
-    if (confirm(`Finish session with ${scans.length} scans?`)) {
-      await stopScanner()
-      navigate('/sales')
-    }
+    await stopScanner()
+    navigate('/sales')
   }
 
   // Excluded items interstitial
@@ -332,7 +349,6 @@ export default function SalesScanner() {
         <div className="text-center">
           <div className="text-9xl mb-6">🎉</div>
           <h2 className="text-4xl font-black text-white mb-2">All Done!</h2>
-          <p className="text-white/80 text-lg mb-8">{totalItems} items scanned</p>
           <button
             onClick={() => navigate('/sales')}
             className="px-8 py-4 bg-white/20 backdrop-blur rounded-2xl text-white font-bold text-lg hover:bg-white/30 transition-all"
@@ -354,22 +370,67 @@ export default function SalesScanner() {
     <div className="h-screen flex flex-col bg-[#0a0f1a]">
       <div className={`fixed inset-0 bg-gradient-to-br ${isKickstart ? 'from-fuchsia-900/20 via-transparent to-pink-900/10' : 'from-cyan-900/20 via-transparent to-teal-900/10'} pointer-events-none`} />
 
-      {/* Header */}
-      <div className="relative z-10 bg-slate-800/80 backdrop-blur-xl px-4 py-3 flex items-center justify-between border-b border-white/5">
-        <button onClick={handleFinish} className="bg-white/10 px-4 py-2 rounded-full text-white text-sm font-semibold">
-          ← Exit
-        </button>
-        <div className="text-center flex-1 px-2">
-          <p className="text-white font-semibold text-sm truncate">{showName}</p>
-          <p className="text-white/50 text-xs">{remainingCount} remaining</p>
+      {/* Header - Row 1: Back + Show Name */}
+      <div className="relative z-10 bg-slate-800/80 backdrop-blur-xl px-4 pt-3 pb-1 flex items-center border-b border-white/5">
+        <button onClick={handleFinish} className="text-white text-2xl mr-3">←</button>
+        <p className="text-white font-bold text-base truncate flex-1 text-center">{showName}</p>
+      </div>
+
+      {/* Header - Row 2: Scanned / Total → Remaining */}
+      <div className="relative z-10 bg-slate-800/80 backdrop-blur-xl px-4 pt-1 pb-3 flex items-center justify-center gap-3 border-b border-white/5">
+        <div className="text-center">
+          <p className={`text-3xl font-black ${isKickstart ? 'text-fuchsia-400' : 'text-teal-400'}`}>{scannedCount}</p>
+          <p className="text-white/50 text-xs">Scanned</p>
         </div>
-        <div className={`bg-gradient-to-r ${gradientFrom} ${gradientTo} px-4 py-2 rounded-full`}>
-          <span className="text-white font-bold">{scannedCount}/{totalItems}</span>
+        <span className="text-white/30 text-2xl font-light">/</span>
+        <div className="text-center">
+          <p className="text-3xl font-black text-white">{totalItems}</p>
+          <p className="text-white/50 text-xs">Total</p>
+        </div>
+        <span className="text-white/30 text-2xl">→</span>
+        <div className="text-center">
+          <p className="text-3xl font-black text-violet-400">{remainingCount}</p>
+          <p className="text-white/50 text-xs">Remaining</p>
         </div>
       </div>
 
       {/* Main Content */}
-      {!scannedBarcode ? (
+      {showNoBarcodeInput ? (
+        /* No Barcode Manual Entry */
+        <div className="relative z-10 flex-1 flex flex-col items-center justify-center p-6">
+          <p className="text-white text-xl font-bold mb-2">Enter Yellow Sticker Number</p>
+          <p className="text-slate-500 text-sm mb-6">Type the barcode or sticker number</p>
+          <input
+            type="text"
+            inputMode="numeric"
+            autoFocus
+            value={manualBarcode}
+            onChange={(e) => setManualBarcode(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && handleManualSubmit()}
+            placeholder="Sticker number..."
+            className="w-full max-w-sm text-center text-3xl font-mono text-white bg-white/[0.06] border border-white/[0.1] rounded-2xl px-4 py-4 outline-none focus:border-teal-500/50 focus:ring-2 focus:ring-teal-500/20 placeholder:text-slate-600"
+          />
+          <div className="flex gap-3 mt-6 w-full max-w-sm">
+            <button
+              onClick={handleCancelManual}
+              className="flex-1 py-4 rounded-2xl font-bold text-lg bg-white/[0.06] border border-white/[0.1] text-white/70 active:scale-[0.97] transition-all"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleManualSubmit}
+              disabled={!manualBarcode.trim()}
+              className={`flex-1 py-4 rounded-2xl font-bold text-lg transition-all active:scale-[0.97] ${
+                manualBarcode.trim()
+                  ? `bg-gradient-to-r ${gradientFrom} ${gradientTo} text-white shadow-lg ${shadowColor}`
+                  : 'bg-white/5 border border-white/10 text-white/30 cursor-not-allowed'
+              }`}
+            >
+              Continue
+            </button>
+          </div>
+        </div>
+      ) : !scannedBarcode ? (
         <div className="relative z-10 flex-1 flex flex-col">
           {cameraError ? (
             <div className="flex-1 flex items-center justify-center bg-slate-900">
@@ -388,25 +449,24 @@ export default function SalesScanner() {
               <div 
                 key={scannerKey}
                 id="sales-reader" 
-                className="w-full max-w-lg h-full rounded-3xl overflow-hidden"
+                className="w-full max-w-lg rounded-3xl overflow-hidden" style={{ height: "calc(100vh - 300px)" }}
               ></div>
             </div>
           )}
-          
-          {/* Footer with Count + Finish */}
-          <div className="bg-slate-800 px-6 py-4 flex items-center justify-between border-t border-white/5">
+
+          {/* Bottom buttons: No Barcode + Scans */}
+          <div className="relative z-10 px-4 py-3 flex gap-3 backdrop-blur-xl">
             <button
-              onClick={() => setShowScansModal(true)}
-              className="bg-white/10 backdrop-blur-lg px-6 py-3 rounded-full border border-white/20 hover:bg-white/20 transition-all"
+              onClick={handleNoBarcode}
+              className="flex-1 py-3 rounded-2xl font-bold text-base bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow-lg shadow-amber-500/30 border border-amber-400/50 active:scale-[0.97] transition-all"
             >
-              <span className="text-white text-2xl font-bold">{scans.length}</span>
-              <span className="text-white/60 text-sm ml-2">scans</span>
+              No Barcode
             </button>
             <button
-              onClick={handleFinish}
-              className={`bg-gradient-to-r ${gradientFrom} ${gradientTo} px-8 py-3 rounded-full text-white font-bold text-lg shadow-xl transition-colors`}
+              onClick={() => setShowScansModal(true)}
+              className="flex-1 py-3 rounded-2xl font-bold text-base bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white shadow-lg shadow-violet-500/30 border border-violet-400/50 active:scale-[0.97] transition-all"
             >
-              Finish
+              Scans
             </button>
           </div>
         </div>
@@ -419,7 +479,7 @@ export default function SalesScanner() {
         </div>
       ) : (
         <div className="flex-1 flex flex-col items-center justify-center p-4 overflow-hidden">
-          <div className="w-full max-w-md flex flex-col" style={{ maxHeight: 'calc(100vh - 120px)' }}>
+          <div className="w-full max-w-md flex flex-col" style={{ maxHeight: 'calc(100vh - 180px)' }}>
             <div className={`bg-gradient-to-br ${isKickstart ? 'from-fuchsia-500/20 via-pink-500/20 to-rose-500/20 border-fuchsia-400/30' : 'from-teal-500/20 via-cyan-500/20 to-blue-500/20 border-cyan-400/30'} backdrop-blur-lg rounded-3xl p-4 mb-4 border`}>
               <p className="text-xs text-white/70 mb-1">Scanned Barcode</p>
               <p className="text-xl font-bold text-white break-all">{scannedBarcode}</p>
@@ -448,7 +508,7 @@ export default function SalesScanner() {
                     key={num}
                     type="button"
                     onClick={() => {
-                      setListingNumber(prev => prev + num.toString())
+                      setListingNumber(prev => { const next = prev + num.toString(); return String(parseInt(next, 10)); })
                       setShowWarning(null)
                     }}
                     className={`py-3 text-2xl font-semibold bg-gradient-to-br ${isKickstart ? 'from-fuchsia-500 to-pink-500 border-fuchsia-400/50 shadow-fuchsia-500/30' : 'from-teal-500 to-cyan-500 border-cyan-400/50 shadow-teal-500/30'} text-white border-2 rounded-xl hover:scale-105 transition-all shadow-xl`}
@@ -518,8 +578,7 @@ export default function SalesScanner() {
               ←
             </button>
             <div className="text-center">
-              <h3 className="text-xl font-bold text-white">Scanned on This Device ({scans.length})</h3>
-              <p className="text-xs text-white/50">Total scanned: {realScannedCount} items</p>
+              <h3 className="text-xl font-bold text-white">Scans</h3>
             </div>
             <button
               onClick={() => setShowScansModal(false)}

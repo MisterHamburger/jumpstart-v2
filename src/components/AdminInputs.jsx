@@ -412,7 +412,7 @@ function ShowUpload() {
 
     // Create show record
     const { data: showData, error: showError } = await supabase.from('shows').insert({
-      name: showName, date, time_of_day: timeOfDay, channel, status: 'pending'
+      name: showName, date, time_of_day: timeOfDay, channel, status: 'active'
     }).select().single()
 
     if (showError) {

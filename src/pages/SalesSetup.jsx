@@ -178,7 +178,7 @@ export default function SalesSetup() {
           {!loading && shows.length > 0 && (
             <>
               <p className="text-slate-500 text-xs uppercase tracking-wider font-semibold">Select Show</p>
-              <div className="space-y-2">
+              <div className="space-y-2" style={{ maxHeight: "calc(100vh - 280px)", overflowY: "auto" }}>
                 {shows.map((show) => (
                   <button key={show.id} onClick={() => handleSelectShow(show)}
                     className={`w-full p-4 rounded-2xl text-left transition-all ${
@@ -189,7 +189,7 @@ export default function SalesSetup() {
                         : 'glass-card hover:bg-white/[0.08]'
                     }`}>
                     <div className="font-semibold mb-1">{show.showName}</div>
-                    <div className="text-sm opacity-70">{new Date(show.date + 'T12:00:00').toLocaleDateString()}</div>
+                    
                     <div className="text-xs opacity-50 mt-2">{show.scanned} / {show.totalItems} items scanned</div>
                   </button>
                 ))}
@@ -201,7 +201,7 @@ export default function SalesSetup() {
       
       {/* Footer button */}
       {!loading && shows.length > 0 && (
-        <div className="relative z-10 shrink-0 p-4 border-t border-white/[0.06] bg-[#0a0f1a]/80 backdrop-blur-xl">
+        <div className="fixed bottom-0 left-0 right-0 z-20 p-4 border-t border-white/[0.06] bg-[#0a0f1a]/90 backdrop-blur-xl">
           <div className="w-full max-w-md mx-auto">
             <button onClick={handleStart} disabled={!selectedShow}
               className={`w-full py-4 px-8 rounded-2xl font-bold text-lg transition-all ${
