@@ -69,6 +69,9 @@ export default function KickstartSort() {
 
       setSessionCount(prev => prev + quantity)
 
+      // Fire-and-forget: trigger enrichment
+      fetch('/.netlify/functions/enrich-kickstart').catch(() => {})
+
       // Show saved flash
       setShowSaved(true)
       setTimeout(() => {
