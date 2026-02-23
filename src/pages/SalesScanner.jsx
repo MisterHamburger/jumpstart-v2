@@ -309,8 +309,8 @@ export default function SalesScanner() {
         setListingNumber('')
         setScannerKey(prev => prev + 1)
         setSubmitting(false)
-        await loadScans()
         await startScanner()
+        loadScans()
       }, 500)
 
     } catch (err) {
