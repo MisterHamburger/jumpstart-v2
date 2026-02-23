@@ -89,6 +89,30 @@ export default function SalesScanner() {
     return () => clearInterval(interval)
   }, [showName, showExcludedModal, showId, showData?.channel])
 
+
+  // Load scans from Supabase (persists across refreshes)
+  const loadScans = async () => {
+    if (!showId || !showData?.channel) return
+    const table = showData.channel === 'Kickstart' ? 'kickstart_sold_scans' : 'jumpstart_sold_scans'
+    const { data } = await supabase
+      .from(table)
+      .select('barcode, listing_number, scanned_at')
+      .eq('show_id', showId)
+      .order('scanned_at', { ascending: false })
+    if (data) {
+      setScans(data.map(s => ({
+        barcode: s.barcode,
+        listingNum: s.listing_number,
+        productName: '',
+        timestamp: s.scanned_at
+      })))
+    }
+  }
+
+  useEffect(() => {
+    if (showId && showData?.channel) loadScans()
+  }, [showId, showData?.channel])
+
   // Check for completion
   useEffect(() => {
     if (showExcludedModal) return
@@ -285,6 +309,7 @@ export default function SalesScanner() {
         setListingNumber('')
         setScannerKey(prev => prev + 1)
         setSubmitting(false)
+        await loadScans()
         await startScanner()
       }, 500)
 
