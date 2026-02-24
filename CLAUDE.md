@@ -63,6 +63,73 @@ Channel-aware barcode filtering prevents cross-contamination during scanning.
 
 ---
 
+## Data Flow (CRITICAL — Read This First)
+
+### 1. How Data Gets Populated
+
+**Load arrives (bulk inventory purchase):**
+- `loads` — manually entered (cost of the load, date, supplier)
+- `jumpstart_manifest` — imported from liquidator CSV/Excel. Contains every physical item: barcode, description, color, style, size, category, vendor, MSRP, cost_freight. ALWAYS has duplicate barcodes (multiple physical items share same barcode).
+
+**Sorting inventory (warehouse):**
+- `jumpstart_sort_log` — GeneralSort scanner. Scan barcode → lookup zone by MSRP → save barcode + zone.
+- `jumpstart_bundle_scans` — BundleSort scanner. Scan items into numbered boxes. Save barcode + box_number.
+- `kickstart_intake` — KickstartSort scanner. Select bin price → brand → photo tag → quantity → save. AI enrichment extracts details.
+
+**Show setup (before Whatnot live):**
+- `shows` — manually created. Name, date, channel, total_items, status.
+- `show_items` — imported from Whatnot listing CSV. Each row = listing_number + barcode + price. Status = valid/invalid.
+
+**During live show (scanning sales):**
+- `jumpstart_sold_scans` — SalesScanner. Scan barcode → enter yellow sticker listing number → save. One row per item sold.
+- `kickstart_sold_scans` — same for Kickstart shows.
+
+**After show:**
+- `profitability` view — joins show_items → manifest to calculate per-item profit
+- `profitability_summary` view — aggregates by show
+
+### 2. Table Relationships
+
+```
+loads (1) ──→ jumpstart_manifest (many) via load_id
+shows (1) ──→ show_items (many) via show_id
+shows (1) ──→ jumpstart_sold_scans (many) via show_id
+show_items ──→ jumpstart_manifest via barcode (MUST use DISTINCT ON)
+jumpstart_sold_scans ──→ jumpstart_manifest via barcode (MUST use DISTINCT ON)
+jumpstart_bundle_scans ──→ jumpstart_manifest via barcode (through bundle_manifest view)
+kickstart_sold_scans ──→ kickstart_intake via intake_id or barcode
+```
+
+### 3. Source of Truth for Each Data Point
+
+| Data Point | Source of Truth | Table/Column |
+|---|---|---|
+| Item cost (what we paid) | Liquidator manifest | `jumpstart_manifest.cost_freight` |
+| Item MSRP | Liquidator manifest | `jumpstart_manifest.msrp` |
+| Item description/details | Liquidator manifest | `jumpstart_manifest.*` |
+| Revenue (what it sold for) | Whatnot CSV | `show_items.buyer_paid` |
+| What sold (item count) | Whatnot CSV | `show_items WHERE status='valid'` — NOT scans table |
+| Barcode scanned during sale | SalesScanner | `jumpstart_sold_scans.barcode` |
+| Fees | Calculated | 7.2% commission + 2.9% + $0.30 (see `src/lib/fees.js`) |
+| Profit | Calculated | Revenue - cost - fees (`profitability` view) |
+
+### 4. Why Counts Can Differ
+
+| Table | What It Counts |
+|---|---|
+| `show_items WHERE status='valid'` | Items listed and sold on Whatnot (source of truth for revenue) |
+| `jumpstart_sold_scans` unique listings | Items physically scanned during the show |
+
+These can differ because:
+- Some items sell without being scanned (scanner missed, no barcode on item)
+- Some scanned items get cancelled/failed after scanning
+- `show_items` may have empty barcodes if the Whatnot CSV didn't include them
+
+**For profitability:** Use `show_items` as source of truth (has revenue data)
+**For unsold inventory:** Use `jumpstart_sold_scans` (has barcode data for cost lookup)
+
+---
+
 ## File Structure
 
 ```
