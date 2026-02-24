@@ -28,7 +28,7 @@ export default function BundleSort() {
       const { data: boxRows } = await supabase
         .from('jumpstart_bundle_boxes')
         .select('*')
-        .order('box_number')
+        .order('box_number', { ascending: false })
 
       // Get all scans grouped by box
       const { data: scanRows } = await supabase
@@ -158,7 +158,7 @@ export default function BundleSort() {
     const maxBox = boxes.reduce((max, b) => Math.max(max, b.boxNumber), 0)
     const newBoxNum = maxBox + 1
     // Optimistic UI
-    setBoxes(prev => [...prev, { boxNumber: newBoxNum, status: 'empty', note: '', itemCount: 0, items: [] }])
+    setBoxes(prev => [{ boxNumber: newBoxNum, status: 'empty', note: '', itemCount: 0, items: [] }, ...prev])
     // Sync to Supabase
     await supabase.from('jumpstart_bundle_boxes').insert({ box_number: newBoxNum, status: 'empty', note: '' })
     fetchBoxes()
