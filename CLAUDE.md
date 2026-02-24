@@ -314,6 +314,9 @@ LEFT JOIN jumpstart_manifest m ON m.barcode = bs.barcode
 - [ ] Zone assignments based on MSRP thresholds
 - [ ] Kickstart enrichment: UO tags have unreadable barcodes (no printed UPC digits) — UPC will be blank for UO items
 - [ ] AdminScans.jsx needs to be verified in git
+- [ ] Add way to upload and track manifested bulk sales
+- [ ] Create scanner to pull up item info (MSRP, COGS, etc) on the fly
+- [ ] Explore adding stock photos to manifests when scanning into bulk boxes
 
 ---
 
