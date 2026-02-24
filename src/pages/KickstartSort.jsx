@@ -46,7 +46,7 @@ export default function KickstartSort() {
     const img = new Image()
     img.onload = () => {
       const canvas = document.createElement('canvas')
-      const MAX_WIDTH = 800
+      const MAX_WIDTH = 1200
       const scale = Math.min(1, MAX_WIDTH / img.width)
       canvas.width = img.width * scale
       canvas.height = img.height * scale
@@ -235,7 +235,7 @@ export default function KickstartSort() {
           />
 
           <button
-            onClick={() => photoInputRef.current?.click()}
+            onClick={() => { if (!selectedBrand) { alert('Select a brand first'); return; } photoInputRef.current?.click(); }}
             className="w-24 h-24 rounded-full bg-gradient-to-br from-fuchsia-500 to-pink-500 shadow-2xl shadow-fuchsia-500/40 flex items-center justify-center hover:scale-105 active:scale-95 transition-all"
           >
             <svg className="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">

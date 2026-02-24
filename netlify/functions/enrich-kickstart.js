@@ -96,7 +96,7 @@ Rules for extracting data:
 - Style number: the code starting with OB, C, or CS (e.g. OB1364600, C8130, CS151). On some tags this appears after "S " prefix — use the code WITHOUT the "S " prefix.
 - Color: the color NAME written in words (e.g. PP MOTIF, SMOKEY GRAPE, LAPIS, BLACK). This is usually on its own line. NEVER use the C code number (like C 0115) — that is a code, not a color name.
 - Size: XS, S, M, L, XL, or ALL
-- MSRP: the HIGHEST dollar amount on the tag (no dollar sign)
+- MSRP: the USD price on the tag (no dollar sign). If both USD and CAD prices are shown, use the USD price. If only one price is shown, use that.
 - Brand: if you see "Urban Outfitters" or "Anthropologie" anywhere, use that. Otherwise use "Free People".
 - Description: the product name if visible. Often not on the tag — use empty string if not found.
 
