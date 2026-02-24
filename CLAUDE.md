@@ -122,9 +122,11 @@ netlify/functions/
 
 **`jumpstart_sold_scans`** — Barcodes scanned during Jumpstart shows
 - id, show_id, barcode, listing_number, scanned_at
+- **⚠️ COUNTING SOLD ITEMS:** Count unique `listing_number` per show, NOT row count. Listing numbers are unique per show (1-150 = 150 items sold). The same barcode can appear with different listing numbers when you sell multiple physical items of the same SKU (e.g., two pairs of identical pants sold as listing #2 and #4).
 
 **`kickstart_sold_scans`** — Barcodes scanned during Kickstart shows
 - id, show_id, barcode, listing_number, scanned_at, intake_id
+- Same counting rule as above
 
 **`jumpstart_sort_log`** — Sort scanner results
 - id, barcode, zone, timestamp

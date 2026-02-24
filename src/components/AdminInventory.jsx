@@ -59,18 +59,29 @@ export default function AdminInventory() {
     setLoading(false)
   }
 
+  // Helper to fetch all rows with pagination (Supabase default limit is 1000)
+  async function fetchAllRows(table, columns) {
+    let allData = []
+    let offset = 0
+    const pageSize = 1000
+    while (true) {
+      const { data } = await supabase.from(table).select(columns).range(offset, offset + pageSize - 1)
+      if (!data || data.length === 0) break
+      allData = allData.concat(data)
+      offset += pageSize
+      if (data.length < pageSize) break
+    }
+    return allData
+  }
+
   async function loadUnsoldStats() {
-    // Get all scanned items from sort_log (grouped by barcode)
-    const { data: sortData } = await supabase
-      .from('jumpstart_sort_log')
-      .select('barcode')
+    // Get all scanned items from sort_log (with pagination)
+    const sortData = await fetchAllRows('jumpstart_sort_log', 'barcode')
 
-    // Get all sold items (grouped by barcode)
-    const { data: soldData } = await supabase
-      .from('jumpstart_sold_scans')
-      .select('barcode')
+    // Get all sold items (with pagination)
+    const soldData = await fetchAllRows('jumpstart_sold_scans', 'barcode')
 
-    if (!sortData) {
+    if (!sortData || sortData.length === 0) {
       setUnsoldStats({ totalUnsoldCost: 0, totalUnsoldCount: 0, avgUnsoldCost: 0, byLoad: [] })
       return
     }
