@@ -14,8 +14,14 @@ export default function AdminInventory() {
     loads: [],
     zones: { z1: 0, z2: 0, z3: 0, unassigned: 0 }
   })
+  const [unsoldStats, setUnsoldStats] = useState({
+    totalUnsoldCost: 0,
+    totalUnsoldCount: 0,
+    avgUnsoldCost: 0,
+    byLoad: [] // { load_id, unsoldCost, unsoldCount, avgCost }
+  })
 
-  useEffect(() => { loadStats() }, [])
+  useEffect(() => { loadStats(); loadUnsoldStats() }, [])
   useEffect(() => { loadItems() }, [search, zoneFilter])
 
   async function loadStats() {
@@ -51,6 +57,104 @@ export default function AdminInventory() {
       }
     })
     setLoading(false)
+  }
+
+  async function loadUnsoldStats() {
+    // Get all scanned items from sort_log (grouped by barcode)
+    const { data: sortData } = await supabase
+      .from('jumpstart_sort_log')
+      .select('barcode')
+
+    // Get all sold items (grouped by barcode)
+    const { data: soldData } = await supabase
+      .from('jumpstart_sold_scans')
+      .select('barcode')
+
+    if (!sortData) {
+      setUnsoldStats({ totalUnsoldCost: 0, totalUnsoldCount: 0, avgUnsoldCost: 0, byLoad: [] })
+      return
+    }
+
+    // Count scanned items per barcode
+    const scannedCounts = {}
+    sortData.forEach(row => {
+      scannedCounts[row.barcode] = (scannedCounts[row.barcode] || 0) + 1
+    })
+
+    // Count sold items per barcode
+    const soldCounts = {}
+    if (soldData) {
+      soldData.forEach(row => {
+        soldCounts[row.barcode] = (soldCounts[row.barcode] || 0) + 1
+      })
+    }
+
+    // Calculate remaining per barcode
+    const remainingCounts = {}
+    Object.keys(scannedCounts).forEach(barcode => {
+      const scanned = scannedCounts[barcode]
+      const sold = soldCounts[barcode] || 0
+      const remaining = scanned - sold
+      if (remaining > 0) {
+        remainingCounts[barcode] = remaining
+      }
+    })
+
+    // Get cost and load_id for each barcode from manifest
+    const barcodes = Object.keys(remainingCounts)
+    if (barcodes.length === 0) {
+      setUnsoldStats({ totalUnsoldCost: 0, totalUnsoldCount: 0, avgUnsoldCost: 0, byLoad: [] })
+      return
+    }
+
+    const { data: manifestData } = await supabase
+      .from('jumpstart_manifest')
+      .select('barcode, cost_freight, load_id')
+      .in('barcode', barcodes)
+
+    // Deduplicate manifest by barcode (take first match)
+    const manifestByBarcode = {}
+    if (manifestData) {
+      manifestData.forEach(row => {
+        if (!manifestByBarcode[row.barcode]) {
+          manifestByBarcode[row.barcode] = row
+        }
+      })
+    }
+
+    // Aggregate by load
+    const byLoadMap = {}
+    let totalCost = 0
+    let totalCount = 0
+
+    Object.entries(remainingCounts).forEach(([barcode, count]) => {
+      const manifest = manifestByBarcode[barcode]
+      if (manifest) {
+        const cost = Number(manifest.cost_freight) || 0
+        const loadId = manifest.load_id || 'Unknown'
+
+        if (!byLoadMap[loadId]) {
+          byLoadMap[loadId] = { load_id: loadId, unsoldCost: 0, unsoldCount: 0 }
+        }
+        byLoadMap[loadId].unsoldCost += cost * count
+        byLoadMap[loadId].unsoldCount += count
+        totalCost += cost * count
+        totalCount += count
+      }
+    })
+
+    // Calculate averages
+    const byLoad = Object.values(byLoadMap).map(load => ({
+      ...load,
+      avgCost: load.unsoldCount > 0 ? load.unsoldCost / load.unsoldCount : 0
+    }))
+
+    setUnsoldStats({
+      totalUnsoldCost: totalCost,
+      totalUnsoldCount: totalCount,
+      avgUnsoldCost: totalCount > 0 ? totalCost / totalCount : 0,
+      byLoad
+    })
   }
 
   async function loadItems() {
@@ -114,17 +218,66 @@ export default function AdminInventory() {
         </div>
       </div>
 
-      {/* By Load */}
+      {/* Unsold Inventory Summary */}
+      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-b from-amber-900/20 to-slate-900/40 border border-amber-500/20 p-5 shadow-xl shadow-black/30">
+        <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-amber-500/40 to-transparent" />
+        <h3 className="font-bold text-lg mb-4 text-amber-400">Unsold Inventory (Scanned)</h3>
+        <p className="text-sm text-slate-400 mb-4">Items scanned into sort log but not yet sold</p>
+        <div className="grid grid-cols-3 gap-4 mb-6">
+          <div className="rounded-xl bg-slate-800/30 border border-white/[0.04] p-4 text-center">
+            <div className="text-2xl font-bold text-amber-400">${unsoldStats.totalUnsoldCost.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</div>
+            <div className="text-sm text-slate-400">Total Cost Tied Up</div>
+          </div>
+          <div className="rounded-xl bg-slate-800/30 border border-white/[0.04] p-4 text-center">
+            <div className="text-2xl font-bold text-white">{unsoldStats.totalUnsoldCount.toLocaleString()}</div>
+            <div className="text-sm text-slate-400">Unsold Items</div>
+          </div>
+          <div className="rounded-xl bg-slate-800/30 border border-white/[0.04] p-4 text-center">
+            <div className="text-2xl font-bold text-slate-300">${unsoldStats.avgUnsoldCost.toFixed(2)}</div>
+            <div className="text-sm text-slate-400">Avg Cost/Item</div>
+          </div>
+        </div>
+
+        {/* Unsold By Load */}
+        {unsoldStats.byLoad.length > 0 && (
+          <div>
+            <h4 className="text-sm font-semibold text-slate-400 mb-3 uppercase tracking-wider">By Load</h4>
+            <div className="grid grid-cols-2 gap-4">
+              {unsoldStats.byLoad.map(load => (
+                <div key={load.load_id} className="rounded-xl bg-slate-800/30 border border-amber-500/10 p-4 hover:bg-slate-800/50 transition-colors">
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <div className="font-semibold text-white">Load {load.load_id}</div>
+                      <div className="text-sm text-amber-400/80 mt-1">Unsold: ${load.unsoldCost.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</div>
+                      <div className="text-xs text-slate-500 mt-0.5">Avg: ${load.avgCost.toFixed(2)}/item</div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-lg font-bold text-amber-400">{load.unsoldCount.toLocaleString()}</div>
+                      <div className="text-xs text-slate-500">items</div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {unsoldStats.byLoad.length === 0 && unsoldStats.totalUnsoldCount === 0 && (
+          <p className="text-sm text-slate-500 text-center py-4">No items have been scanned into sort log yet</p>
+        )}
+      </div>
+
+      {/* By Load (All Inventory) */}
       <div className="relative overflow-hidden rounded-2xl bg-gradient-to-b from-slate-800/60 to-slate-900/40 border border-white/[0.08] p-5 shadow-xl shadow-black/30">
         <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent" />
-        <h3 className="font-bold text-lg mb-4">By Load</h3>
+        <h3 className="font-bold text-lg mb-4">All Inventory by Load</h3>
         <div className="grid grid-cols-2 gap-4">
           {stats.loads.map(load => (
             <div key={load.load_id} className="rounded-xl bg-slate-800/30 border border-white/[0.04] p-4 hover:bg-slate-800/50 transition-colors">
               <div className="flex justify-between items-start">
                 <div>
                   <div className="font-semibold text-white">Load {load.load_id}</div>
-                  <div className="text-sm text-slate-500 mt-1">Cost: ${Number(load.total_cost).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</div>
+                  <div className="text-sm text-slate-500 mt-1">Total Cost: ${Number(load.total_cost).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</div>
                 </div>
                 <div className="text-right">
                   <div className="text-lg font-bold text-slate-300">{Number(load.item_count).toLocaleString()} items</div>
