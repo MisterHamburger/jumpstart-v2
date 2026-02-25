@@ -376,9 +376,8 @@ function ShowUpload() {
           timeOfDay = 'evening'
         }
 
-        // Count valid listings (not gift cards)
-        let orderCount = 0
-        const seen = new Set()
+        // Group by listing to properly count valid vs failed/cancelled
+        const byListing = {}
         for (const row of rows) {
           const productName = getField(row, 'product name', 'Product Name') || ''
           const match = productName.match(/#(\d+)/)
@@ -386,7 +385,19 @@ function ShowUpload() {
           const lowerName = productName.toLowerCase()
           if (lowerName.includes('gift card') || lowerName.includes('account credit') || lowerName.includes('store credit')) continue
           const listing = match[1]
-          if (!seen.has(listing)) { seen.add(listing); orderCount++ }
+          if (!byListing[listing]) byListing[listing] = []
+          byListing[listing].push(row)
+        }
+
+        // Count valid, failed, cancelled
+        let validCount = 0
+        let failedCount = 0
+        let cancelledCount = 0
+        for (const [listing, listingRows] of Object.entries(byListing)) {
+          const statuses = listingRows.map(r => (getField(r, 'cancelled or failed', 'Status') || '').toLowerCase().trim())
+          if (statuses.every(s => s === 'cancelled')) cancelledCount++
+          else if (statuses.every(s => s === 'failed')) failedCount++
+          else validCount++
         }
 
         // Check if this show already exists
@@ -395,7 +406,7 @@ function ShowUpload() {
         const showName = `${month}-${day}-${year}-${channel}-${streamer}`
         const alreadyExists = existingShows.some(s => s.name === showName)
 
-        setDetected({ date: showDate, timeOfDay, orderCount, showName, alreadyExists, firstOrder: timestamps[0], lastOrder: timestamps[timestamps.length - 1] })
+        setDetected({ date: showDate, timeOfDay, orderCount: validCount, failedCount, cancelledCount, showName, alreadyExists, firstOrder: timestamps[0], lastOrder: timestamps[timestamps.length - 1] })
         setPendingFile({ file, rows })
         setStatus('')
       }
@@ -568,9 +579,19 @@ function ShowUpload() {
                 <span className="font-semibold">{streamer}</span>
               </div>
               <div>
-                <span className="text-slate-500 text-xs block">Listings</span>
-                <span className="font-semibold">{detected.orderCount}</span>
+                <span className="text-slate-500 text-xs block">Scannable</span>
+                <span className="font-semibold text-emerald-400">{detected.orderCount}</span>
               </div>
+              {(detected.failedCount > 0 || detected.cancelledCount > 0) && (
+                <div>
+                  <span className="text-slate-500 text-xs block">Excluded</span>
+                  <span className="font-semibold text-red-400">
+                    {detected.failedCount > 0 && `${detected.failedCount} failed`}
+                    {detected.failedCount > 0 && detected.cancelledCount > 0 && ', '}
+                    {detected.cancelledCount > 0 && `${detected.cancelledCount} cancelled`}
+                  </span>
+                </div>
+              )}
             </div>
 
             {detected.alreadyExists ? (

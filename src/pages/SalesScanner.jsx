@@ -190,8 +190,12 @@ export default function SalesScanner() {
   }
 
   const onScanSuccess = async (decodedText) => {
-    const prefix = showData?.channel === 'Kickstart' ? '198' : '099'
-    if (!decodedText.startsWith(prefix)) return
+    // Kickstart: Free People/UO/Anthro use 196, 198, 199 prefixes
+    // Jumpstart: J.Crew/Madewell use 099 prefix
+    const isValidBarcode = showData?.channel === 'Kickstart'
+      ? ['196', '198', '199'].some(p => decodedText.startsWith(p))
+      : decodedText.startsWith('099')
+    if (!isValidBarcode) return
     setScannedBarcode(decodedText)
     await stopScanner()
   }
@@ -319,10 +323,16 @@ export default function SalesScanner() {
     }
   }
 
-  const handleDeleteScan = (indexToDelete) => {
-    if (confirm('Delete this scan?')) {
-      setScans(prev => prev.filter((_, idx) => idx !== indexToDelete))
-    }
+  const handleDeleteScan = async (indexToDelete) => {
+    if (!confirm('Delete this scan?')) return
+    const scan = scans[indexToDelete]
+    if (!scan) return
+    // Delete from Supabase by matching show_id + listing_number
+    const table = showData?.channel === 'Kickstart' ? 'kickstart_sold_scans' : 'jumpstart_sold_scans'
+    await supabase.from(table).delete().eq('show_id', showId).eq('listing_number', scan.listingNum)
+    // Remove from local state
+    setScans(prev => prev.filter((_, idx) => idx !== indexToDelete))
+    // Count will auto-update via the polling interval
   }
 
   const handleFinish = async () => {
