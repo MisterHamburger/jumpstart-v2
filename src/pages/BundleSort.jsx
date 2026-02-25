@@ -2,6 +2,8 @@ import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Html5Qrcode } from 'html5-qrcode'
 import { supabase } from '../lib/supabase'
+import jsPDF from 'jspdf'
+import autoTable from 'jspdf-autotable'
 
 export default function BundleSort() {
   const navigate = useNavigate()
@@ -17,6 +19,11 @@ export default function BundleSort() {
   const [noteText, setNoteText] = useState('')
   const [showItemList, setShowItemList] = useState(false)
   const [activeBoxItems, setActiveBoxItems] = useState([])
+  const [showSoldModal, setShowSoldModal] = useState(false)
+  const [salePrice, setSalePrice] = useState('')
+  const [savingSale, setSavingSale] = useState(false)
+  const [editingPercentage, setEditingPercentage] = useState(false)
+  const [tempPercentage, setTempPercentage] = useState('')
   const html5QrcodeRef = useRef(null)
   const processingRef = useRef(false)
 
@@ -46,6 +53,9 @@ export default function BundleSort() {
         boxNumber: b.box_number,
         status: b.status,
         note: b.note || '',
+        salePrice: b.sale_price,
+        soldAt: b.sold_at,
+        pricePercentage: b.price_percentage || 10,
         itemCount: (scansByBox[b.box_number] || []).length,
         items: (scansByBox[b.box_number] || []).map(s => ({
           barcode: s.barcode,
@@ -64,7 +74,18 @@ export default function BundleSort() {
     }
   }
 
-  const openBox = (box) => { setViewingBox(box) }
+  const openBox = async (box) => {
+    setViewingBox(box)
+    // Fetch manifest details for this box
+    const { data } = await supabase
+      .from('bundle_manifest')
+      .select('*')
+      .eq('box_number', box.boxNumber)
+      .order('scanned_at')
+    if (data) {
+      setViewingBox(prev => ({ ...prev, manifestItems: data }))
+    }
+  }
 
   const startScanningBox = (box) => {
     setViewingBox(null)
@@ -178,6 +199,148 @@ export default function BundleSort() {
       .eq('box_number', boxNumber)
     setViewingBox(null)
     fetchBoxes()
+  }
+
+  const markAsSold = async () => {
+    setSavingSale(true)
+    // Calculate the sale price from MSRP and percentage
+    const items = viewingBox.manifestItems || []
+    const totalMsrp = items.reduce((sum, item) => sum + (item.msrp || 0), 0)
+    const pct = viewingBox.pricePercentage || 10
+    const calculatedPrice = totalMsrp * (pct / 100)
+
+    await supabase.from('jumpstart_bundle_boxes')
+      .update({
+        sale_price: calculatedPrice,
+        sold_at: new Date().toISOString()
+      })
+      .eq('box_number', viewingBox.boxNumber)
+    setSavingSale(false)
+    setShowSoldModal(false)
+    // Refresh
+    const allBoxes = await fetchBoxes()
+    const updated = allBoxes.find(b => b.boxNumber === viewingBox.boxNumber)
+    if (updated) openBox(updated)
+  }
+
+  const clearSale = async () => {
+    if (!confirm('Clear sale data for this box?')) return
+    await supabase.from('jumpstart_bundle_boxes')
+      .update({ sale_price: null, sold_at: null })
+      .eq('box_number', viewingBox.boxNumber)
+    const allBoxes = await fetchBoxes()
+    const updated = allBoxes.find(b => b.boxNumber === viewingBox.boxNumber)
+    if (updated) openBox(updated)
+  }
+
+  const savePercentage = async (newPercentage) => {
+    const pct = parseFloat(newPercentage)
+    if (isNaN(pct) || pct <= 0 || pct > 100) return
+    await supabase.from('jumpstart_bundle_boxes')
+      .update({ price_percentage: pct })
+      .eq('box_number', viewingBox.boxNumber)
+    setEditingPercentage(false)
+    const allBoxes = await fetchBoxes()
+    const updated = allBoxes.find(b => b.boxNumber === viewingBox.boxNumber)
+    if (updated) openBox(updated)
+  }
+
+  const generatePDF = () => {
+    try {
+      const items = viewingBox.manifestItems || []
+      if (items.length === 0) {
+        alert('No items to generate PDF')
+        return
+      }
+
+      const totalMsrp = items.reduce((sum, item) => sum + (item.msrp || 0), 0)
+      const pricePercent = viewingBox.pricePercentage || 10
+      const totalCustomerPrice = totalMsrp * (pricePercent / 100)
+
+      // Landscape orientation for more width
+      const doc = new jsPDF({ orientation: 'landscape' })
+      const pageWidth = doc.internal.pageSize.getWidth()
+
+      // Calculate table width and centering
+      const tableWidth = 234 // Sum of all column widths
+      const leftMargin = (pageWidth - tableWidth) / 2
+
+      // Header text - plain black bold
+      doc.setTextColor(0, 0, 0)
+      doc.setFontSize(14)
+      doc.setFont('helvetica', 'bold')
+      doc.text(`BOX #${viewingBox.boxNumber} - Madewell/J.Crew Liquidation Bundle`, leftMargin, 12)
+
+      doc.setFontSize(9)
+      doc.setFont('helvetica', 'normal')
+      doc.text(`${items.length} Pieces | Mixed Categories`, leftMargin, 18)
+
+      // Table data - Your Price = MSRP * percentage
+      const tableData = items.map(item => {
+        const msrp = item.msrp || 0
+        const yourPrice = msrp * (pricePercent / 100)
+        return [
+          item.description || 'Unknown',
+          item.color || '',
+          item.style || '',
+          item.size || '',
+          item.category || '',
+          item.vendor || '',
+          `$${msrp.toFixed(2)}`,
+          `$${yourPrice.toFixed(2)}`
+        ]
+      })
+
+      // Add table using autoTable function - centered on page
+      autoTable(doc, {
+        startY: 22,
+        head: [['Description', 'Color', 'Style', 'Size', 'Category', 'Vendor', 'MSRP', 'Your Price']],
+        body: tableData,
+        theme: 'grid',
+        styles: { fontSize: 7, cellPadding: 1, lineWidth: 0.1 },
+        headStyles: { fillColor: [30, 58, 138], textColor: 255, fontStyle: 'bold', fontSize: 7, cellPadding: 1.5, halign: 'left' },
+        columnStyles: {
+          0: { cellWidth: 75 },  // Description
+          1: { cellWidth: 22 },  // Color
+          2: { cellWidth: 20 },  // Style
+          3: { cellWidth: 15 },  // Size
+          4: { cellWidth: 32 },  // Category
+          5: { cellWidth: 28 },  // Vendor
+          6: { cellWidth: 20, halign: 'right' },  // MSRP - right aligned
+          7: { cellWidth: 22, halign: 'right' }   // Your Price - right aligned
+        },
+        margin: { left: leftMargin, right: leftMargin, top: 10, bottom: 10 },
+        didParseCell: function(data) {
+          // Right-align MSRP and Your Price headers
+          if (data.section === 'head' && (data.column.index === 6 || data.column.index === 7)) {
+            data.cell.styles.halign = 'right'
+          }
+        }
+      })
+
+      // Add totals below table - right aligned to table edge
+      const tableRightEdge = leftMargin + tableWidth
+      const finalY = doc.lastAutoTable.finalY + 5
+
+      doc.setFontSize(9)
+      doc.setFont('helvetica', 'normal')
+      doc.setTextColor(80, 80, 80)
+      const avgPerItem = totalCustomerPrice / items.length
+      const detailText = `${items.length} items  •  $${avgPerItem.toFixed(2)} avg per item  •  Retail Value: $${totalMsrp.toFixed(2)} MSRP  •  ${pricePercent}% of MSRP`
+      doc.text(detailText, tableRightEdge, finalY, { align: 'right' })
+
+      doc.setFontSize(12)
+      doc.setFont('helvetica', 'bold')
+      doc.setTextColor(30, 58, 138)
+      const priceText = `YOUR PRICE: $${totalCustomerPrice.toFixed(2)}`
+      doc.text(priceText, tableRightEdge, finalY + 6, { align: 'right' })
+
+      // Save
+      doc.save(`Box_${viewingBox.boxNumber}_Manifest.pdf`)
+    } catch (err) {
+      console.error('PDF generation error:', err)
+      alert('Error generating PDF: ' + err.message)
+    }
   }
 
   const completeBox = async (boxNumber) => {
@@ -296,7 +459,15 @@ export default function BundleSort() {
   if (viewingBox) {
     const isComplete = viewingBox.status === 'complete'
     const pct = progressPercent(viewingBox.itemCount)
-    const items = viewingBox.items || []
+    const manifestItems = viewingBox.manifestItems || []
+    const totalCost = manifestItems.reduce((sum, item) => sum + (item.cost_freight || item.cost || 0), 0)
+    const totalMsrp = manifestItems.reduce((sum, item) => sum + (item.msrp || 0), 0)
+    const pricePercentage = viewingBox.pricePercentage || 10
+    const customerPrice = totalMsrp * (pricePercentage / 100)
+    const isSold = viewingBox.salePrice != null
+    const profit = customerPrice - totalCost
+    const margin = customerPrice > 0 ? (profit / customerPrice) * 100 : null
+
     return (
       <div className="min-h-screen flex flex-col bg-[#0a0f1a]">
         {/* Gradient overlay */}
@@ -308,8 +479,8 @@ export default function BundleSort() {
           </button>
           <h1 className="text-lg font-bold text-white">Box {viewingBox.boxNumber}</h1>
           <div className="flex items-center gap-2">
-            {isComplete && (
-              <button onClick={() => reopenBox(viewingBox.boxNumber)} className="bg-gradient-to-r from-amber-500 to-orange-600 px-4 py-2 rounded-full text-white font-semibold text-sm shadow-lg shadow-amber-500/30">
+            {isComplete && !isSold && (
+              <button onClick={() => reopenBox(viewingBox.boxNumber)} className="bg-white/10 px-3 py-1.5 rounded-full text-white/70 text-sm border border-white/10">
                 Reopen
               </button>
             )}
@@ -318,49 +489,176 @@ export default function BundleSort() {
 
         {/* Progress bar */}
         <div className="h-1 bg-white/5">
-          <div className={`h-full transition-all duration-500 ${isComplete ? 'bg-gradient-to-r from-emerald-400 to-green-500' : 'bg-gradient-to-r from-cyan-400 via-blue-500 to-purple-500'}`} style={{ width: `${pct}%` }}></div>
+          <div className={`h-full transition-all duration-500 ${isSold ? 'bg-gradient-to-r from-emerald-400 to-green-500' : isComplete ? 'bg-gradient-to-r from-fuchsia-400 to-purple-500' : 'bg-gradient-to-r from-cyan-400 via-blue-500 to-purple-500'}`} style={{ width: `${pct}%` }}></div>
         </div>
 
-        {/* Status line */}
-        <div className="px-4 pt-4 pb-2 flex items-baseline justify-between">
-          <div>
-            <span className="text-white font-bold text-2xl">{viewingBox.itemCount}</span>
-            <span className="text-slate-400 text-lg">/40 items</span>
+        {/* Stats cards */}
+        <div className="px-4 pt-4 pb-2">
+          <div className="grid grid-cols-4 gap-2 mb-3">
+            <div className="bg-white/5 rounded-xl p-3 text-center border border-white/10">
+              <p className="text-2xl font-bold text-white">{viewingBox.itemCount}</p>
+              <p className="text-xs text-slate-400">Items</p>
+            </div>
+            <div className="bg-white/5 rounded-xl p-3 text-center border border-white/10">
+              <p className="text-2xl font-bold text-cyan-400">${totalMsrp.toFixed(0)}</p>
+              <p className="text-xs text-slate-400">MSRP</p>
+            </div>
+            <div className="bg-white/5 rounded-xl p-3 text-center border border-white/10">
+              <p className="text-2xl font-bold text-fuchsia-400">${totalCost.toFixed(2)}</p>
+              <p className="text-xs text-slate-400">Cost</p>
+            </div>
+            <div
+              className="bg-emerald-500/10 rounded-xl p-3 text-center border border-emerald-500/30 cursor-pointer hover:border-emerald-400/50 transition-all"
+              onClick={() => { setEditingPercentage(true); setTempPercentage(String(pricePercentage)); }}
+            >
+              <p className="text-2xl font-bold text-emerald-400">${customerPrice.toFixed(2)}</p>
+              <p className="text-xs text-emerald-300/60">Price ({pricePercentage}%)</p>
+            </div>
           </div>
-          <span className={`text-sm font-medium ${isComplete ? 'text-emerald-400' : viewingBox.itemCount > 0 ? 'text-cyan-400' : 'text-slate-500'}`}>
-            {isComplete ? 'Complete' : viewingBox.itemCount > 0 ? 'In Progress' : 'Empty'}
-          </span>
+
+          {/* Percentage editor */}
+          {editingPercentage && (
+            <div className="bg-slate-800/80 rounded-xl p-3 mb-3 border border-white/10">
+              <p className="text-xs text-slate-400 mb-2">Adjust pricing percentage</p>
+              <div className="flex gap-2">
+                {[8, 10, 12, 15].map(pct => (
+                  <button
+                    key={pct}
+                    onClick={() => savePercentage(pct)}
+                    className={`flex-1 py-2 rounded-lg text-sm font-semibold transition-all ${
+                      pricePercentage === pct
+                        ? 'bg-emerald-500 text-white'
+                        : 'bg-white/10 text-white hover:bg-white/20'
+                    }`}
+                  >
+                    {pct}%
+                  </button>
+                ))}
+                <input
+                  type="number"
+                  value={tempPercentage}
+                  onChange={e => setTempPercentage(e.target.value)}
+                  onBlur={() => savePercentage(tempPercentage)}
+                  onKeyDown={e => e.key === 'Enter' && savePercentage(tempPercentage)}
+                  className="w-16 bg-white/10 border border-white/20 rounded-lg px-2 py-2 text-white text-sm text-center"
+                  placeholder="%"
+                />
+              </div>
+            </div>
+          )}
+
+          {/* Profit preview (always show) */}
+          <div className={`rounded-xl p-3 mb-3 border ${profit >= 0 ? 'bg-emerald-500/10 border-emerald-500/30' : 'bg-red-500/10 border-red-500/30'}`}>
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs text-slate-400 mb-1">{isSold ? 'SOLD' : 'PROJECTED'}</p>
+                <p className="text-xl font-bold text-white">${customerPrice.toFixed(2)}</p>
+              </div>
+              <div className="text-right">
+                <p className={`text-xl font-bold ${profit >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                  {profit >= 0 ? '+' : ''}${profit.toFixed(2)}
+                </p>
+                <p className="text-xs text-slate-400">{margin?.toFixed(1)}% margin</p>
+              </div>
+            </div>
+            {isSold && (
+              <button onClick={clearSale} className="text-xs text-slate-500 hover:text-slate-300 mt-2">
+                Clear sale
+              </button>
+            )}
+          </div>
+
+          {/* Action buttons */}
+          <div className="flex gap-2">
+            {!isComplete && (
+              <button onClick={() => startScanningBox(viewingBox)} className="flex-1 bg-gradient-to-r from-cyan-500 to-blue-600 py-3 rounded-xl text-white font-bold text-sm shadow-lg shadow-cyan-500/25 active:scale-[0.98] transition-all">
+                Scan Items
+              </button>
+            )}
+            {isComplete && !isSold && (
+              <button onClick={() => setShowSoldModal(true)} className="flex-1 bg-gradient-to-r from-emerald-500 to-green-600 py-3 rounded-xl text-white font-bold text-sm shadow-lg shadow-emerald-500/25 active:scale-[0.98] transition-all">
+                Mark as Sold
+              </button>
+            )}
+            {isComplete && (
+              <button onClick={generatePDF} className="flex-1 bg-gradient-to-r from-fuchsia-500 to-purple-600 py-3 rounded-xl text-white font-bold text-sm shadow-lg shadow-fuchsia-500/25 active:scale-[0.98] transition-all">
+                Generate PDF
+              </button>
+            )}
+          </div>
         </div>
 
-        {/* Scan button */}
-        {!isComplete && (
-          <div className="px-4 pb-4">
-            <button onClick={() => startScanningBox(viewingBox)} className="w-full bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 py-4 rounded-2xl text-white font-bold text-lg shadow-xl shadow-cyan-500/25 active:scale-[0.98] transition-all">
-              Scan Items
-            </button>
-          </div>
-        )}
-
-        {/* Items list */}
+        {/* Items list with manifest details */}
         <div className="flex-1 overflow-y-auto px-4 pb-4">
-          {items.length === 0 ? (
+          {manifestItems.length === 0 ? (
             <p className="text-slate-600 text-center py-8 text-sm">No items scanned yet</p>
           ) : (
             <>
-              <p className="text-slate-500 text-xs uppercase tracking-wider mb-2 font-semibold">Scanned Items</p>
-              <div className="space-y-1">
-                {items.map((item, i) => (
-                  <div key={i} className="flex items-center justify-between py-2.5 border-b border-white/5">
-                    <p className="text-white font-mono text-base flex-1 min-w-0 mr-3">{item.barcode}</p>
-                    <button onClick={() => deleteItem(viewingBox.boxNumber, item.barcode, item.id)} className="text-red-500/50 hover:text-red-400 text-xs px-2 py-1 shrink-0">
-                      remove
-                    </button>
+              <p className="text-slate-500 text-xs uppercase tracking-wider mb-2 font-semibold">{manifestItems.length} Items</p>
+              <div className="space-y-2">
+                {manifestItems.map((item, i) => (
+                  <div key={i} className="bg-white/5 rounded-xl p-3 border border-white/10">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-white text-sm font-medium leading-tight line-clamp-2">
+                          {item.description || 'Unknown item'}
+                        </p>
+                        <div className="flex flex-wrap gap-x-3 gap-y-1 mt-1.5 text-xs text-slate-400">
+                          {item.color && <span>{item.color}</span>}
+                          {item.size && <span>Size: {item.size}</span>}
+                          {item.category && <span>{item.category}</span>}
+                        </div>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <p className="text-fuchsia-400 font-semibold text-sm">${(item.cost_freight || item.cost || 0).toFixed(2)}</p>
+                        <p className="text-slate-500 text-xs">${(item.msrp || 0).toFixed(0)} MSRP</p>
+                      </div>
+                    </div>
                   </div>
                 ))}
               </div>
             </>
           )}
         </div>
+
+        {/* Mark as Sold Modal */}
+        {showSoldModal && (
+          <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <div className="bg-slate-800 rounded-2xl p-6 w-full max-w-sm border border-white/10">
+              <h3 className="text-xl font-bold text-white mb-2">Mark as Sold</h3>
+              <p className="text-slate-400 text-sm mb-4">Confirm sale of Box {viewingBox.boxNumber}</p>
+
+              <div className="bg-emerald-500/10 rounded-xl p-4 mb-4 border border-emerald-500/30">
+                <div className="flex justify-between items-center mb-2">
+                  <span className="text-slate-400">Sale Price</span>
+                  <span className="text-2xl font-bold text-emerald-400">${customerPrice.toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between items-center text-sm">
+                  <span className="text-slate-500">{pricePercentage}% of ${totalMsrp.toFixed(2)} MSRP</span>
+                  <span className={`font-semibold ${profit >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                    {profit >= 0 ? '+' : ''}${profit.toFixed(2)} profit
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setShowSoldModal(false)}
+                  className="flex-1 bg-white/10 py-3 rounded-xl text-white font-semibold border border-white/10"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={markAsSold}
+                  disabled={savingSale}
+                  className="flex-1 bg-gradient-to-r from-emerald-500 to-green-600 py-3 rounded-xl text-white font-bold disabled:opacity-50"
+                >
+                  {savingSale ? 'Saving...' : 'Confirm Sale'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     )
   }
@@ -400,11 +698,15 @@ export default function BundleSort() {
         )}
         {boxes.map(box => {
           const pct = progressPercent(box.itemCount)
-          const statusColor = box.status === 'complete' ? 'from-emerald-500/20 to-green-500/20' :
+          const isSold = box.salePrice != null
+          const statusColor = isSold ? 'from-emerald-500/20 to-green-500/20' :
+                              box.status === 'complete' ? 'from-fuchsia-500/20 to-purple-500/20' :
                               box.status === 'in-progress' ? 'from-cyan-500/20 to-blue-500/20' : 'from-slate-500/20 to-slate-600/20'
-          const borderColor = box.status === 'complete' ? 'border-emerald-400/30' :
+          const borderColor = isSold ? 'border-emerald-400/30' :
+                              box.status === 'complete' ? 'border-fuchsia-400/30' :
                               box.status === 'in-progress' ? 'border-cyan-400/30' : 'border-white/10'
-          const statusText = box.status === 'complete' ? 'Complete' : box.status === 'in-progress' ? 'In Progress' : 'Empty'
+          const statusText = isSold ? `Sold · $${box.salePrice.toFixed(2)}` :
+                             box.status === 'complete' ? 'Complete' : box.status === 'in-progress' ? 'In Progress' : 'Empty'
 
           return (
             <div key={box.boxNumber} className={`rounded-2xl bg-gradient-to-r ${statusColor} backdrop-blur-lg border ${borderColor} overflow-hidden max-w-full`}>
@@ -413,7 +715,7 @@ export default function BundleSort() {
                 <div className="flex items-center justify-between mb-2">
                   <div className="flex-1 min-w-0">
                     <h3 className="text-white font-bold text-lg">Box {box.boxNumber}</h3>
-                    <p className="text-slate-400 text-sm">{box.itemCount}/40 items • {statusText}</p>
+                    <p className="text-slate-400 text-sm">{box.itemCount}/40 items • <span className={isSold ? 'text-emerald-400' : ''}>{statusText}</span></p>
                   </div>
                   <button onClick={(e) => deleteBox(e, box)} className="text-slate-500 hover:text-red-400 active:text-red-400 w-10 h-10 rounded-full bg-white/5 hover:bg-red-500/10 flex items-center justify-center text-lg font-bold transition-colors shrink-0">
                     ✕
@@ -422,7 +724,8 @@ export default function BundleSort() {
                 {/* Progress bar */}
                 <div className="h-1.5 bg-white/5 rounded-full overflow-hidden">
                   <div className={`h-full rounded-full transition-all duration-500 ${
-                    box.status === 'complete' ? 'bg-gradient-to-r from-emerald-400 to-green-500' :
+                    isSold ? 'bg-gradient-to-r from-emerald-400 to-green-500' :
+                    box.status === 'complete' ? 'bg-gradient-to-r from-fuchsia-400 to-purple-500' :
                     'bg-gradient-to-r from-cyan-400 via-blue-500 to-purple-500'
                   }`} style={{ width: `${pct}%` }}></div>
                 </div>

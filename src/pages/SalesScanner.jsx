@@ -21,14 +21,15 @@ export default function SalesScanner() {
   const [cameraError, setCameraError] = useState(null)
   const [scannerKey, setScannerKey] = useState(0)
   const [showScansModal, setShowScansModal] = useState(false)
+  const [showRemainingModal, setShowRemainingModal] = useState(false)
+  const [remainingItems, setRemainingItems] = useState([])
+  const [loadingRemaining, setLoadingRemaining] = useState(false)
   const [showCompletion, setShowCompletion] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [realScannedCount, setRealScannedCount] = useState(0)
   const [showExcludedModal, setShowExcludedModal] = useState(
     (sessionState.excludedItems || []).length > 0
   )
-  const [showNoBarcodeInput, setShowNoBarcodeInput] = useState(false)
-  const [manualBarcode, setManualBarcode] = useState('')
   const html5QrcodeRef = useRef(null)
   const initialScannedRef = useRef(null)
 
@@ -113,6 +114,40 @@ export default function SalesScanner() {
     if (showId && showData?.channel) loadScans()
   }, [showId, showData?.channel])
 
+  // Load remaining (unscanned) items
+  const loadRemainingItems = async () => {
+    if (!showId || !showData?.channel) return
+    setLoadingRemaining(true)
+    try {
+      const table = showData.channel === 'Kickstart' ? 'kickstart_sold_scans' : 'jumpstart_sold_scans'
+
+      // Get all scanned listing numbers for this show
+      const { data: scannedData } = await supabase
+        .from(table)
+        .select('listing_number')
+        .eq('show_id', showId)
+
+      const scannedListings = new Set((scannedData || []).map(s => String(s.listing_number)))
+
+      // Get all valid show_items that haven't been scanned
+      const { data: allItems } = await supabase
+        .from('show_items')
+        .select('listing_number, product_name, status')
+        .eq('show_id', showId)
+        .eq('status', 'valid')
+        .order('listing_number', { ascending: true })
+
+      const remaining = (allItems || []).filter(item =>
+        !scannedListings.has(String(item.listing_number))
+      )
+
+      setRemainingItems(remaining)
+    } catch (err) {
+      console.error('Error loading remaining items:', err)
+    }
+    setLoadingRemaining(false)
+  }
+
   // Check for completion
   useEffect(() => {
     if (showExcludedModal) return
@@ -126,20 +161,24 @@ export default function SalesScanner() {
     }
   }, [scannedCount, totalItems, showExcludedModal])
 
-  // Browser back button for modal
+  // Browser back button for modals
   useEffect(() => {
     const handlePopState = () => {
       if (showScansModal) {
         setShowScansModal(false)
         window.history.pushState(null, '', window.location.pathname)
       }
+      if (showRemainingModal) {
+        setShowRemainingModal(false)
+        window.history.pushState(null, '', window.location.pathname)
+      }
     }
-    if (showScansModal) {
+    if (showScansModal || showRemainingModal) {
       window.history.pushState(null, '', window.location.pathname)
       window.addEventListener('popstate', handlePopState)
     }
     return () => { window.removeEventListener('popstate', handlePopState) }
-  }, [showScansModal])
+  }, [showScansModal, showRemainingModal])
 
   const handleAutoComplete = async () => {
     await stopScanner()
@@ -200,24 +239,10 @@ export default function SalesScanner() {
     await stopScanner()
   }
 
-  // No Barcode handlers
+  // No Barcode handler - skip straight to listing number entry
   const handleNoBarcode = async () => {
     await stopScanner()
-    setShowNoBarcodeInput(true)
-  }
-
-  const handleManualSubmit = () => {
-    if (!manualBarcode.trim()) return
-    setScannedBarcode(manualBarcode.trim())
-    setShowNoBarcodeInput(false)
-    setManualBarcode('')
-  }
-
-  const handleCancelManual = async () => {
-    setShowNoBarcodeInput(false)
-    setManualBarcode('')
-    setScannerKey(prev => prev + 1)
-    await startScanner()
+    setScannedBarcode('NO_BARCODE')
   }
 
   const handleSubmit = async (e) => {
@@ -430,42 +455,7 @@ export default function SalesScanner() {
       </div>
 
       {/* Main Content */}
-      {showNoBarcodeInput ? (
-        /* No Barcode Manual Entry */
-        <div className="relative z-10 flex-1 flex flex-col items-center justify-center p-6">
-          <p className="text-white text-xl font-bold mb-2">Enter Yellow Sticker Number</p>
-          <p className="text-slate-500 text-sm mb-6">Type the barcode or sticker number</p>
-          <input
-            type="text"
-            inputMode="numeric"
-            autoFocus
-            value={manualBarcode}
-            onChange={(e) => setManualBarcode(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && handleManualSubmit()}
-            placeholder="Sticker number..."
-            className="w-full max-w-sm text-center text-3xl font-mono text-white bg-white/[0.06] border border-white/[0.1] rounded-2xl px-4 py-4 outline-none focus:border-teal-500/50 focus:ring-2 focus:ring-teal-500/20 placeholder:text-slate-600"
-          />
-          <div className="flex gap-3 mt-6 w-full max-w-sm">
-            <button
-              onClick={handleCancelManual}
-              className="flex-1 py-4 rounded-2xl font-bold text-lg bg-white/[0.06] border border-white/[0.1] text-white/70 active:scale-[0.97] transition-all"
-            >
-              Cancel
-            </button>
-            <button
-              onClick={handleManualSubmit}
-              disabled={!manualBarcode.trim()}
-              className={`flex-1 py-4 rounded-2xl font-bold text-lg transition-all active:scale-[0.97] ${
-                manualBarcode.trim()
-                  ? `bg-gradient-to-r ${gradientFrom} ${gradientTo} text-white shadow-lg ${shadowColor}`
-                  : 'bg-white/5 border border-white/10 text-white/30 cursor-not-allowed'
-              }`}
-            >
-              Continue
-            </button>
-          </div>
-        </div>
-      ) : !scannedBarcode ? (
+      {!scannedBarcode ? (
         <div className="relative z-10 flex-1 flex flex-col">
           {cameraError ? (
             <div className="flex-1 flex items-center justify-center bg-slate-900">
@@ -489,17 +479,23 @@ export default function SalesScanner() {
             </div>
           )}
 
-          {/* Bottom buttons: No Barcode + Scans */}
-          <div className="relative z-10 px-4 py-3 flex gap-3 backdrop-blur-xl">
+          {/* Bottom buttons: No Barcode + Remaining + Scans */}
+          <div className="relative z-10 px-4 py-3 flex gap-2 backdrop-blur-xl">
             <button
               onClick={handleNoBarcode}
-              className="flex-1 py-3 rounded-2xl font-bold text-base bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow-lg shadow-amber-500/30 border border-amber-400/50 active:scale-[0.97] transition-all"
+              className="flex-1 py-3 rounded-2xl font-bold text-sm bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow-lg shadow-amber-500/30 border border-amber-400/50 active:scale-[0.97] transition-all"
             >
               No Barcode
             </button>
             <button
+              onClick={() => { loadRemainingItems(); setShowRemainingModal(true); }}
+              className="flex-1 py-3 rounded-2xl font-bold text-sm bg-gradient-to-r from-indigo-500 to-blue-500 text-white shadow-lg shadow-indigo-500/30 border border-indigo-400/50 active:scale-[0.97] transition-all"
+            >
+              Remaining
+            </button>
+            <button
               onClick={() => setShowScansModal(true)}
-              className="flex-1 py-3 rounded-2xl font-bold text-base bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white shadow-lg shadow-violet-500/30 border border-violet-400/50 active:scale-[0.97] transition-all"
+              className="flex-1 py-3 rounded-2xl font-bold text-sm bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white shadow-lg shadow-violet-500/30 border border-violet-400/50 active:scale-[0.97] transition-all"
             >
               Scans
             </button>
@@ -656,6 +652,63 @@ export default function SalesScanner() {
                           <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
                         </svg>
                       </button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Remaining Modal */}
+      {showRemainingModal && (
+        <div className="fixed inset-0 bg-black/90 backdrop-blur-lg z-50 flex flex-col">
+          <div className="bg-slate-800/90 px-6 py-4 flex items-center justify-between border-b border-white/10">
+            <button
+              onClick={() => setShowRemainingModal(false)}
+              className="text-white/80 hover:text-white text-3xl transition-colors"
+            >
+              ←
+            </button>
+            <div className="text-center">
+              <h3 className="text-xl font-bold text-white">Remaining</h3>
+              <p className="text-white/50 text-sm">{remainingItems.length} items left</p>
+            </div>
+            <button
+              onClick={() => setShowRemainingModal(false)}
+              className="text-white/80 hover:text-white text-3xl transition-colors"
+            >
+              ×
+            </button>
+          </div>
+          <div className="flex-1 overflow-y-auto p-6">
+            <div className="max-w-2xl mx-auto space-y-3">
+              {loadingRemaining ? (
+                <div className="text-center py-12">
+                  <p className="text-white/50 text-lg">Loading...</p>
+                </div>
+              ) : remainingItems.length === 0 ? (
+                <div className="text-center py-12">
+                  <div className="text-6xl mb-4">🎉</div>
+                  <p className="text-white text-lg font-semibold">All items scanned!</p>
+                </div>
+              ) : (
+                remainingItems.map((item, idx) => (
+                  <div
+                    key={idx}
+                    className="bg-indigo-500/10 backdrop-blur-lg rounded-2xl p-4 border border-indigo-500/30 hover:border-indigo-400/50 transition-all cursor-pointer active:scale-[0.98]"
+                    onClick={async () => {
+                      setShowRemainingModal(false)
+                      setListingNumber(String(item.listing_number))
+                      if (!isScanning && !scannedBarcode) {
+                        await startScanner()
+                      }
+                    }}
+                  >
+                    <div className="flex items-center justify-between">
+                      <p className="text-indigo-300 font-bold text-2xl">#{item.listing_number}</p>
+                      <p className="text-indigo-400/60 text-sm">tap to scan</p>
                     </div>
                   </div>
                 ))

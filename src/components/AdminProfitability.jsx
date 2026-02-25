@@ -60,6 +60,7 @@ export default function AdminProfitability() {
   const [expanded, setExpanded] = useState(null)
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
+  const [hideBadBarcodes, setHideBadBarcodes] = useState(false)
   const PAGE_SIZE = 100
 
   useEffect(() => {
@@ -88,7 +89,7 @@ export default function AdminProfitability() {
     }
   }, [channel, filteredShows, selectedShow])
 
-  useEffect(() => { loadItems() }, [search, sortKey, channel, selectedShow, page, dateFrom, dateTo])
+  useEffect(() => { loadItems() }, [search, sortKey, channel, selectedShow, page, dateFrom, dateTo, hideBadBarcodes])
 
   async function loadItems() {
     setLoading(true)
@@ -99,6 +100,7 @@ export default function AdminProfitability() {
     if (search) query = query.or(`description.ilike.%${search}%,barcode.ilike.%${search}%,category.ilike.%${search}%,product_name.ilike.%${search}%`)
     if (dateFrom) query = query.gte('show_date', dateFrom)
     if (dateTo) query = query.lte('show_date', dateTo)
+    if (hideBadBarcodes) query = query.eq('is_bad_barcode', false)
     const { data } = await query
     setItems(data || [])
     setLoading(false)
@@ -113,7 +115,8 @@ export default function AdminProfitability() {
         p_show_name: selectedShow === 'all' ? null : selectedShow,
         p_search: search || null,
         p_date_from: dateFrom || null,
-        p_date_to: dateTo || null
+        p_date_to: dateTo || null,
+        p_hide_bad_barcodes: hideBadBarcodes || null
       })
       
       if (data && data.length > 0 && !error) {
@@ -132,7 +135,7 @@ export default function AdminProfitability() {
       }
     }
     loadFullSummary()
-  }, [channel, selectedShow, search, dateFrom, dateTo])
+  }, [channel, selectedShow, search, dateFrom, dateTo, hideBadBarcodes])
 
   const s = fullSummary
 
@@ -288,14 +291,26 @@ export default function AdminProfitability() {
         </div>
 
         {/* Sort Dropdown */}
-        <select 
-          value={sortKey} 
-          onChange={e => { setSortKey(e.target.value); setPage(0) }} 
+        <select
+          value={sortKey}
+          onChange={e => { setSortKey(e.target.value); setPage(0) }}
           className={dropdownStyles}
           style={{ ...dropdownArrow, minWidth: '160px' }}
         >
           {SORT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
         </select>
+
+        {/* Hide Bad Barcodes Toggle */}
+        <button
+          onClick={() => { setHideBadBarcodes(!hideBadBarcodes); setPage(0) }}
+          className={`px-4 py-3 rounded-xl text-sm font-medium transition-all duration-200 border ${
+            hideBadBarcodes
+              ? 'bg-pink-500/20 border-pink-500/50 text-pink-300'
+              : 'bg-slate-800/50 border-white/[0.08] text-slate-400 hover:text-white hover:border-white/[0.12]'
+          }`}
+        >
+          {hideBadBarcodes ? '✓ WAC Hidden' : 'Include WAC'}
+        </button>
       </div>
 
       {/* Active Filters */}
@@ -370,7 +385,12 @@ export default function AdminProfitability() {
                             ${isExp ? 'bg-gradient-to-r from-purple-600/15 via-purple-600/10 to-transparent' : ''}
                           `}
                         >
-                          <td className="py-4 px-4 max-w-[280px] truncate text-white font-medium">{item.description || item.product_name}</td>
+                          <td className="py-4 px-4 max-w-[280px] text-white font-medium">
+                            <div className="flex items-center gap-2">
+                              <span className="truncate">{item.description || item.product_name}</span>
+                              {item.is_wac_cost && <span className="shrink-0 text-[10px] px-1.5 py-0.5 rounded bg-pink-500/20 text-pink-400 font-semibold">WAC</span>}
+                            </div>
+                          </td>
                           <td className="py-4 px-3 text-right text-slate-300">${Number(item.original_hammer).toFixed(2)}</td>
                           <td className={`py-4 px-3 text-right ${couponAmt > 0 ? 'text-pink-400' : 'text-slate-600'}`}>
                             {couponAmt > 0 ? `-$${couponAmt.toFixed(2)}` : '—'}
