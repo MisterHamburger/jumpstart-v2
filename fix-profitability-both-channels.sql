@@ -71,11 +71,11 @@ SELECT
   sh.date AS show_date,
   sh.time_of_day,
   sh.channel,
-  k.description,
-  k.brand AS category,  -- Use brand as category for Kickstart
-  k.msrp,
-  k.cost,
-  k.cost AS cost_freight,  -- Kickstart uses cost directly (no separate freight)
+  COALESCE(k.description, k2.description) AS description,
+  COALESCE(k.brand, k2.brand) AS category,  -- Use brand as category for Kickstart
+  COALESCE(k.msrp, k2.msrp) AS msrp,
+  COALESCE(k.cost, k2.cost) AS cost,
+  COALESCE(k.cost, k2.cost) AS cost_freight,  -- Kickstart uses cost directly (no separate freight)
   NULL::integer AS zone,
   si.product_name,
   si.buyer_paid,
@@ -83,7 +83,7 @@ SELECT
   si.coupon_amount,
   si.original_hammer,
   si.status AS item_status,
-  CASE WHEN k.id IS NULL THEN true ELSE false END AS is_bad_barcode,
+  CASE WHEN k.id IS NULL AND k2.id IS NULL THEN true ELSE false END AS is_bad_barcode,
   -- Fees on buyer_paid (what Whatnot actually charges on)
   ROUND(si.buyer_paid * 0.072, 2) AS commission,
   ROUND(si.buyer_paid * 0.029 + 0.30, 2) AS processing_fee,
@@ -92,14 +92,14 @@ SELECT
   ROUND(si.buyer_paid - (si.buyer_paid * 0.072 + si.buyer_paid * 0.029 + 0.30), 2) AS net_payout,
   -- Profit = net payout minus cost
   ROUND(
-    si.buyer_paid - (si.buyer_paid * 0.072 + si.buyer_paid * 0.029 + 0.30) - COALESCE(k.cost, 0),
+    si.buyer_paid - (si.buyer_paid * 0.072 + si.buyer_paid * 0.029 + 0.30) - COALESCE(k.cost, k2.cost, 0),
     2
   ) AS profit,
   -- Margin (avoid divide by zero)
   CASE
     WHEN si.buyer_paid > 0 THEN
       ROUND(
-        ((si.buyer_paid - (si.buyer_paid * 0.072 + si.buyer_paid * 0.029 + 0.30) - COALESCE(k.cost, 0))
+        ((si.buyer_paid - (si.buyer_paid * 0.072 + si.buyer_paid * 0.029 + 0.30) - COALESCE(k.cost, k2.cost, 0))
          / si.buyer_paid) * 100,
         1
       )
@@ -108,9 +108,11 @@ SELECT
 FROM kickstart_sold_scans s
 JOIN show_items si ON s.show_id = si.show_id AND s.listing_number = si.listing_number
 JOIN shows sh ON s.show_id = sh.id
+LEFT JOIN kickstart_intake k ON k.id = s.intake_id
 LEFT JOIN (
   SELECT DISTINCT ON (upc) *
   FROM kickstart_intake
+  WHERE upc IS NOT NULL AND upc != ''
   ORDER BY upc, id
-) k ON s.barcode = k.upc
+) k2 ON s.intake_id IS NULL AND s.barcode = k2.upc
 WHERE si.status = 'valid';

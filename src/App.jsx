@@ -4,6 +4,7 @@ import SortingSelect from './pages/SortingSelect'
 import GeneralSort from './pages/GeneralSort'
 import BundleSort from './pages/BundleSort'
 import KickstartSort from './pages/KickstartSort'
+import KickstartBuyer from './pages/KickstartBuyer'
 import SalesSetup from './pages/SalesSetup'
 import SalesScanner from './pages/SalesScanner'
 import Admin from './pages/Admin'
@@ -24,6 +25,8 @@ export default function App() {
         <Route path="/admin/inventory" element={<Admin />} />
         <Route path="/admin/profitability" element={<Admin />} />
         <Route path="/admin/scans" element={<Admin />} />
+        <Route path="/admin/kickstart" element={<Admin />} />
+        <Route path="/kickstart/buyer" element={<KickstartBuyer />} />
       </Routes>
     </div>
   )

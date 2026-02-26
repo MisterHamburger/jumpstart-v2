@@ -40,7 +40,7 @@ SUPABASE_ANON_KEY=<same as above>
 ## Deploy Command
 
 ```bash
-cd ~/Downloads/jumpstart-v2 && npm run build && echo '/* /index.html 200' > dist/_redirects && npx netlify deploy --prod --dir=dist --functions=netlify/functions
+cd ~/Projects/jumpstart-v2 && npm run build && echo '/* /index.html 200' > dist/_redirects && npx netlify deploy --prod --dir=dist --functions=netlify/functions
 ```
 
 Always add the `_redirects` file — it enables client-side routing.

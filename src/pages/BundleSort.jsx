@@ -26,6 +26,7 @@ export default function BundleSort() {
   const [tempPercentage, setTempPercentage] = useState('')
   const html5QrcodeRef = useRef(null)
   const processingRef = useRef(false)
+  const scanCountRef = useRef(0)
 
   useEffect(() => { fetchBoxes() }, [])
 
@@ -90,7 +91,9 @@ export default function BundleSort() {
   const startScanningBox = (box) => {
     setViewingBox(null)
     setActiveBox(box.boxNumber)
-    setScanCount(box.itemCount || 0)
+    const count = box.itemCount || 0
+    setScanCount(count)
+    scanCountRef.current = count
     setLastScan(null)
     setShowItemList(false)
   }
@@ -154,7 +157,8 @@ export default function BundleSort() {
         barcode: decodedText
       })
 
-      const newCount = scanCount + 1
+      const newCount = scanCountRef.current + 1
+      scanCountRef.current = newCount
       setScanCount(newCount)
       setLastScan({ barcode: decodedText })
 

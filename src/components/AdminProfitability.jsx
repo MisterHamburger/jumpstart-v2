@@ -164,16 +164,21 @@ export default function AdminProfitability() {
     loadItems()
   }, [search, sortKey, activeTab, selectedShow, page, dateFrom, dateTo, hideBadBarcodes])
 
-  async function loadItems() {
-    setLoading(true)
-    const opt = SORT_OPTIONS.find(o => o.value === sortKey)
-    let query = supabase.from('profitability').select('*').order(opt.field, { ascending: opt.dir }).range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1)
+  function applyFilters(query) {
     if (channel !== 'all') query = query.eq('channel', channel)
     if (selectedShow !== 'all') query = query.eq('show_name', selectedShow)
     if (search) query = query.or(`description.ilike.%${search}%,barcode.ilike.%${search}%,category.ilike.%${search}%,product_name.ilike.%${search}%`)
     if (dateFrom) query = query.gte('show_date', dateFrom)
     if (dateTo) query = query.lte('show_date', dateTo)
     if (hideBadBarcodes) query = query.eq('is_bad_barcode', false)
+    return query
+  }
+
+  async function loadItems() {
+    setLoading(true)
+    const opt = SORT_OPTIONS.find(o => o.value === sortKey)
+    let query = supabase.from('profitability').select('*').order(opt.field, { ascending: opt.dir }).range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1)
+    query = applyFilters(query)
     const { data } = await query
     // Filter out bad bundle barcodes client-side (orphaned scans with no manifest match)
     const filtered = (data || []).filter(item => !(item.is_bundle && item.is_bad_barcode))
@@ -181,36 +186,43 @@ export default function AdminProfitability() {
     setLoading(false)
   }
 
+  // Load stats from ALL matching items — paginate through Supabase's 1000 row cap
   const [fullSummary, setFullSummary] = useState(null)
   useEffect(() => {
     if (activeTab === 'bundles') return
-    async function loadFullSummary() {
-      // Use database function with all filters
-      const { data, error } = await supabase.rpc('get_profitability_summary', {
-        p_channel: channel === 'all' ? null : channel,
-        p_show_name: selectedShow === 'all' ? null : selectedShow,
-        p_search: search || null,
-        p_date_from: dateFrom || null,
-        p_date_to: dateTo || null,
-        p_hide_bad_barcodes: hideBadBarcodes || null
-      })
-
-      if (data && data.length > 0 && !error) {
-        const row = data[0]
+    async function loadStats() {
+      let allData = []
+      let from = 0
+      const batchSize = 1000
+      while (true) {
+        let query = supabase.from('profitability').select('profit, net_payout, buyer_paid, margin').range(from, from + batchSize - 1)
+        query = applyFilters(query)
+        const { data } = await query
+        if (!data || data.length === 0) break
+        allData = allData.concat(data)
+        if (data.length < batchSize) break
+        from += batchSize
+      }
+      if (allData.length > 0) {
+        const n = allData.length
+        const totalProfit = allData.reduce((sum, i) => sum + Number(i.profit || 0), 0)
+        const totalNet = allData.reduce((sum, i) => sum + Number(i.net_payout || 0), 0)
+        const totalHammer = allData.reduce((sum, i) => sum + Number(i.buyer_paid || 0), 0)
+        const totalMargin = allData.reduce((sum, i) => sum + Number(i.margin || 0), 0)
         setFullSummary({
-          items_sold: row.items_sold,
-          total_profit: row.total_profit,
-          total_net_revenue: row.total_net_revenue,
-          avg_hammer: row.avg_hammer,
-          avg_net: row.avg_net,
-          avg_profit_per_item: row.avg_profit_per_item,
-          avg_margin: row.avg_margin,
+          items_sold: n,
+          total_profit: totalProfit,
+          total_net_revenue: totalNet,
+          avg_hammer: totalHammer / n,
+          avg_net: totalNet / n,
+          avg_profit_per_item: totalProfit / n,
+          avg_margin: totalMargin / n,
         })
       } else {
         setFullSummary(null)
       }
     }
-    loadFullSummary()
+    loadStats()
   }, [activeTab, selectedShow, search, dateFrom, dateTo, hideBadBarcodes])
 
   const s = fullSummary
@@ -341,7 +353,7 @@ export default function AdminProfitability() {
             <input 
               placeholder="Search barcode, description, category..." 
               value={search} 
-              onChange={e => { setSearch(e.target.value); setPage(0) }} 
+              onChange={e => { setSearch(e.target.value); setPage(0) }}
               className="flex-1 bg-transparent px-3 py-3 text-sm text-white placeholder-slate-500 focus:outline-none" 
             />
           </div>
@@ -519,12 +531,12 @@ export default function AdminProfitability() {
           
           {/* Pagination */}
           <div className="flex items-center justify-between mt-6 text-sm">
-            <button 
-              onClick={() => setPage(p => Math.max(0, p - 1))} 
-              disabled={page === 0} 
+            <button
+              onClick={() => setPage(p => Math.max(0, p - 1))}
+              disabled={page === 0}
               className={`px-5 py-2.5 rounded-xl font-medium transition-all duration-200 ${
-                page === 0 
-                  ? 'text-slate-600 cursor-not-allowed' 
+                page === 0
+                  ? 'text-slate-600 cursor-not-allowed'
                   : 'text-slate-300 hover:text-white bg-white/[0.02] hover:bg-white/[0.06] border border-white/[0.06] hover:border-white/[0.12]'
               }`}
             >
@@ -534,12 +546,12 @@ export default function AdminProfitability() {
               Page <span className="text-white font-bold">{page + 1}</span>
               {s && <span className="text-slate-600"> · Showing {items.length} of {s.items_sold}</span>}
             </span>
-            <button 
-              onClick={() => setPage(p => p + 1)} 
-              disabled={items.length < PAGE_SIZE} 
+            <button
+              onClick={() => setPage(p => p + 1)}
+              disabled={items.length < PAGE_SIZE}
               className={`px-5 py-2.5 rounded-xl font-medium transition-all duration-200 ${
-                items.length < PAGE_SIZE 
-                  ? 'text-slate-600 cursor-not-allowed' 
+                items.length < PAGE_SIZE
+                  ? 'text-slate-600 cursor-not-allowed'
                   : 'text-slate-300 hover:text-white bg-white/[0.02] hover:bg-white/[0.06] border border-white/[0.06] hover:border-white/[0.12]'
               }`}
             >
