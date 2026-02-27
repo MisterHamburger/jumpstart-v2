@@ -15,9 +15,9 @@ export default async (req) => {
         'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
       }
     })
-    
+
     const items = await fetchRes.json()
-    
+
     if (!items || items.length === 0) {
       return new Response(JSON.stringify({ message: 'No items pending enrichment', processed: 0 }), {
         status: 200,
@@ -26,6 +26,7 @@ export default async (req) => {
     }
 
     const results = []
+    const photoCache = new Map() // Cache enrichment results by photo_data
 
     for (const item of items) {
       if (!item.photo_data) {
@@ -36,9 +37,19 @@ export default async (req) => {
       }
 
       try {
-        // Call Claude to read the tag
-        const tagData = await readTagWithClaude(ANTHROPIC_API_KEY, item.photo_data)
-        
+        let tagData
+
+        // Check if we've already enriched this exact photo
+        if (photoCache.has(item.photo_data)) {
+          tagData = photoCache.get(item.photo_data)
+          results.push({ id: item.id, status: 'enriched', data: tagData, cached: true })
+        } else {
+          // Call Claude to read the tag (only once per unique photo)
+          tagData = await readTagWithClaude(ANTHROPIC_API_KEY, item.photo_data)
+          photoCache.set(item.photo_data, tagData)
+          results.push({ id: item.id, status: 'enriched', data: tagData, cached: false })
+        }
+
         // Update the item with extracted data
         await updateItem(SUPABASE_URL, SUPABASE_ANON_KEY, item.id, {
           upc: tagData.upc || null,
@@ -49,8 +60,6 @@ export default async (req) => {
           msrp: tagData.msrp ? parseFloat(tagData.msrp) : null,
           status: 'enriched'
         })
-        
-        results.push({ id: item.id, status: 'enriched', data: tagData })
       } catch (err) {
         console.error(`Error processing item ${item.id}:`, err)
         await updateItem(SUPABASE_URL, SUPABASE_ANON_KEY, item.id, { status: 'enrichment_failed' })
