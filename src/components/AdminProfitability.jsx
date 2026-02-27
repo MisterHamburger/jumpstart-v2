@@ -60,7 +60,7 @@ export default function AdminProfitability() {
   const [expanded, setExpanded] = useState(null)
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
-  const [hideBadBarcodes, setHideBadBarcodes] = useState(false)
+  const [hideWacItems, setHideWacItems] = useState(true) // Hide WAC items by default
   const [bundleData, setBundleData] = useState({ boxes: [], summary: null, loading: true })
   const PAGE_SIZE = 100
 
@@ -162,7 +162,7 @@ export default function AdminProfitability() {
   useEffect(() => {
     if (activeTab === 'bundles') return
     loadItems()
-  }, [search, sortKey, activeTab, selectedShow, page, dateFrom, dateTo, hideBadBarcodes])
+  }, [search, sortKey, activeTab, selectedShow, page, dateFrom, dateTo, hideWacItems])
 
   function applyFilters(query) {
     if (channel !== 'all') query = query.eq('channel', channel)
@@ -170,7 +170,7 @@ export default function AdminProfitability() {
     if (search) query = query.or(`description.ilike.%${search}%,barcode.ilike.%${search}%,category.ilike.%${search}%,product_name.ilike.%${search}%`)
     if (dateFrom) query = query.gte('show_date', dateFrom)
     if (dateTo) query = query.lte('show_date', dateTo)
-    if (hideBadBarcodes) query = query.eq('is_bad_barcode', false)
+    if (hideWacItems) query = query.eq('is_wac_cost', false) // Hide items using WAC by default
     return query
   }
 
@@ -225,7 +225,7 @@ export default function AdminProfitability() {
       }
     }
     loadStats()
-  }, [activeTab, selectedShow, search, dateFrom, dateTo, hideBadBarcodes])
+  }, [activeTab, selectedShow, search, dateFrom, dateTo, hideWacItems])
 
   const s = fullSummary
 
@@ -404,16 +404,16 @@ export default function AdminProfitability() {
           {SORT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
         </select>
 
-        {/* Hide Bad Barcodes Toggle */}
+        {/* Include WAC Toggle */}
         <button
-          onClick={() => { setHideBadBarcodes(!hideBadBarcodes); setPage(0) }}
+          onClick={() => { setHideWacItems(!hideWacItems); setPage(0) }}
           className={`px-4 py-3 rounded-xl text-sm font-medium transition-all duration-200 border ${
-            hideBadBarcodes
-              ? 'bg-pink-500/20 border-pink-500/50 text-pink-300'
+            !hideWacItems
+              ? 'bg-cyan-500/20 border-cyan-500/50 text-cyan-300'
               : 'bg-slate-800/50 border-white/[0.08] text-slate-400 hover:text-white hover:border-white/[0.12]'
           }`}
         >
-          {hideBadBarcodes ? '✓ WAC Hidden' : 'Include WAC'}
+          {hideWacItems ? 'Include WAC ($18.46)' : '✓ WAC Included'}
         </button>
       </div>
 
