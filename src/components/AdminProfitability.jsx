@@ -195,7 +195,7 @@ export default function AdminProfitability() {
       let from = 0
       const batchSize = 1000
       while (true) {
-        let query = supabase.from('profitability').select('profit, net_payout, buyer_paid, margin').range(from, from + batchSize - 1)
+        let query = supabase.from('profitability').select('profit, net_payout, buyer_paid, margin, cost_freight').range(from, from + batchSize - 1)
         query = applyFilters(query)
         const { data } = await query
         if (!data || data.length === 0) break
@@ -209,6 +209,7 @@ export default function AdminProfitability() {
         const totalNet = allData.reduce((sum, i) => sum + Number(i.net_payout || 0), 0)
         const totalHammer = allData.reduce((sum, i) => sum + Number(i.buyer_paid || 0), 0)
         const totalMargin = allData.reduce((sum, i) => sum + Number(i.margin || 0), 0)
+        const totalCost = allData.reduce((sum, i) => sum + Number(i.cost_freight || 0), 0)
         setFullSummary({
           items_sold: n,
           total_profit: totalProfit,
@@ -217,6 +218,7 @@ export default function AdminProfitability() {
           avg_net: totalNet / n,
           avg_profit_per_item: totalProfit / n,
           avg_margin: totalMargin / n,
+          avg_cost_per_item: totalCost / n,
         })
       } else {
         setFullSummary(null)
@@ -332,10 +334,11 @@ export default function AdminProfitability() {
           </div>
           
           {/* Stats Row */}
-          <div className="grid grid-cols-5 gap-3">
+          <div className="grid grid-cols-6 gap-3">
             <GlassStatCard label="Avg Hammer" value={`$${Number(s.avg_hammer).toFixed(2)}`} accent="slate" />
             <GlassStatCard label="Net Revenue" value={`$${Number(s.total_net_revenue).toLocaleString(undefined, {maximumFractionDigits: 0})}`} accent="purple" />
             <GlassStatCard label="Net / Item" value={`$${Number(s.avg_net || 0).toFixed(2)}`} accent="fuchsia" />
+            <GlassStatCard label="Cost / Item" value={`$${Number(s.avg_cost_per_item || 0).toFixed(2)}`} accent="slate" />
             <GlassStatCard label="Profit / Item" value={`$${Number(s.avg_profit_per_item).toFixed(2)}`} accent="cyan" positive={Number(s.avg_profit_per_item) >= 0} />
             <GlassStatCard label="Margin" value={`${Number(s.avg_margin).toFixed(1)}%`} accent="cyan" positive={Number(s.avg_margin) >= 0} />
           </div>
