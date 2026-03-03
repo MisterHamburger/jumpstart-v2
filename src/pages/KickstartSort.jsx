@@ -1,9 +1,10 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { Html5Qrcode } from 'html5-qrcode'
 import { supabase } from '../lib/supabase'
 import { compressPhoto, toBase64 } from '../lib/photos'
 
-const PRICE_BINS = [5, 10, 15, 20, 25, 30, 35, 40]
+const PRICE_BINS = [5, 10, 15, 20, 25, 29, 30, 35, 40]
 const CATEGORIES = [
   'Accessories - Bags', 'Accessories - Belts', 'Accessories - Jewelry',
   'Accessories - Other', 'Accessories - Socks', 'Dresses', 'Hoodies',
@@ -34,7 +35,60 @@ export default function KickstartSort() {
   const [saving, setSaving] = useState(false)
   const [showSaved, setShowSaved] = useState(false)
   const [sessionCount, setSessionCount] = useState(0)
+  const [notes, setNotes] = useState('')
+  const [msrp, setMsrp] = useState('')
+  const [noTagPhoto, setNoTagPhoto] = useState(null)
+  const [scannedUpc, setScannedUpc] = useState(null)
+  const [barcodeScanning, setBarcodeScanning] = useState(false)
   const photoInputRef = useRef(null)
+  const noTagPhotoRef = useRef(null)
+  const barcodeRef = useRef(null)
+
+  // Cleanup barcode scanner on unmount
+  useEffect(() => {
+    return () => {
+      if (barcodeRef.current) {
+        barcodeRef.current.stop().catch(() => {})
+        barcodeRef.current = null
+      }
+    }
+  }, [])
+
+  const startBarcodeScanner = async () => {
+    setBarcodeScanning(true)
+    try {
+      await new Promise(resolve => setTimeout(resolve, 200))
+      const scanner = new Html5Qrcode("kickstart-barcode-reader")
+      barcodeRef.current = scanner
+      await scanner.start(
+        { facingMode: "environment" },
+        { fps: 30 },
+        (decodedText) => {
+          // Accept any numeric barcode 8+ digits
+          if (decodedText.length >= 8 && /^\d+$/.test(decodedText)) {
+            setScannedUpc(decodedText)
+            scanner.stop().catch(() => {})
+            barcodeRef.current = null
+            setBarcodeScanning(false)
+          }
+        },
+        () => {}
+      )
+    } catch (err) {
+      console.error('Barcode scanner error:', err)
+      setBarcodeScanning(false)
+    }
+  }
+
+  const stopBarcodeScanner = async () => {
+    if (barcodeRef.current) {
+      try {
+        await barcodeRef.current.stop()
+      } catch (e) {}
+      barcodeRef.current = null
+    }
+    setBarcodeScanning(false)
+  }
 
   const getCost = () => {
     if (showCustom) return parseFloat(customPrice) || 0
@@ -78,6 +132,18 @@ export default function KickstartSort() {
     }
   }
 
+  const handleNoTagPhoto = async (e) => {
+    const file = e.target.files[0]
+    if (!file) return
+    try {
+      const dataUrl = await compressPhoto(file)
+      setNoTagPhoto(dataUrl)
+    } catch (err) {
+      console.error('Photo compression error:', err)
+      alert('Failed to process photo')
+    }
+  }
+
   // --- Save ---
   const handleSave = async (hasTag) => {
     setSaving(true)
@@ -98,12 +164,20 @@ export default function KickstartSort() {
           condition: 'NWT',
           status: 'pending_enrichment',
         })
+        // Include scanned barcode UPC if available
+        if (scannedUpc) {
+          baseRow.upc = scannedUpc
+        }
       } else {
-        // No Tag: save with manual fields, mark enriched
+        // No Tag: save with manual fields + optional photo, mark enriched
+        const noTagPhotoData = noTagPhoto ? toBase64(noTagPhoto) : null
         Object.assign(baseRow, {
           color: color || null,
           size: size || null,
           condition: condition || null,
+          msrp: msrp ? parseFloat(msrp) : null,
+          photo_data: noTagPhotoData,
+          notes: notes || null,
           status: 'enriched',
         })
       }
@@ -124,8 +198,12 @@ export default function KickstartSort() {
       setShowSaved(true)
       setTimeout(() => {
         setShowSaved(false)
-        resetForNextItem()
-      }, 800)
+        if (hasTag) {
+          resetForNextItem()
+        } else {
+          resetForNextNoTag()
+        }
+      }, 400)
     } catch (err) {
       console.error('Save error:', err)
       alert('Failed to save: ' + err.message)
@@ -136,16 +214,32 @@ export default function KickstartSort() {
 
   const resetForNextItem = () => {
     setPhoto(null)
+    setNoTagPhoto(null)
     setDescription('')
     setCondition('')
     setColor('')
     setSize('')
     setQuantity(1)
+    setNotes('')
+    setMsrp('')
+    setScannedUpc(null)
     setSelectedBin(null)
     setSelectedBrand(null)
     setCustomPrice('')
     setShowCustom(false)
     setStep('bin')
+  }
+
+  // Rapid reset for no-tag mode: keep bin, brand, category, condition
+  const resetForNextNoTag = () => {
+    setColor('')
+    setSize('')
+    setQuantity(1)
+    setNotes('')
+    setMsrp('')
+    setNoTagPhoto(null)
+    if (noTagPhotoRef.current) noTagPhotoRef.current.value = ''
+    // stay on noTagForm step — don't change bin/brand/description/condition
   }
 
   // --- Back navigation ---
@@ -155,9 +249,11 @@ export default function KickstartSort() {
       case 'brand': setStep('bin'); break
       case 'hasTag': setStep('brand'); break
       case 'tagCapture':
+        stopBarcodeScanner()
         setPhoto(null)
         setDescription('')
         setQuantity(1)
+        setScannedUpc(null)
         setStep('hasTag')
         break
       case 'noTagForm':
@@ -165,6 +261,10 @@ export default function KickstartSort() {
         setColor('')
         setSize('')
         setQuantity(1)
+        setNotes('')
+        setMsrp('')
+        setNoTagPhoto(null)
+        if (noTagPhotoRef.current) noTagPhotoRef.current.value = ''
         setStep('hasTag')
         break
     }
@@ -198,7 +298,7 @@ export default function KickstartSort() {
   const brandAbbrev = { 'Free People': 'FP', 'Urban Outfitters': 'UO', 'Anthropologie': 'Anthro' }
 
   return (
-    <div className="h-screen flex flex-col bg-[#0a0f1a] overflow-hidden">
+    <div className="flex flex-col bg-[#0a0f1a]" style={{ height: '100dvh', overflow: 'hidden' }}>
       {/* Subtle gradient overlay */}
       <div className="fixed inset-0 bg-gradient-to-br from-fuchsia-900/20 via-transparent to-pink-900/10 pointer-events-none" />
 
@@ -335,7 +435,7 @@ export default function KickstartSort() {
 
       {/* === STEP 4a: TAG CAPTURE (photo + description + quantity) === */}
       {step === 'tagCapture' && (
-        <div className="relative z-10 flex-1 flex flex-col p-4 overflow-y-auto">
+        <div className="relative z-10 flex-1 min-h-0 flex flex-col p-4 overflow-y-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
           <div className="flex-1 flex flex-col items-center">
             {/* Photo capture / preview */}
             {!photo ? (
@@ -372,6 +472,43 @@ export default function KickstartSort() {
                 </button>
               </>
             )}
+
+            {/* Barcode scan (optional) */}
+            <div className="w-full max-w-sm mb-3">
+              <label className="text-slate-400 text-xs uppercase tracking-wider mb-1 block">Barcode (optional)</label>
+              {scannedUpc ? (
+                <div className="flex items-center gap-2 bg-emerald-500/20 border border-emerald-500/30 rounded-xl px-4 py-3">
+                  <span className="text-emerald-400 text-lg">✓</span>
+                  <span className="text-white font-mono font-semibold flex-1">{scannedUpc}</span>
+                  <button
+                    onClick={() => setScannedUpc(null)}
+                    className="text-slate-400 text-sm"
+                  >
+                    Clear
+                  </button>
+                </div>
+              ) : barcodeScanning ? (
+                <div>
+                  <div id="kickstart-barcode-reader" className="w-full rounded-xl overflow-hidden mb-2" />
+                  <button
+                    onClick={stopBarcodeScanner}
+                    className="w-full py-2 rounded-xl bg-white/10 border border-white/20 text-white/60 text-sm font-semibold"
+                  >
+                    Cancel Scan
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={startBarcodeScanner}
+                  className="w-full flex items-center justify-center gap-2 bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-white/60 font-semibold hover:bg-white/15 transition-all"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" />
+                  </svg>
+                  Scan Barcode
+                </button>
+              )}
+            </div>
 
             {/* Description dropdown */}
             <div className="w-full max-w-sm mb-3">
@@ -430,25 +567,48 @@ export default function KickstartSort() {
         </div>
       )}
 
-      {/* === STEP 4b: NO TAG FORM (description + color + size + quantity) === */}
+      {/* === STEP 4b: NO TAG FORM (photo + description + color + size + quantity + notes) === */}
       {step === 'noTagForm' && (
-        <div className="relative z-10 flex-1 flex flex-col p-4 overflow-y-auto">
-          <div className="flex-1 flex flex-col items-center">
+        <div className="relative z-10 flex-1 min-h-0 flex flex-col" style={{ WebkitOverflowScrolling: 'touch' }}>
+          <div className="flex-1 overflow-y-auto p-4">
+            <div className="flex flex-col items-center">
             <h2 className="text-lg font-bold text-white mb-3 tracking-tight">Enter Details</h2>
 
-            {/* Description dropdown */}
+            {/* Optional photo capture */}
             <div className="w-full max-w-sm mb-3">
-              <label className="text-slate-400 text-xs uppercase tracking-wider mb-1 block">Category *</label>
-              <select
-                value={description}
-                onChange={e => setDescription(e.target.value)}
-                className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-white text-base font-semibold appearance-none focus:outline-none focus:border-fuchsia-400/50"
-              >
-                <option value="" className="bg-[#1a1f2e]">Select category...</option>
-                {CATEGORIES.map(cat => (
-                  <option key={cat} value={cat} className="bg-[#1a1f2e]">{cat}</option>
-                ))}
-              </select>
+              <label className="text-slate-400 text-xs uppercase tracking-wider mb-1 block">Photo (optional)</label>
+              <input
+                ref={noTagPhotoRef}
+                type="file"
+                accept="image/*"
+                capture="environment"
+                onChange={handleNoTagPhoto}
+                className="hidden"
+              />
+              {!noTagPhoto ? (
+                <button
+                  onClick={() => noTagPhotoRef.current?.click()}
+                  className="w-full flex items-center justify-center gap-2 bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-white/60 font-semibold hover:bg-white/15 transition-all"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+                  </svg>
+                  Take Photo
+                </button>
+              ) : (
+                <div className="flex items-center gap-3">
+                  <div className="w-16 h-16 rounded-xl overflow-hidden border border-white/20 shrink-0">
+                    <img src={noTagPhoto} alt="Item" className="w-full h-full object-cover" />
+                  </div>
+                  <button
+                    onClick={() => { setNoTagPhoto(null); if (noTagPhotoRef.current) noTagPhotoRef.current.value = '' }}
+                    className="text-fuchsia-400 text-sm font-semibold"
+                  >
+                    Retake
+                  </button>
+                </div>
+              )}
             </div>
 
             {/* Condition dropdown */}
@@ -467,7 +627,7 @@ export default function KickstartSort() {
 
             {/* Color dropdown */}
             <div className="w-full max-w-sm mb-3">
-              <label className="text-slate-400 text-xs uppercase tracking-wider mb-1 block">Color</label>
+              <label className="text-slate-400 text-xs uppercase tracking-wider mb-1 block">Color *</label>
               <select
                 value={color}
                 onChange={e => setColor(e.target.value)}
@@ -486,7 +646,7 @@ export default function KickstartSort() {
 
             {/* Size buttons */}
             <div className="w-full max-w-sm mb-4">
-              <label className="text-slate-400 text-xs uppercase tracking-wider mb-2 block">Size</label>
+              <label className="text-slate-400 text-xs uppercase tracking-wider mb-2 block">Size *</label>
               <div className="grid grid-cols-4 gap-2">
                 {SIZES.map(s => (
                   <button
@@ -504,6 +664,48 @@ export default function KickstartSort() {
               </div>
             </div>
 
+            {/* Category dropdown */}
+            <div className="w-full max-w-sm mb-3">
+              <label className="text-slate-400 text-xs uppercase tracking-wider mb-1 block">Category *</label>
+              <select
+                value={description}
+                onChange={e => setDescription(e.target.value)}
+                className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-white text-base font-semibold appearance-none focus:outline-none focus:border-fuchsia-400/50"
+              >
+                <option value="" className="bg-[#1a1f2e]">Select category...</option>
+                {CATEGORIES.map(cat => (
+                  <option key={cat} value={cat} className="bg-[#1a1f2e]">{cat}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* MSRP (optional) */}
+            <div className="w-full max-w-sm mb-4">
+              <label className="text-slate-400 text-xs uppercase tracking-wider mb-1 block">MSRP (optional)</label>
+              <div className="relative">
+                <span className="absolute left-4 top-1/2 -translate-y-1/2 text-white/50">$</span>
+                <input
+                  type="number"
+                  value={msrp}
+                  onChange={e => setMsrp(e.target.value)}
+                  placeholder="0.00"
+                  className="w-full bg-white/10 border border-white/20 rounded-xl pl-8 pr-4 py-3 text-white text-base font-semibold placeholder-slate-500 focus:outline-none focus:border-fuchsia-400/50"
+                />
+              </div>
+            </div>
+
+            {/* Item Description */}
+            <div className="w-full max-w-sm mb-3">
+              <label className="text-slate-400 text-xs uppercase tracking-wider mb-1 block">Item Description (optional)</label>
+              <input
+                type="text"
+                value={notes}
+                onChange={e => setNotes(e.target.value)}
+                placeholder="e.g. Teddy Peacoat, Cargo Joggers..."
+                className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-white text-sm placeholder-slate-500 focus:outline-none focus:border-fuchsia-400/50"
+              />
+            </div>
+
             {/* Quantity */}
             <div className="flex items-center gap-5 mb-4">
               <button
@@ -512,10 +714,12 @@ export default function KickstartSort() {
               >
                 −
               </button>
-              <div className="text-center">
-                <div className="text-3xl font-black text-white">{quantity}</div>
-                <div className="text-xs text-slate-500 uppercase tracking-wider">Qty</div>
-              </div>
+              <input
+                type="number"
+                value={quantity}
+                onChange={e => { const v = parseInt(e.target.value, 10); setQuantity(v > 0 ? v : 1) }}
+                className="w-20 text-center bg-white/10 border border-white/20 rounded-xl py-2 text-3xl font-black text-white focus:outline-none focus:border-fuchsia-400/50"
+              />
               <button
                 onClick={() => setQuantity(q => q + 1)}
                 className="w-11 h-11 rounded-full bg-gradient-to-br from-fuchsia-500 to-pink-500 text-white text-2xl font-bold flex items-center justify-center hover:scale-105 active:scale-95 transition-all shadow-lg shadow-fuchsia-500/30"
@@ -530,19 +734,22 @@ export default function KickstartSort() {
               </p>
             )}
           </div>
+          </div>
 
-          {/* Save button */}
-          <button
-            onClick={() => handleSave(false)}
-            disabled={saving || !description || !condition}
-            className={`w-full py-4 rounded-2xl font-bold text-xl transition-all shrink-0 ${
-              saving || !description || !condition
-                ? 'bg-white/10 text-white/50 cursor-not-allowed'
-                : 'bg-gradient-to-r from-fuchsia-500 to-pink-500 text-white shadow-2xl shadow-fuchsia-500/30 hover:scale-[1.02] active:scale-[0.98]'
-            }`}
-          >
-            {saving ? 'Saving...' : quantity > 1 ? `Save ${quantity} Items` : 'Save Item'}
-          </button>
+          {/* Save button — always visible at bottom */}
+          <div className="shrink-0 p-4 pt-2">
+            <button
+              onClick={() => handleSave(false)}
+              disabled={saving || !description || !condition || !color || !size}
+              className={`w-full py-4 rounded-2xl font-bold text-xl transition-all ${
+                saving || !description || !condition || !color || !size
+                  ? 'bg-white/10 text-white/50 cursor-not-allowed'
+                  : 'bg-gradient-to-r from-fuchsia-500 to-pink-500 text-white shadow-2xl shadow-fuchsia-500/30 hover:scale-[1.02] active:scale-[0.98]'
+              }`}
+            >
+              {saving ? 'Saving...' : quantity > 1 ? `Save ${quantity} Items` : 'Save Item'}
+            </button>
+          </div>
         </div>
       )}
     </div>

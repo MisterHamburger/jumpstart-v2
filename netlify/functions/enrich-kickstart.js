@@ -52,11 +52,15 @@ export default async (req) => {
 
         // Update the item with extracted data
         // Only overwrite description if AI actually found a product name
+        // Normalize size: AI returns "ALL" but app uses "One Size"
+        let normalizedSize = tagData.size || null
+        if (normalizedSize && normalizedSize.toUpperCase() === 'ALL') normalizedSize = 'One Size'
+
         const updates = {
           upc: tagData.upc || null,
           style_number: tagData.style_number || null,
           color: tagData.color || null,
-          size: tagData.size || null,
+          size: normalizedSize,
           msrp: tagData.msrp ? parseFloat(tagData.msrp) : null,
           status: 'enriched'
         }

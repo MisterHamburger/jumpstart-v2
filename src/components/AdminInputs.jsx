@@ -364,6 +364,12 @@ function ShowUpload() {
     setExistingShows(data || [])
   }
 
+  async function toggleShowComplete(show) {
+    const newStatus = show.status === 'completed' ? 'active' : 'completed'
+    await supabase.from('shows').update({ status: newStatus }).eq('id', show.id)
+    refreshShows()
+  }
+
   function handleFile(file) {
     setStatus('Analyzing CSV...')
     setDetected(null)
@@ -659,21 +665,28 @@ function ShowUpload() {
           <div className="space-y-2">
             {existingShows.map(show => {
               const display = formatShowDisplay(show)
+              const isComplete = show.status === 'completed' || (show.scanned_count && show.total_items && show.scanned_count >= show.total_items)
               return (
-                <div key={show.id} className="flex justify-between items-center py-3 px-4 rounded-xl bg-slate-800/30 border border-white/[0.04] hover:bg-slate-800/50 transition-colors">
+                <div key={show.id} className={`flex justify-between items-center py-3 px-4 rounded-xl border transition-colors ${isComplete ? 'bg-emerald-900/20 border-emerald-500/20' : 'bg-slate-800/30 border-white/[0.04] hover:bg-slate-800/50'}`}>
                   <div>
-                    <div className="font-medium">
-                      <span className="text-cyan-400">{display.date}</span>
-                      <span className="text-slate-500 mx-2">·</span>
+                    <div className="font-medium flex items-center gap-2 flex-wrap">
+                      <span
+                        className="text-cyan-400 select-none cursor-pointer"
+                        onClick={(e) => {
+                          if (e.detail === 3) toggleShowComplete(show)
+                        }}
+                      >{display.date}</span>
+                      <span className="text-slate-500">·</span>
                       <span>{display.channel}</span>
-                      <span className="text-slate-500 mx-2">·</span>
+                      <span className="text-slate-500">·</span>
                       <span className="text-purple-400">{display.streamer}</span>
+                      {isComplete && <span className="text-[10px] font-bold uppercase tracking-wider bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded-full">Complete</span>}
                     </div>
                     <div className="text-xs text-slate-500 mt-0.5">
                       {show.total_items || 0} items · {show.scanned_count || 0} scanned
                     </div>
                   </div>
-                  <button 
+                  <button
                     onClick={() => deleteShow(show)}
                     className="text-slate-500 hover:text-red-400 hover:bg-red-500/10 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
                   >
