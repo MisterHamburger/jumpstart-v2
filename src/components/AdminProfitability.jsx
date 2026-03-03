@@ -413,7 +413,7 @@ export default function AdminProfitability() {
               : 'bg-slate-800/50 border-white/[0.08] text-slate-400 hover:text-white hover:border-white/[0.12]'
           }`}
         >
-          {hideWacItems ? 'Include WAC ($18.46)' : '✓ WAC Included'}
+          {hideWacItems ? 'Include WAC ($15.50)' : '✓ WAC Included'}
         </button>
       </div>
 

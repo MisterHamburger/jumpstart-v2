@@ -12,7 +12,7 @@ export default function AdminInventory() {
     remaining: 0,
     avgCost: 0,
     loads: [],
-    zones: { z1: 0, z2: 0, z3: 0, unassigned: 0 }
+    zones: { z1: 0, z1p: 0, z2: 0, z2p: 0, unassigned: 0 }
   })
   const [unsoldStats, setUnsoldStats] = useState({
     totalUnsoldCost: 0,
@@ -27,33 +27,44 @@ export default function AdminInventory() {
   async function loadStats() {
     setLoading(true)
     
-    // Get load summary from view
+    // Get load summary from view + load details for brand info
     const { data: loadData } = await supabase.from('load_summary').select('*')
+    const { data: loadsInfo } = await supabase.from('loads').select('id,vendor,notes')
     
-    // Get zone counts
-    const { count: z1 } = await supabase.from('jumpstart_manifest').select('id', { count: 'exact', head: true }).eq('zone', 1)
-    const { count: z2 } = await supabase.from('jumpstart_manifest').select('id', { count: 'exact', head: true }).eq('zone', 2)
-    const { count: z3 } = await supabase.from('jumpstart_manifest').select('id', { count: 'exact', head: true }).eq('zone', 3)
+    // Get zone counts (handles both old integer zones and new string zones)
+    const { count: z1 } = await supabase.from('jumpstart_manifest').select('id', { count: 'exact', head: true }).or('zone.eq.1,zone.eq.Zone 1')
+    const { count: z1p } = await supabase.from('jumpstart_manifest').select('id', { count: 'exact', head: true }).eq('zone', 'Zone 1 Pants')
+    const { count: z2 } = await supabase.from('jumpstart_manifest').select('id', { count: 'exact', head: true }).or('zone.eq.2,zone.eq.Zone 2')
+    const { count: z2p } = await supabase.from('jumpstart_manifest').select('id', { count: 'exact', head: true }).eq('zone', 'Zone 2 Pants')
     const { count: total } = await supabase.from('jumpstart_manifest').select('id', { count: 'exact', head: true })
-    
-    // Get sold count from show_items
-    const { count: sold } = await supabase.from('show_items').select('id', { count: 'exact', head: true }).eq('status', 'valid')
-    
+
+    // Get sold count from show_items (Jumpstart only)
+    const { data: jsShows } = await supabase.from('shows').select('id').eq('channel', 'Jumpstart')
+    const jsShowIds = jsShows?.map(s => s.id) || []
+    const { count: sold } = jsShowIds.length > 0
+      ? await supabase.from('show_items').select('id', { count: 'exact', head: true }).eq('status', 'valid').in('show_id', jsShowIds)
+      : { count: 0 }
+
     const totalItems = loadData?.reduce((sum, l) => sum + Number(l.item_count), 0) || 0
     const totalCost = loadData?.reduce((sum, l) => sum + Number(l.total_cost), 0) || 0
     const avgCost = totalItems > 0 ? totalCost / totalItems : 0
-    
+
+    const assigned = (z1 || 0) + (z1p || 0) + (z2 || 0) + (z2p || 0)
     setStats({
       total: totalItems,
       sold: sold || 0,
       remaining: totalItems - (sold || 0),
       avgCost,
-      loads: loadData || [],
+      loads: (loadData || []).map(l => {
+        const info = loadsInfo?.find(i => i.id === l.load_id)
+        return { ...l, brand: info?.vendor || info?.notes || '' }
+      }),
       zones: {
         z1: z1 || 0,
+        z1p: z1p || 0,
         z2: z2 || 0,
-        z3: z3 || 0,
-        unassigned: (total || 0) - (z1 || 0) - (z2 || 0) - (z3 || 0)
+        z2p: z2p || 0,
+        unassigned: (total || 0) - assigned
       }
     })
     setLoading(false)
@@ -75,24 +86,19 @@ export default function AdminInventory() {
   }
 
   async function loadUnsoldStats() {
-    // Get all scanned items from sort_log (with pagination)
-    const sortData = await fetchAllRows('jumpstart_sort_log', 'barcode')
+    // Get all manifest items with cost and load (paginated)
+    const manifestData = await fetchAllRows('jumpstart_manifest', 'barcode,cost_freight,load_id')
+    const { data: loadsInfo } = await supabase.from('loads').select('id,vendor,notes')
 
-    // Get all sold items (with pagination)
+    // Get all sold scans (paginated) — these have barcodes of items that were sold
     const soldData = await fetchAllRows('jumpstart_sold_scans', 'barcode')
 
-    if (!sortData || sortData.length === 0) {
+    if (!manifestData || manifestData.length === 0) {
       setUnsoldStats({ totalUnsoldCost: 0, totalUnsoldCount: 0, avgUnsoldCost: 0, byLoad: [] })
       return
     }
 
-    // Count scanned items per barcode
-    const scannedCounts = {}
-    sortData.forEach(row => {
-      scannedCounts[row.barcode] = (scannedCounts[row.barcode] || 0) + 1
-    })
-
-    // Count sold items per barcode
+    // Count how many times each barcode was sold
     const soldCounts = {}
     if (soldData) {
       soldData.forEach(row => {
@@ -100,65 +106,45 @@ export default function AdminInventory() {
       })
     }
 
-    // Calculate remaining per barcode
-    const remainingCounts = {}
-    Object.keys(scannedCounts).forEach(barcode => {
-      const scanned = scannedCounts[barcode]
-      const sold = soldCounts[barcode] || 0
-      const remaining = scanned - sold
-      if (remaining > 0) {
-        remainingCounts[barcode] = remaining
-      }
-    })
-
-    // Get cost and load_id for each barcode from manifest
-    const barcodes = Object.keys(remainingCounts)
-    if (barcodes.length === 0) {
-      setUnsoldStats({ totalUnsoldCost: 0, totalUnsoldCount: 0, avgUnsoldCost: 0, byLoad: [] })
-      return
-    }
-
-    const { data: manifestData } = await supabase
-      .from('jumpstart_manifest')
-      .select('barcode, cost_freight, load_id')
-      .in('barcode', barcodes)
-
-    // Deduplicate manifest by barcode (take first match)
-    const manifestByBarcode = {}
-    if (manifestData) {
-      manifestData.forEach(row => {
-        if (!manifestByBarcode[row.barcode]) {
-          manifestByBarcode[row.barcode] = row
-        }
-      })
-    }
-
-    // Aggregate by load
+    // Walk through every manifest item, subtract sold counts
+    // Since manifest has duplicate barcodes (multiple physical items), we process each row
+    // and decrement the sold count as we "use up" sold units
+    const soldUsed = {} // track how many sold we've accounted for per barcode
     const byLoadMap = {}
     let totalCost = 0
     let totalCount = 0
 
-    Object.entries(remainingCounts).forEach(([barcode, count]) => {
-      const manifest = manifestByBarcode[barcode]
-      if (manifest) {
-        const cost = Number(manifest.cost_freight) || 0
-        const loadId = manifest.load_id || 'Unknown'
+    manifestData.forEach(item => {
+      const bc = item.barcode
+      const used = soldUsed[bc] || 0
+      const totalSold = soldCounts[bc] || 0
+
+      if (used < totalSold) {
+        // This item was sold — mark it used
+        soldUsed[bc] = used + 1
+      } else {
+        // This item is unsold
+        const cost = Number(item.cost_freight) || 0
+        const loadId = item.load_id || 'Unknown'
 
         if (!byLoadMap[loadId]) {
           byLoadMap[loadId] = { load_id: loadId, unsoldCost: 0, unsoldCount: 0 }
         }
-        byLoadMap[loadId].unsoldCost += cost * count
-        byLoadMap[loadId].unsoldCount += count
-        totalCost += cost * count
-        totalCount += count
+        byLoadMap[loadId].unsoldCost += cost
+        byLoadMap[loadId].unsoldCount += 1
+        totalCost += cost
+        totalCount += 1
       }
     })
 
-    // Calculate averages
-    const byLoad = Object.values(byLoadMap).map(load => ({
-      ...load,
-      avgCost: load.unsoldCount > 0 ? load.unsoldCost / load.unsoldCount : 0
-    }))
+    const byLoad = Object.values(byLoadMap).map(load => {
+      const info = loadsInfo?.find(i => i.id === load.load_id)
+      return {
+        ...load,
+        brand: info?.vendor || info?.notes || '',
+        avgCost: load.unsoldCount > 0 ? load.unsoldCost / load.unsoldCount : 0
+      }
+    })
 
     setUnsoldStats({
       totalUnsoldCost: totalCost,
@@ -176,8 +162,14 @@ export default function AdminInventory() {
 
     if (zoneFilter === 'none') {
       query = query.is('zone', null)
-    } else if (zoneFilter !== 'all') {
-      query = query.eq('zone', parseInt(zoneFilter))
+    } else if (zoneFilter === '1') {
+      query = query.or('zone.eq.1,zone.eq.Zone 1')
+    } else if (zoneFilter === '1p') {
+      query = query.eq('zone', 'Zone 1 Pants')
+    } else if (zoneFilter === '2') {
+      query = query.or('zone.eq.2,zone.eq.Zone 2')
+    } else if (zoneFilter === '2p') {
+      query = query.eq('zone', 'Zone 2 Pants')
     }
     if (search) query = query.or(`description.ilike.%${search}%,barcode.ilike.%${search}%,category.ilike.%${search}%`)
 
@@ -230,13 +222,13 @@ export default function AdminInventory() {
       </div>
 
       {/* Unsold Inventory Summary */}
-      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-b from-amber-900/20 to-slate-900/40 border border-amber-500/20 p-5 shadow-xl shadow-black/30">
-        <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-amber-500/40 to-transparent" />
-        <h3 className="font-bold text-lg mb-4 text-amber-400">Unsold Inventory (Scanned)</h3>
-        <p className="text-sm text-slate-400 mb-4">Items scanned into sort log but not yet sold</p>
+      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-b from-slate-800/60 to-slate-900/40 border border-white/[0.08] p-5 shadow-xl shadow-black/30">
+        <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent" />
+        <h3 className="font-bold text-lg mb-1">Unsold Inventory</h3>
+        <p className="text-sm text-slate-500 mb-4">Manifest items not yet sold</p>
         <div className="grid grid-cols-3 gap-4 mb-6">
           <div className="rounded-xl bg-slate-800/30 border border-white/[0.04] p-4 text-center">
-            <div className="text-2xl font-bold text-amber-400">${unsoldStats.totalUnsoldCost.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</div>
+            <div className="text-2xl font-bold text-purple-400">${unsoldStats.totalUnsoldCost.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</div>
             <div className="text-sm text-slate-400">Total Cost Tied Up</div>
           </div>
           <div className="rounded-xl bg-slate-800/30 border border-white/[0.04] p-4 text-center">
@@ -255,15 +247,18 @@ export default function AdminInventory() {
             <h4 className="text-sm font-semibold text-slate-400 mb-3 uppercase tracking-wider">By Load</h4>
             <div className="grid grid-cols-2 gap-4">
               {unsoldStats.byLoad.map(load => (
-                <div key={load.load_id} className="rounded-xl bg-slate-800/30 border border-amber-500/10 p-4 hover:bg-slate-800/50 transition-colors">
+                <div key={load.load_id} className="rounded-xl bg-slate-800/30 border border-white/[0.04] p-4 hover:bg-slate-800/50 transition-colors">
                   <div className="flex justify-between items-start">
                     <div>
-                      <div className="font-semibold text-white">Load {load.load_id}</div>
-                      <div className="text-sm text-amber-400/80 mt-1">Unsold: ${load.unsoldCost.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</div>
+                      <div className="font-semibold text-white">
+                        Load {load.load_id.replace('Load ', '')}
+                        {load.brand && <span className="text-slate-400 font-normal"> — {load.brand}</span>}
+                      </div>
+                      <div className="text-sm text-purple-400/80 mt-1">Unsold: ${load.unsoldCost.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</div>
                       <div className="text-xs text-slate-500 mt-0.5">Avg: ${load.avgCost.toFixed(2)}/item</div>
                     </div>
                     <div className="text-right">
-                      <div className="text-lg font-bold text-amber-400">{load.unsoldCount.toLocaleString()}</div>
+                      <div className="text-lg font-bold text-purple-400">{load.unsoldCount.toLocaleString()}</div>
                       <div className="text-xs text-slate-500">items</div>
                     </div>
                   </div>
@@ -274,7 +269,7 @@ export default function AdminInventory() {
         )}
 
         {unsoldStats.byLoad.length === 0 && unsoldStats.totalUnsoldCount === 0 && (
-          <p className="text-sm text-slate-500 text-center py-4">No items have been scanned into sort log yet</p>
+          <p className="text-sm text-slate-500 text-center py-4">No manifest items loaded yet</p>
         )}
       </div>
 
@@ -287,7 +282,10 @@ export default function AdminInventory() {
             <div key={load.load_id} className="rounded-xl bg-slate-800/30 border border-white/[0.04] p-4 hover:bg-slate-800/50 transition-colors">
               <div className="flex justify-between items-start">
                 <div>
-                  <div className="font-semibold text-white">Load {load.load_id}</div>
+                  <div className="font-semibold text-white">
+                    Load {load.load_id.replace('Load ', '')}
+                    {load.brand && <span className="text-slate-400 font-normal"> — {load.brand}</span>}
+                  </div>
                   <div className="text-sm text-slate-500 mt-1">Total Cost: ${Number(load.total_cost).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</div>
                 </div>
                 <div className="text-right">
@@ -303,11 +301,12 @@ export default function AdminInventory() {
       <div className="relative overflow-hidden rounded-2xl bg-gradient-to-b from-slate-800/60 to-slate-900/40 border border-white/[0.08] p-5 shadow-xl shadow-black/30">
         <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent" />
         <h3 className="font-bold text-lg mb-4">By Zone</h3>
-        <div className="grid grid-cols-4 gap-4">
-          <ZoneCard zone={1} count={stats.zones.z1} />
-          <ZoneCard zone={2} count={stats.zones.z2} />
-          <ZoneCard zone={3} count={stats.zones.z3} />
-          <ZoneCard zone={null} count={stats.zones.unassigned} label="Unassigned" />
+        <div className="grid grid-cols-5 gap-4">
+          <ZoneCard label="Zone 1" count={stats.zones.z1} color="purple" />
+          <ZoneCard label="Zone 1 Pants" count={stats.zones.z1p} color="amber" />
+          <ZoneCard label="Zone 2" count={stats.zones.z2} color="teal" />
+          <ZoneCard label="Zone 2 Pants" count={stats.zones.z2p} color="pink" />
+          <ZoneCard label="Unassigned" count={stats.zones.unassigned} color="slate" />
         </div>
       </div>
 
@@ -331,8 +330,9 @@ export default function AdminInventory() {
           >
             <option value="all">All Zones</option>
             <option value="1">Zone 1</option>
+            <option value="1p">Zone 1 Pants</option>
             <option value="2">Zone 2</option>
-            <option value="3">Zone 3</option>
+            <option value="2p">Zone 2 Pants</option>
             <option value="none">Unassigned</option>
           </select>
         </div>
@@ -358,10 +358,17 @@ export default function AdminInventory() {
                   <td className="py-3 px-3 text-right text-slate-300">${Number(item.msrp || 0).toFixed(2)}</td>
                   <td className="py-3 px-3 text-right text-slate-500">${Number(item.cost_freight || 0).toFixed(2)}</td>
                   <td className="py-3 px-3 text-center">
-                    <span className={`inline-flex items-center justify-center w-7 h-7 rounded-lg text-xs font-bold text-white
-                      ${item.zone === 1 ? 'bg-purple-600' : item.zone === 2 ? 'bg-teal-600' : item.zone === 3 ? 'bg-pink-600' : 'bg-slate-600'}`}>
-                      {item.zone || '—'}
-                    </span>
+                    {(() => {
+                      const z = String(item.zone || '').toLowerCase().trim()
+                      let label = item.zone || '—'
+                      let bg = 'bg-slate-600'
+                      if (z === '1' || z === 'zone 1') { label = 'Zone 1'; bg = 'bg-purple-600' }
+                      else if (z === 'zone 1 pants') { label = 'Z1 Pants'; bg = 'bg-amber-600' }
+                      else if (z === '2' || z === 'zone 2') { label = 'Zone 2'; bg = 'bg-teal-600' }
+                      else if (z === 'zone 2 pants') { label = 'Z2 Pants'; bg = 'bg-pink-600' }
+                      else if (z === '3') { label = 'Zone 3'; bg = 'bg-fuchsia-600' }
+                      return <span className={`inline-flex items-center justify-center px-2 h-7 rounded-lg text-xs font-bold text-white ${bg}`}>{label}</span>
+                    })()}
                   </td>
                   <td className="py-3 px-3 text-slate-400">{item.size}</td>
                 </tr>
@@ -390,11 +397,18 @@ function StatCard({ label, value, sub, accent }) {
   )
 }
 
-function ZoneCard({ zone, count, label }) {
+function ZoneCard({ count, label, color }) {
+  const colors = {
+    purple: 'border-purple-500/30 text-purple-400',
+    amber: 'border-amber-500/30 text-amber-400',
+    teal: 'border-teal-500/30 text-teal-400',
+    pink: 'border-pink-500/30 text-pink-400',
+    slate: 'border-white/[0.04] text-slate-400'
+  }
   return (
-    <div className="rounded-xl bg-slate-800/30 border border-white/[0.04] p-4 text-center hover:bg-slate-800/50 transition-colors">
+    <div className={`rounded-xl bg-slate-800/30 border ${colors[color] || colors.slate} p-4 text-center hover:bg-slate-800/50 transition-colors`}>
       <div className="text-2xl font-bold text-white mb-1">{count.toLocaleString()}</div>
-      <div className="text-sm text-slate-400">{label || `Zone ${zone}`}</div>
+      <div className={`text-sm ${colors[color]?.split(' ')[1] || 'text-slate-400'}`}>{label}</div>
     </div>
   )
 }

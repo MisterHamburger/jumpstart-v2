@@ -126,38 +126,26 @@ export default function GeneralSort() {
 
   const getZoneDisplay = () => {
     if (!scannedItem) return null
-    switch (scannedItem.zone) {
-      case 1:
-        return {
-          gradient: 'from-violet-600 via-purple-600 to-fuchsia-600',
-          glow: 'shadow-purple-500/50',
-          text: 'ZONE 1'
-        }
-      case 2:
-        return {
-          gradient: 'from-cyan-500 via-teal-500 to-emerald-500',
-          glow: 'shadow-cyan-500/50',
-          text: 'ZONE 2'
-        }
-      case 3:
-        return {
-          gradient: 'from-pink-500 via-rose-500 to-fuchsia-500',
-          glow: 'shadow-pink-500/50',
-          text: 'ZONE 3'
-        }
-      case 4:
-        return {
-          gradient: 'from-fuchsia-500 via-pink-500 to-rose-500',
-          glow: 'shadow-fuchsia-500/50',
-          text: 'ZONE 4'
-        }
-      default:
-        return {
-          gradient: 'from-slate-600 via-slate-700 to-slate-800',
-          glow: 'shadow-slate-500/30',
-          text: 'NOT FOUND'
-        }
+    const zone = String(scannedItem.zone || '').toLowerCase().trim()
+    if (zone === 'zone 1' || zone === '1') {
+      return { gradient: 'from-violet-600 via-purple-600 to-fuchsia-600', glow: 'shadow-purple-500/50', text: 'ZONE 1' }
     }
+    if (zone === 'zone 1 pants') {
+      return { gradient: 'from-amber-500 via-orange-500 to-yellow-500', glow: 'shadow-amber-500/50', text: 'ZONE 1 PANTS' }
+    }
+    if (zone === 'zone 2' || zone === '2') {
+      return { gradient: 'from-cyan-500 via-teal-500 to-emerald-500', glow: 'shadow-cyan-500/50', text: 'ZONE 2' }
+    }
+    if (zone === 'zone 2 pants') {
+      return { gradient: 'from-pink-500 via-rose-500 to-red-500', glow: 'shadow-pink-500/50', text: 'ZONE 2 PANTS' }
+    }
+    if (zone === '3') {
+      return { gradient: 'from-pink-500 via-rose-500 to-fuchsia-500', glow: 'shadow-pink-500/50', text: 'ZONE 3' }
+    }
+    if (zone === '4') {
+      return { gradient: 'from-fuchsia-500 via-pink-500 to-rose-500', glow: 'shadow-fuchsia-500/50', text: 'ZONE 4' }
+    }
+    return { gradient: 'from-slate-600 via-slate-700 to-slate-800', glow: 'shadow-slate-500/30', text: 'NOT FOUND' }
   }
 
   const zoneDisplay = getZoneDisplay()

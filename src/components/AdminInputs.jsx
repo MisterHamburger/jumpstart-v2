@@ -152,6 +152,22 @@ function ManifestUpload() {
     refreshLoads()
   }
 
+  async function deleteLoad(load) {
+    if (!confirm(`Are you sure you want to delete Load ${load.id}?\n\nWARNING: This will delete ALL manifest items for this load. This may mess up all of your profitability calculations if these items have been sold.`)) {
+      return
+    }
+    if (!confirm(`FINAL WARNING: This cannot be undone. Delete Load ${load.id} and all its items?`)) {
+      return
+    }
+    setStatus('Deleting load and manifest items...')
+    await supabase.from('jumpstart_manifest').delete().eq('load_id', load.id)
+    await supabase.from('loads').delete().eq('id', load.id)
+    if (loadId === load.id) setLoadId('')
+    setStatus('✓ Load deleted')
+    refreshLoads()
+    setTimeout(() => setStatus(''), 3000)
+  }
+
   async function handleFile(file) {
     if (!loadId) { setStatus('⚠️ Select or create a load first'); return }
     setStatus('Parsing CSV...')
@@ -161,26 +177,32 @@ function ManifestUpload() {
         const rows = results.data
         setStatus(`Parsed ${rows.length} rows. Uploading...`)
 
-        const items = rows.map(row => {
-          const barcode = getField(row, 'Unique ID', 'Universal ID', 'UPC', 'Barcode') || ''
-          const zoneStr = (getField(row, 'Zone') || '').toString()
-          let zone = null
-          if (zoneStr.includes('1')) zone = 1
-          else if (zoneStr.includes('2')) zone = 2
-          else if (zoneStr.includes('3')) zone = 3
+        const items = []
+        for (const row of rows) {
+          const barcode = getField(row, 'UNIVERSAL ID', 'Unique ID', 'Universal ID', 'UPC', 'Barcode') || ''
+          if (!barcode) continue
+          const msrp = parseDollar(getField(row, 'Unit Retail', 'MSRP')) || null
+          const cogs = parseDollar(getField(row, 'COGS', 'Cost', 'Cost+Freight')) || null
+          const zoneStr = (getField(row, 'Zone') || '').toString().trim()
+          const scanQty = parseInt(getField(row, 'SCAN QUANTITY', 'Scan Quantity', 'Quantity', 'Qty')) || 1
 
-          return {
+          const baseItem = {
             barcode: normalizeBarcode(barcode), barcode_raw: barcode,
             description: getField(row, 'Description', 'Product Name') || '',
-            category: getField(row, 'Category') || '', subclass: getField(row, 'Subclass') || '',
+            category: getField(row, 'Category (Department)', 'Category') || '',
+            subclass: getField(row, 'Subclass') || '',
             size: getField(row, 'Size') || '', color: getField(row, 'Color') || '',
-            vendor: getField(row, 'Vendor', 'Brand') || '', part_number: getField(row, 'Part Number', 'Item') || '',
-            msrp: parseDollar(getField(row, 'MSRP')) || null,
-            cost: parseDollar(getField(row, 'Cost')) || null,
-            cost_freight: parseDollar(getField(row, 'Cost+Freight')) || null,
-            zone, bundle_number: getField(row, 'Bundle #', 'Bundle') || null, load_id: loadId
+            vendor: getField(row, 'Vendor', 'Brand') || '',
+            part_number: getField(row, 'Part Number', 'Item') || '',
+            msrp, cost_freight: cogs,
+            zone: zoneStr || null,
+            bundle_number: getField(row, 'Bundle #', 'Bundle') || null,
+            load_id: loadId
           }
-        }).filter(item => item.barcode)
+          for (let i = 0; i < scanQty; i++) {
+            items.push({ ...baseItem })
+          }
+        }
 
         let uploaded = 0
         for (let i = 0; i < items.length; i += 500) {
@@ -224,7 +246,7 @@ function ManifestUpload() {
                 required 
               />
               <input 
-                placeholder="Vendor (e.g., J.Crew)" 
+                placeholder="Brand (e.g., J.Crew, Madewell)" 
                 value={newLoad.vendor} 
                 onChange={e => setNewLoad({...newLoad, vendor: e.target.value})} 
                 className="bg-slate-700/50 border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-white placeholder-slate-500 focus:border-cyan-500/50 focus:outline-none" 
@@ -270,14 +292,25 @@ function ManifestUpload() {
               >
                 <div className="flex justify-between items-start">
                   <div>
-                    <div className="font-semibold text-white">Load {l.id.replace('Load ', '')}</div>
+                    <div className="font-semibold text-white">
+                      Load {l.id.replace('Load ', '')}
+                      {(l.vendor || l.notes) && <span className="text-slate-400 font-normal"> — {l.vendor || l.notes}</span>}
+                    </div>
                     <div className="text-xs text-slate-500 mt-1">
                       Date Paid: {formattedDate}
                     </div>
                   </div>
-                  <div className="text-right">
-                    <div className="text-lg font-bold text-slate-300">{l.item_count.toLocaleString()} items</div>
-                    <div className="text-xs text-slate-500">${Number(l.total_cost_actual).toLocaleString(undefined, {minimumFractionDigits: 2})}</div>
+                  <div className="flex items-start gap-3">
+                    <div className="text-right">
+                      <div className="text-lg font-bold text-slate-300">{l.item_count.toLocaleString()} items</div>
+                      <div className="text-xs text-slate-500">${Number(l.total_cost_actual).toLocaleString(undefined, {minimumFractionDigits: 2})}</div>
+                    </div>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); deleteLoad(l) }}
+                      className="text-slate-500 hover:text-red-400 hover:bg-red-500/10 px-2 py-1.5 rounded-lg text-xs font-medium transition-colors"
+                    >
+                      Delete
+                    </button>
                   </div>
                 </div>
               </div>

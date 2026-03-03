@@ -30,6 +30,12 @@ export default function SalesScanner() {
   const [showExcludedModal, setShowExcludedModal] = useState(
     (sessionState.excludedItems || []).length > 0
   )
+  // No-barcode item picker (Kickstart only)
+  const [noBarcodeStep, setNoBarcodeStep] = useState(null) // null | 'size' | 'pickItem'
+  const [noBarcodeSize, setNoBarcodeSize] = useState(null)
+  const [noBarcodeItems, setNoBarcodeItems] = useState([])
+  const [noBarcodeLoading, setNoBarcodeLoading] = useState(false)
+  const [selectedIntakeId, setSelectedIntakeId] = useState(null)
   const html5QrcodeRef = useRef(null)
   const initialScannedRef = useRef(null)
 
@@ -239,10 +245,82 @@ export default function SalesScanner() {
     await stopScanner()
   }
 
-  // No Barcode handler - skip straight to listing number entry
+  // No Barcode handler
   const handleNoBarcode = async () => {
     await stopScanner()
-    setScannedBarcode('NO_BARCODE')
+    if (showData?.channel === 'Kickstart') {
+      setNoBarcodeStep('size')
+    } else {
+      setScannedBarcode('NO_BARCODE')
+    }
+  }
+
+  // Fetch unsold no-tag items for a given size
+  const fetchNoBarcodeItems = async (size) => {
+    setNoBarcodeLoading(true)
+    setNoBarcodeSize(size)
+    try {
+      // Get all no-tag intake items matching this size
+      const { data: intakeItems } = await supabase
+        .from('kickstart_intake')
+        .select('id, brand, description, color, condition')
+        .in('condition', ['Pre-loved/Nuuly', 'NWOT'])
+        .eq('size', size)
+        .eq('status', 'enriched')
+
+      if (!intakeItems || intakeItems.length === 0) {
+        setNoBarcodeItems([])
+        setNoBarcodeStep('pickItem')
+        setNoBarcodeLoading(false)
+        return
+      }
+
+      // Get already-sold intake_ids
+      const { data: soldData } = await supabase
+        .from('kickstart_sold_scans')
+        .select('intake_id')
+        .not('intake_id', 'is', null)
+
+      const soldIds = new Set((soldData || []).map(s => s.intake_id))
+
+      // Filter out already-sold items
+      const available = intakeItems.filter(item => !soldIds.has(item.id))
+
+      // Group by (brand, description, color, condition)
+      const groups = new Map()
+      for (const item of available) {
+        const key = `${item.brand}||${item.description || ''}||${item.color || ''}||${item.condition}`
+        if (!groups.has(key)) {
+          groups.set(key, { brand: item.brand, description: item.description, color: item.color, condition: item.condition, ids: [] })
+        }
+        groups.get(key).ids.push(item.id)
+      }
+
+      setNoBarcodeItems(Array.from(groups.values()).sort((a, b) => (a.description || '').localeCompare(b.description || '')))
+      setNoBarcodeStep('pickItem')
+    } catch (err) {
+      console.error('Error fetching no-barcode items:', err)
+    }
+    setNoBarcodeLoading(false)
+  }
+
+  // Select a no-barcode item group
+  const handlePickNoBarcodeItem = (group) => {
+    const intakeId = group.ids[0]
+    setSelectedIntakeId(intakeId)
+    const label = [group.brand, group.description, group.color, group.condition].filter(Boolean).join(' - ')
+    setScannedBarcode(`NO_BARCODE: ${label}`)
+    setNoBarcodeStep(null)
+    setNoBarcodeSize(null)
+    setNoBarcodeItems([])
+  }
+
+  const cancelNoBarcode = async () => {
+    setNoBarcodeStep(null)
+    setNoBarcodeSize(null)
+    setNoBarcodeItems([])
+    setScannerKey(prev => prev + 1)
+    await startScanner()
   }
 
   const handleSubmit = async (e) => {
@@ -307,18 +385,22 @@ export default function SalesScanner() {
         scanned_by: 'phone'
       }
 
-      // For Kickstart, look up the intake_id by matching UPC
+      // For Kickstart, use selected intake_id (no-barcode picker) or look up by UPC
       if (isKickstart) {
-        const { data: intakeMatch } = await supabase
-          .from('kickstart_intake')
-          .select('id')
-          .eq('upc', scannedBarcode)
-          .eq('status', 'enriched')
-          .is('sale_price', null)
-          .limit(1)
-        
-        if (intakeMatch && intakeMatch.length > 0) {
-          insertData.intake_id = intakeMatch[0].id
+        if (selectedIntakeId) {
+          insertData.intake_id = selectedIntakeId
+        } else {
+          const { data: intakeMatch } = await supabase
+            .from('kickstart_intake')
+            .select('id')
+            .eq('upc', scannedBarcode)
+            .eq('status', 'enriched')
+            .is('sale_price', null)
+            .limit(1)
+
+          if (intakeMatch && intakeMatch.length > 0) {
+            insertData.intake_id = intakeMatch[0].id
+          }
         }
       }
 
@@ -336,6 +418,7 @@ export default function SalesScanner() {
         setShowSuccess(false)
         setScannedBarcode(null)
         setListingNumber('')
+        setSelectedIntakeId(null)
         setScannerKey(prev => prev + 1)
         setSubmitting(false)
         await startScanner()
@@ -455,7 +538,79 @@ export default function SalesScanner() {
       </div>
 
       {/* Main Content */}
-      {!scannedBarcode ? (
+      {noBarcodeStep ? (
+        <div className="relative z-10 flex-1 flex flex-col items-center p-4 overflow-y-auto">
+          {noBarcodeStep === 'size' && (
+            <>
+              <h2 className="text-xl font-bold text-white mb-1 mt-2">Select Size</h2>
+              <p className="text-slate-400 mb-4 text-sm">What size is the item?</p>
+              <div className="w-full max-w-sm grid grid-cols-2 gap-3 mb-4">
+                {['XS', 'S', 'M', 'L', 'XL', 'XXL', 'One Size'].map(s => (
+                  <button
+                    key={s}
+                    onClick={() => fetchNoBarcodeItems(s)}
+                    className="py-5 rounded-2xl bg-gradient-to-br from-amber-500/80 to-orange-500/80 border-2 border-amber-400/40 text-white font-black text-2xl shadow-xl shadow-amber-500/20 hover:scale-105 active:scale-95 transition-all"
+                  >
+                    {s}
+                  </button>
+                ))}
+              </div>
+              <button onClick={cancelNoBarcode} className="text-white/40 text-sm underline">Cancel</button>
+            </>
+          )}
+          {noBarcodeStep === 'pickItem' && (
+            <>
+              <h2 className="text-xl font-bold text-white mb-1 mt-2">Pick Item — Size {noBarcodeSize}</h2>
+              <p className="text-slate-400 mb-4 text-sm">Which item are you selling?</p>
+              {noBarcodeLoading ? (
+                <p className="text-white/50 text-lg py-12">Loading...</p>
+              ) : noBarcodeItems.length === 0 ? (
+                <div className="text-center py-12">
+                  <p className="text-white/50 text-lg mb-4">No unsold items in size {noBarcodeSize}</p>
+                  <button
+                    onClick={() => setNoBarcodeStep('size')}
+                    className="px-6 py-3 bg-white/10 rounded-2xl text-white font-semibold border border-white/20"
+                  >
+                    Try Another Size
+                  </button>
+                </div>
+              ) : (
+                <div className="w-full max-w-sm space-y-2 mb-4">
+                  {noBarcodeItems.map((group, idx) => (
+                    <button
+                      key={idx}
+                      onClick={() => handlePickNoBarcodeItem(group)}
+                      className="w-full text-left bg-amber-500/10 border border-amber-500/30 rounded-2xl p-4 hover:bg-amber-500/20 active:scale-[0.98] transition-all"
+                    >
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-white font-semibold text-base">
+                            {[group.description, group.color].filter(Boolean).join(' — ')}
+                          </p>
+                          <p className="text-amber-300/70 text-sm">
+                            {group.brand} · {group.condition}
+                          </p>
+                        </div>
+                        <span className="text-amber-300 font-bold text-lg bg-amber-500/20 px-3 py-1 rounded-full">
+                          {group.ids.length}
+                        </span>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+              <div className="flex gap-3 w-full max-w-sm">
+                <button onClick={() => setNoBarcodeStep('size')} className="flex-1 py-3 rounded-2xl bg-white/10 border border-white/20 text-white font-semibold text-sm">
+                  ← Back
+                </button>
+                <button onClick={cancelNoBarcode} className="flex-1 py-3 rounded-2xl bg-white/10 border border-white/20 text-white/50 font-semibold text-sm">
+                  Cancel
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      ) : !scannedBarcode ? (
         <div className="relative z-10 flex-1 flex flex-col">
           {cameraError ? (
             <div className="flex-1 flex items-center justify-center bg-slate-900">

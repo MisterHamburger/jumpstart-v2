@@ -51,15 +51,18 @@ export default async (req) => {
         }
 
         // Update the item with extracted data
-        await updateItem(SUPABASE_URL, SUPABASE_ANON_KEY, item.id, {
+        // Only overwrite description if AI actually found a product name
+        const updates = {
           upc: tagData.upc || null,
           style_number: tagData.style_number || null,
-          description: tagData.description || null,
           color: tagData.color || null,
           size: tagData.size || null,
           msrp: tagData.msrp ? parseFloat(tagData.msrp) : null,
           status: 'enriched'
-        })
+        }
+        if (tagData.description) updates.description = tagData.description
+
+        await updateItem(SUPABASE_URL, SUPABASE_ANON_KEY, item.id, updates)
       } catch (err) {
         console.error(`Error processing item ${item.id}:`, err)
         await updateItem(SUPABASE_URL, SUPABASE_ANON_KEY, item.id, { status: 'enrichment_failed' })
