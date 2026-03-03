@@ -762,7 +762,7 @@ export default function SalesScanner() {
           )}
 
           {/* Bottom buttons: No Barcode + Remaining + Scans */}
-          <div className="relative z-10 px-4 py-3 flex gap-2 backdrop-blur-xl shrink-0">
+          <div className="relative z-10 px-4 pt-3 flex gap-2 backdrop-blur-xl shrink-0" style={{ paddingBottom: 'calc(12px + env(safe-area-inset-bottom, 12px))' }}>
             <button
               onClick={handleNoBarcode}
               className="flex-1 py-3 rounded-2xl font-bold text-sm bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow-lg shadow-amber-500/30 border border-amber-400/50 active:scale-[0.97] transition-all"

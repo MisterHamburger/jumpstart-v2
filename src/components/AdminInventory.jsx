@@ -221,79 +221,40 @@ export default function AdminInventory() {
         </div>
       </div>
 
-      {/* Unsold Inventory Summary */}
+      {/* Inventory by Load */}
       <div className="relative overflow-hidden rounded-2xl bg-gradient-to-b from-slate-800/60 to-slate-900/40 border border-white/[0.08] p-5 shadow-xl shadow-black/30">
         <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent" />
-        <h3 className="font-bold text-lg mb-1">Unsold Inventory</h3>
-        <p className="text-sm text-slate-500 mb-4">Manifest items not yet sold</p>
-        <div className="grid grid-cols-3 gap-4 mb-6">
-          <div className="rounded-xl bg-slate-800/30 border border-white/[0.04] p-4 text-center">
-            <div className="text-2xl font-bold text-purple-400">${unsoldStats.totalUnsoldCost.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</div>
-            <div className="text-sm text-slate-400">Total Cost Tied Up</div>
-          </div>
-          <div className="rounded-xl bg-slate-800/30 border border-white/[0.04] p-4 text-center">
-            <div className="text-2xl font-bold text-white">{unsoldStats.totalUnsoldCount.toLocaleString()}</div>
-            <div className="text-sm text-slate-400">Unsold Items</div>
-          </div>
-          <div className="rounded-xl bg-slate-800/30 border border-white/[0.04] p-4 text-center">
-            <div className="text-2xl font-bold text-slate-300">${unsoldStats.avgUnsoldCost.toFixed(2)}</div>
-            <div className="text-sm text-slate-400">Avg Cost/Item</div>
-          </div>
-        </div>
-
-        {/* Unsold By Load */}
-        {unsoldStats.byLoad.length > 0 && (
-          <div>
-            <h4 className="text-sm font-semibold text-slate-400 mb-3 uppercase tracking-wider">By Load</h4>
-            <div className="grid grid-cols-2 gap-4">
-              {unsoldStats.byLoad.map(load => (
-                <div key={load.load_id} className="rounded-xl bg-slate-800/30 border border-white/[0.04] p-4 hover:bg-slate-800/50 transition-colors">
-                  <div className="flex justify-between items-start">
-                    <div>
-                      <div className="font-semibold text-white">
-                        Load {load.load_id.replace('Load ', '')}
-                        {load.brand && <span className="text-slate-400 font-normal"> — {load.brand}</span>}
-                      </div>
-                      <div className="text-sm text-purple-400/80 mt-1">Unsold: ${load.unsoldCost.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</div>
-                      <div className="text-xs text-slate-500 mt-0.5">Avg: ${load.avgCost.toFixed(2)}/item</div>
-                    </div>
-                    <div className="text-right">
-                      <div className="text-lg font-bold text-purple-400">{load.unsoldCount.toLocaleString()}</div>
-                      <div className="text-xs text-slate-500">items</div>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {unsoldStats.byLoad.length === 0 && unsoldStats.totalUnsoldCount === 0 && (
-          <p className="text-sm text-slate-500 text-center py-4">No manifest items loaded yet</p>
-        )}
-      </div>
-
-      {/* By Load (All Inventory) */}
-      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-b from-slate-800/60 to-slate-900/40 border border-white/[0.08] p-5 shadow-xl shadow-black/30">
-        <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent" />
-        <h3 className="font-bold text-lg mb-4">All Inventory by Load</h3>
+        <h3 className="font-bold text-lg mb-4">Inventory by Load</h3>
         <div className="grid grid-cols-2 gap-4">
-          {stats.loads.map(load => (
-            <div key={load.load_id} className="rounded-xl bg-slate-800/30 border border-white/[0.04] p-4 hover:bg-slate-800/50 transition-colors">
-              <div className="flex justify-between items-start">
-                <div>
+          {stats.loads.map(load => {
+            const unsold = unsoldStats.byLoad.find(u => u.load_id === load.load_id)
+            const totalItems = Number(load.item_count)
+            const unsoldCount = unsold?.unsoldCount || 0
+            const soldCount = totalItems - unsoldCount
+            const soldPctLoad = totalItems > 0 ? (soldCount / totalItems * 100).toFixed(0) : 0
+            return (
+              <div key={load.load_id} className="rounded-xl bg-slate-800/30 border border-white/[0.04] p-4 hover:bg-slate-800/50 transition-colors">
+                <div className="flex justify-between items-start mb-2">
                   <div className="font-semibold text-white">
                     Load {load.load_id.replace('Load ', '')}
                     {load.brand && <span className="text-slate-400 font-normal"> — {load.brand}</span>}
                   </div>
-                  <div className="text-sm text-slate-500 mt-1">Total Cost: ${Number(load.total_cost).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</div>
+                  <div className="text-lg font-bold text-white">{totalItems.toLocaleString()}</div>
                 </div>
-                <div className="text-right">
-                  <div className="text-lg font-bold text-slate-300">{Number(load.item_count).toLocaleString()} items</div>
+                <div className="h-1.5 rounded-full bg-slate-700 overflow-hidden mb-2">
+                  <div className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-cyan-400" style={{ width: `${soldPctLoad}%` }} />
+                </div>
+                <div className="flex justify-between text-xs">
+                  <span className="text-cyan-400">{soldCount.toLocaleString()} sold</span>
+                  <span className="text-purple-400">{unsoldCount.toLocaleString()} unsold</span>
+                </div>
+                <div className="flex justify-between text-xs text-slate-500 mt-1">
+                  <span>Total: ${Number(load.total_cost).toLocaleString(undefined, {maximumFractionDigits: 0})}</span>
+                  <span>Unsold: ${(unsold?.unsoldCost || 0).toLocaleString(undefined, {maximumFractionDigits: 0})}</span>
                 </div>
               </div>
-            </div>
-          ))}
+            )
+          })}
         </div>
       </div>
 
