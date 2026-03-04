@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useLocation } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 
 export default function SalesSetup() {
   const navigate = useNavigate()
-  const [channel, setChannel] = useState(null)
+  const location = useLocation()
+  const [channel, setChannel] = useState(location.state?.channel || null)
   const [shows, setShows] = useState([])
   const [selectedShow, setSelectedShow] = useState(null)
   const [loading, setLoading] = useState(false)

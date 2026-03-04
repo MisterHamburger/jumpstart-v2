@@ -1,6 +1,41 @@
-import { useState, useEffect, useRef } from 'react'
+import { useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { supabase } from '../lib/supabase'
+
+const actions = [
+  {
+    title: 'Sort',
+    subtitle: 'Sort incoming inventory',
+    icon: (
+      <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+      </svg>
+    ),
+    jumpstart: '/sorting/general',
+    kickstart: '/kickstart',
+  },
+  {
+    title: 'Sold',
+    subtitle: 'Scan items for packing',
+    icon: (
+      <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
+      </svg>
+    ),
+    jumpstart: { path: '/sales', state: { channel: 'Jumpstart' } },
+    kickstart: { path: '/sales', state: { channel: 'Kickstart' } },
+  },
+  {
+    title: 'Bundle',
+    subtitle: 'Sort items into boxes',
+    icon: (
+      <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+      </svg>
+    ),
+    jumpstart: { path: '/sorting/bundle', state: { channel: 'Jumpstart' } },
+    kickstart: { path: '/sorting/bundle', state: { channel: 'Kickstart' } },
+  },
+]
 
 export default function Home() {
   const navigate = useNavigate()
@@ -16,6 +51,14 @@ export default function Home() {
     if (longPressTimer.current) {
       clearTimeout(longPressTimer.current)
       longPressTimer.current = null
+    }
+  }
+
+  const go = (target) => {
+    if (typeof target === 'string') {
+      navigate(target)
+    } else {
+      navigate(target.path, { state: target.state })
     }
   }
 
@@ -40,114 +83,45 @@ export default function Home() {
         </div>
 
         <div className="w-full space-y-3">
-          {/* Sort Button */}
-          <button
-            onClick={() => navigate('/sorting/general')}
-            className="group w-full p-5 rounded-2xl relative overflow-hidden
-                       bg-gradient-to-r from-violet-600 via-purple-600 to-fuchsia-600
-                       hover:from-violet-500 hover:via-purple-500 hover:to-fuchsia-500
-                       transform hover:scale-[1.02] active:scale-[0.98] transition-all duration-200
-                       shadow-lg shadow-purple-500/25 hover:shadow-purple-500/40"
-          >
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-4">
-                <div className="w-12 h-12 rounded-xl bg-white/10 backdrop-blur flex items-center justify-center">
-                  <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
-                  </svg>
+          {actions.map((action) => (
+            <div
+              key={action.title}
+              className="w-full p-4 rounded-2xl relative overflow-hidden
+                         bg-slate-800/60 backdrop-blur-xl border border-white/[0.08]"
+            >
+              <div className="flex items-center gap-3 mb-3">
+                <div className="w-10 h-10 rounded-xl bg-white/10 backdrop-blur flex items-center justify-center shrink-0">
+                  {action.icon}
                 </div>
-                <div className="text-left">
-                  <h2 className="text-xl font-bold text-white tracking-tight">Sort</h2>
-                  <p className="text-white/60 text-sm">Sort incoming inventory</p>
+                <div>
+                  <h2 className="text-lg font-bold text-white tracking-tight">{action.title}</h2>
+                  <p className="text-slate-500 text-xs">{action.subtitle}</p>
                 </div>
               </div>
-              <svg className="w-5 h-5 text-white/60 group-hover:text-white group-hover:translate-x-1 transition-all" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-              </svg>
-            </div>
-          </button>
-
-          {/* Sold Button */}
-          <button
-            onClick={() => navigate('/sales')}
-            className="group w-full p-5 rounded-2xl relative overflow-hidden
-                       bg-gradient-to-r from-cyan-600 via-teal-500 to-emerald-500
-                       hover:from-cyan-500 hover:via-teal-400 hover:to-emerald-400
-                       transform hover:scale-[1.02] active:scale-[0.98] transition-all duration-200
-                       shadow-lg shadow-cyan-500/25 hover:shadow-cyan-500/40"
-          >
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-4">
-                <div className="w-12 h-12 rounded-xl bg-white/10 backdrop-blur flex items-center justify-center">
-                  <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
-                  </svg>
-                </div>
-                <div className="text-left">
-                  <h2 className="text-xl font-bold text-white tracking-tight">Sold</h2>
-                  <p className="text-white/60 text-sm">Scan items for packing</p>
-                </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => go(action.jumpstart)}
+                  className="flex-1 py-2.5 rounded-xl font-semibold text-sm
+                             bg-gradient-to-r from-cyan-600 to-teal-500 text-white
+                             hover:from-cyan-500 hover:to-teal-400
+                             active:scale-[0.97] transition-all
+                             shadow-md shadow-cyan-500/20"
+                >
+                  Jumpstart
+                </button>
+                <button
+                  onClick={() => go(action.kickstart)}
+                  className="flex-1 py-2.5 rounded-xl font-semibold text-sm
+                             bg-gradient-to-r from-fuchsia-600 to-pink-500 text-white
+                             hover:from-fuchsia-500 hover:to-pink-400
+                             active:scale-[0.97] transition-all
+                             shadow-md shadow-fuchsia-500/20"
+                >
+                  Kickstart
+                </button>
               </div>
-              <svg className="w-5 h-5 text-white/60 group-hover:text-white group-hover:translate-x-1 transition-all" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-              </svg>
             </div>
-          </button>
-
-          {/* Bundle Button */}
-          <button
-            onClick={() => navigate('/sorting/bundle')}
-            className="group w-full p-5 rounded-2xl relative overflow-hidden
-                       bg-gradient-to-r from-pink-600 via-rose-500 to-fuchsia-500
-                       hover:from-pink-500 hover:via-rose-400 hover:to-fuchsia-400
-                       transform hover:scale-[1.02] active:scale-[0.98] transition-all duration-200
-                       shadow-lg shadow-pink-500/25 hover:shadow-pink-500/40"
-          >
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-4">
-                <div className="w-12 h-12 rounded-xl bg-white/10 backdrop-blur flex items-center justify-center">
-                  <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
-                  </svg>
-                </div>
-                <div className="text-left">
-                  <h2 className="text-xl font-bold text-white tracking-tight">Bundle</h2>
-                  <p className="text-white/60 text-sm">Sort bundle items into boxes</p>
-                </div>
-              </div>
-              <svg className="w-5 h-5 text-white/60 group-hover:text-white group-hover:translate-x-1 transition-all" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-              </svg>
-            </div>
-          </button>
-
-          {/* Kickstart Button */}
-          <button
-            onClick={() => navigate('/kickstart')}
-            className="group w-full p-5 rounded-2xl relative overflow-hidden
-                       bg-gradient-to-r from-fuchsia-600 via-pink-500 to-rose-500
-                       hover:from-fuchsia-500 hover:via-pink-400 hover:to-rose-400
-                       transform hover:scale-[1.02] active:scale-[0.98] transition-all duration-200
-                       shadow-lg shadow-fuchsia-500/25 hover:shadow-fuchsia-500/40"
-          >
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-4">
-                <div className="w-12 h-12 rounded-xl bg-white/10 backdrop-blur flex items-center justify-center">
-                  <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
-                  </svg>
-                </div>
-                <div className="text-left">
-                  <h2 className="text-xl font-bold text-white tracking-tight">Kickstart</h2>
-                  <p className="text-white/60 text-sm">Photo intake for Free People</p>
-                </div>
-              </div>
-              <svg className="w-5 h-5 text-white/60 group-hover:text-white group-hover:translate-x-1 transition-all" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-              </svg>
-            </div>
-          </button>
+          ))}
 
           {/* Admin Button - more subtle, glass style */}
           <button

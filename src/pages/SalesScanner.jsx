@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useNavigate, useParams, useLocation } from 'react-router-dom'
 import { Html5Qrcode } from 'html5-qrcode'
 import { supabase } from '../lib/supabase'
+import { normalizeBarcode } from '../lib/barcodes'
 
 // Lazy-loading photo thumbnail for No Barcode picker — tap to expand
 function LazyPhoto({ intakeId }) {
@@ -15,8 +16,11 @@ function LazyPhoto({ intakeId }) {
     const observer = new IntersectionObserver(([entry]) => {
       if (entry.isIntersecting && !loaded) {
         setLoaded(true)
-        supabase.from('kickstart_intake').select('photo_data').eq('id', intakeId).single()
-          .then(({ data }) => { if (data?.photo_data) setSrc(`data:image/jpeg;base64,${data.photo_data}`) })
+        supabase.from('kickstart_intake').select('item_photo_data, photo_data').eq('id', intakeId).single()
+          .then(({ data }) => {
+            const photo = data?.item_photo_data || data?.photo_data
+            if (photo) setSrc(`data:image/jpeg;base64,${photo}`)
+          })
       }
     }, { rootMargin: '200px' })
     if (ref.current) observer.observe(ref.current)
@@ -296,7 +300,7 @@ export default function SalesScanner() {
       ? decodedText.length >= 8 && /^\d+$/.test(decodedText)
       : decodedText.startsWith('099')
     if (!isValidBarcode) return
-    setScannedBarcode(decodedText)
+    setScannedBarcode(normalizeBarcode(decodedText))
     await stopScanner()
   }
 
@@ -468,6 +472,8 @@ export default function SalesScanner() {
       }
 
       // For Kickstart, use selected intake_id (no-barcode picker) or look up by UPC
+      // Both scannedBarcode and kickstart_intake.upc are normalized (leading 0s stripped,
+      // 13-digit EAN-13 → 12-digit UPC-A) so exact match works
       if (isKickstart) {
         if (selectedIntakeId) {
           insertData.intake_id = selectedIntakeId

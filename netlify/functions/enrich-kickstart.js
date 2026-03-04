@@ -56,7 +56,7 @@ export default async (req) => {
         if (normalizedSize && normalizedSize.toUpperCase() === 'ALL') normalizedSize = 'One Size'
 
         const updates = {
-          upc: tagData.upc || null,
+          upc: normalizeUpc(tagData.upc),
           style_number: tagData.style_number || null,
           color: tagData.color || null,
           size: normalizedSize,
@@ -82,7 +82,7 @@ export default async (req) => {
       if (normalizedSize && normalizedSize.toUpperCase() === 'ALL') normalizedSize = 'One Size'
 
       const updates = {
-        upc: cachedData.upc || null,
+        upc: normalizeUpc(cachedData.upc),
         style_number: cachedData.style_number || null,
         color: cachedData.color || null,
         size: normalizedSize,
@@ -178,6 +178,17 @@ If you can't read a field, use an empty string. Return ONLY the JSON object.`
   }
   
   return JSON.parse(jsonMatch[0])
+}
+
+// Normalize UPC: strip leading zeros, convert 13-digit EAN-13 → 12-digit UPC-A
+// Must match normalizeBarcode() in src/lib/barcodes.js and DB trigger
+function normalizeUpc(raw) {
+  if (!raw) return null
+  let s = raw.toString().trim().replace(/^0+/, '')
+  if (s.length === 13 && s[0] === '1' && /^\d+$/.test(s)) {
+    s = s.slice(1)
+  }
+  return s || null
 }
 
 async function updateItem(supabaseUrl, supabaseKey, id, updates) {
