@@ -8,6 +8,7 @@ import KickstartBuyer from './pages/KickstartBuyer'
 import SalesSetup from './pages/SalesSetup'
 import SalesScanner from './pages/SalesScanner'
 import Admin from './pages/Admin'
+import ItemLookup from './pages/ItemLookup'
 
 export default function App() {
   return (
@@ -27,6 +28,7 @@ export default function App() {
         <Route path="/admin/scans" element={<Admin />} />
         <Route path="/admin/kickstart" element={<Admin />} />
         <Route path="/kickstart/buyer" element={<KickstartBuyer />} />
+        <Route path="/lookup" element={<ItemLookup />} />
       </Routes>
     </div>
   )

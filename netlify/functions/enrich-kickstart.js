@@ -8,8 +8,8 @@ export default async (req) => {
   }
 
   try {
-    // Fetch pending items (limit to 5 at a time to avoid timeout)
-    const fetchRes = await fetch(`${SUPABASE_URL}/rest/v1/kickstart_intake?status=eq.pending_enrichment&limit=5&select=id,photo_data,cost`, {
+    // Fetch pending items (50 at a time — photo cache deduplicates identical photos within a batch)
+    const fetchRes = await fetch(`${SUPABASE_URL}/rest/v1/kickstart_intake?status=eq.pending_enrichment&limit=50&select=id,photo_data,cost`, {
       headers: {
         'apikey': SUPABASE_ANON_KEY,
         'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
@@ -27,14 +27,13 @@ export default async (req) => {
 
     const results = []
     const photoCache = new Map() // Cache enrichment results by photo_data
+    const noPhotoItems = [] // Items without photos — will copy from enriched siblings
 
-    for (const item of items) {
-      if (!item.photo_data) {
-        // No photo - mark as needs_manual
-        await updateItem(SUPABASE_URL, SUPABASE_ANON_KEY, item.id, { status: 'needs_manual' })
-        results.push({ id: item.id, status: 'skipped', reason: 'no photo' })
-        continue
-      }
+    // Process items WITH photos first, then handle no-photo items
+    const withPhoto = items.filter(i => i.photo_data)
+    const withoutPhoto = items.filter(i => !i.photo_data)
+
+    for (const item of withPhoto) {
 
       try {
         let tagData
@@ -71,6 +70,40 @@ export default async (req) => {
         console.error(`Error processing item ${item.id}:`, err)
         await updateItem(SUPABASE_URL, SUPABASE_ANON_KEY, item.id, { status: 'enrichment_failed' })
         results.push({ id: item.id, status: 'failed', error: err.message })
+      }
+    }
+
+    // Handle no-photo items (qty > 1 duplicates) — copy enrichment from a sibling with same cost+brand
+    // If we have cached enrichment data, apply it to matching no-photo items
+    if (withoutPhoto.length > 0 && photoCache.size > 0) {
+      // Use the most recent cached result (all from same batch will have same data)
+      const cachedData = [...photoCache.values()][photoCache.size - 1]
+      let normalizedSize = cachedData.size || null
+      if (normalizedSize && normalizedSize.toUpperCase() === 'ALL') normalizedSize = 'One Size'
+
+      const updates = {
+        upc: cachedData.upc || null,
+        style_number: cachedData.style_number || null,
+        color: cachedData.color || null,
+        size: normalizedSize,
+        msrp: cachedData.msrp ? parseFloat(cachedData.msrp) : null,
+        status: 'enriched'
+      }
+      if (cachedData.description) updates.description = cachedData.description
+
+      for (const item of withoutPhoto) {
+        try {
+          await updateItem(SUPABASE_URL, SUPABASE_ANON_KEY, item.id, updates)
+          results.push({ id: item.id, status: 'enriched', cached: true })
+        } catch (err) {
+          results.push({ id: item.id, status: 'failed', error: err.message })
+        }
+      }
+    } else if (withoutPhoto.length > 0) {
+      // No cached data available — mark as needs_manual
+      for (const item of withoutPhoto) {
+        await updateItem(SUPABASE_URL, SUPABASE_ANON_KEY, item.id, { status: 'needs_manual' })
+        results.push({ id: item.id, status: 'skipped', reason: 'no photo' })
       }
     }
 

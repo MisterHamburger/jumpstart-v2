@@ -227,11 +227,8 @@ export default function AdminInventory() {
         <h3 className="font-bold text-lg mb-4">Inventory by Load</h3>
         <div className="grid grid-cols-2 gap-4">
           {stats.loads.map(load => {
-            const unsold = unsoldStats.byLoad.find(u => u.load_id === load.load_id)
             const totalItems = Number(load.item_count)
-            const unsoldCount = unsold?.unsoldCount || 0
-            const soldCount = totalItems - unsoldCount
-            const soldPctLoad = totalItems > 0 ? (soldCount / totalItems * 100).toFixed(0) : 0
+            const avgCostLoad = Number(load.avg_cost || 0)
             return (
               <div key={load.load_id} className="rounded-xl bg-slate-800/30 border border-white/[0.04] p-4 hover:bg-slate-800/50 transition-colors">
                 <div className="flex justify-between items-start mb-2">
@@ -241,16 +238,9 @@ export default function AdminInventory() {
                   </div>
                   <div className="text-lg font-bold text-white">{totalItems.toLocaleString()}</div>
                 </div>
-                <div className="h-1.5 rounded-full bg-slate-700 overflow-hidden mb-2">
-                  <div className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-cyan-400" style={{ width: `${soldPctLoad}%` }} />
-                </div>
-                <div className="flex justify-between text-xs">
-                  <span className="text-cyan-400">{soldCount.toLocaleString()} sold</span>
-                  <span className="text-purple-400">{unsoldCount.toLocaleString()} unsold</span>
-                </div>
-                <div className="flex justify-between text-xs text-slate-500 mt-1">
+                <div className="flex justify-between text-xs text-slate-400 mt-1">
                   <span>Total: ${Number(load.total_cost).toLocaleString(undefined, {maximumFractionDigits: 0})}</span>
-                  <span>Unsold: ${(unsold?.unsoldCost || 0).toLocaleString(undefined, {maximumFractionDigits: 0})}</span>
+                  <span>Avg: ${avgCostLoad.toFixed(2)}/item</span>
                 </div>
               </div>
             )

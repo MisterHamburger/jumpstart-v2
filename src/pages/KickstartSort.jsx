@@ -21,7 +21,7 @@ const SIZES = ['XS', 'S', 'M', 'L', 'XL', 'XXL', 'One Size']
 
 export default function KickstartSort() {
   const navigate = useNavigate()
-  const [step, setStep] = useState('bin') // bin, brand, hasTag, tagCapture, noTagForm
+  const [step, setStep] = useState('bin') // bin, brand, hasTag, itemPhoto, tagCapture, noTagForm
   const [selectedBin, setSelectedBin] = useState(null)
   const [selectedBrand, setSelectedBrand] = useState(null)
   const [customPrice, setCustomPrice] = useState('')
@@ -38,9 +38,11 @@ export default function KickstartSort() {
   const [notes, setNotes] = useState('')
   const [msrp, setMsrp] = useState('')
   const [noTagPhoto, setNoTagPhoto] = useState(null)
+  const [itemPhoto, setItemPhoto] = useState(null)
   const [scannedUpc, setScannedUpc] = useState(null)
   const [barcodeScanning, setBarcodeScanning] = useState(false)
   const photoInputRef = useRef(null)
+  const itemPhotoRef = useRef(null)
   const noTagPhotoRef = useRef(null)
   const barcodeRef = useRef(null)
 
@@ -124,7 +126,7 @@ export default function KickstartSort() {
     const file = e.target.files[0]
     if (!file) return
     try {
-      const dataUrl = await compressPhoto(file)
+      const dataUrl = await compressPhoto(file, { maxWidth: 1000, quality: 0.6 })
       setPhoto(dataUrl)
     } catch (err) {
       console.error('Photo compression error:', err)
@@ -138,6 +140,19 @@ export default function KickstartSort() {
     try {
       const dataUrl = await compressPhoto(file)
       setNoTagPhoto(dataUrl)
+    } catch (err) {
+      console.error('Photo compression error:', err)
+      alert('Failed to process photo')
+    }
+  }
+
+  const handleItemPhotoCapture = async (e) => {
+    const file = e.target.files[0]
+    if (!file) return
+    try {
+      const dataUrl = await compressPhoto(file, { maxWidth: 800, quality: 0.5 })
+      setItemPhoto(dataUrl)
+      setStep('tagCapture')
     } catch (err) {
       console.error('Photo compression error:', err)
       alert('Failed to process photo')
@@ -158,9 +173,11 @@ export default function KickstartSort() {
       }
 
       if (hasTag) {
-        // Has Tag: save with photo, pending enrichment, NWT condition
+        // Has Tag: save with tag photo + item photo, pending enrichment, NWT condition
+        const itemPhotoData = itemPhoto ? toBase64(itemPhoto) : null
         Object.assign(baseRow, {
           photo_data: photoData,
+          item_photo_data: itemPhotoData,
           condition: 'NWT',
           status: 'pending_enrichment',
         })
@@ -182,9 +199,16 @@ export default function KickstartSort() {
         })
       }
 
-      const rows = Array.from({ length: quantity }, () => ({ ...baseRow }))
+      // Only put photos on the first row — no need to duplicate identical photos across qty rows
+      const firstRow = { ...baseRow }
+      const rows = [firstRow]
+      if (quantity > 1) {
+        const lightRow = { ...baseRow, photo_data: null, item_photo_data: null }
+        for (let i = 1; i < quantity; i++) rows.push({ ...lightRow })
+      }
 
-      const { error } = await supabase.from('kickstart_intake').insert(rows)
+      let { error } = await supabase.from('kickstart_intake').insert(rows)
+
       if (error) throw error
 
       setSessionCount(prev => prev + quantity)
@@ -206,7 +230,7 @@ export default function KickstartSort() {
       }, 400)
     } catch (err) {
       console.error('Save error:', err)
-      alert('Failed to save: ' + err.message)
+      alert('Failed to save: ' + (err?.message || err?.code || JSON.stringify(err)))
     } finally {
       setSaving(false)
     }
@@ -214,6 +238,7 @@ export default function KickstartSort() {
 
   const resetForNextItem = () => {
     setPhoto(null)
+    setItemPhoto(null)
     setNoTagPhoto(null)
     setDescription('')
     setCondition('')
@@ -227,6 +252,7 @@ export default function KickstartSort() {
     setSelectedBrand(null)
     setCustomPrice('')
     setShowCustom(false)
+    if (itemPhotoRef.current) itemPhotoRef.current.value = ''
     setStep('bin')
   }
 
@@ -248,13 +274,18 @@ export default function KickstartSort() {
       case 'bin': navigate('/'); break
       case 'brand': setStep('bin'); break
       case 'hasTag': setStep('brand'); break
+      case 'itemPhoto':
+        setItemPhoto(null)
+        if (itemPhotoRef.current) itemPhotoRef.current.value = ''
+        setStep('hasTag')
+        break
       case 'tagCapture':
         stopBarcodeScanner()
         setPhoto(null)
         setDescription('')
         setQuantity(1)
         setScannedUpc(null)
-        setStep('hasTag')
+        setStep('itemPhoto')
         break
       case 'noTagForm':
         setDescription('')
@@ -275,6 +306,7 @@ export default function KickstartSort() {
       case 'bin': return '← Home'
       case 'brand': return '← Bin'
       case 'hasTag': return '← Brand'
+      case 'itemPhoto': return '← Back'
       case 'tagCapture': return '← Back'
       case 'noTagForm': return '← Back'
       default: return '← Back'
@@ -294,7 +326,7 @@ export default function KickstartSort() {
     )
   }
 
-  const pastBinBrand = step === 'hasTag' || step === 'tagCapture' || step === 'noTagForm'
+  const pastBinBrand = step === 'hasTag' || step === 'itemPhoto' || step === 'tagCapture' || step === 'noTagForm'
   const brandAbbrev = { 'Free People': 'FP', 'Urban Outfitters': 'UO', 'Anthropologie': 'Anthro' }
 
   return (
@@ -418,7 +450,7 @@ export default function KickstartSort() {
 
           <div className="w-full max-w-sm flex flex-col gap-4">
             <button
-              onClick={() => setStep('tagCapture')}
+              onClick={() => setStep('itemPhoto')}
               className="py-6 rounded-2xl bg-gradient-to-br from-fuchsia-500/80 to-pink-500/80 border-2 border-fuchsia-400/40 text-white font-black text-2xl shadow-xl shadow-fuchsia-500/20 hover:scale-105 active:scale-95 transition-all"
             >
               Has Tag
@@ -433,10 +465,74 @@ export default function KickstartSort() {
         </div>
       )}
 
-      {/* === STEP 4a: TAG CAPTURE (photo + description + quantity) === */}
+      {/* === STEP 4a: ITEM PHOTO === */}
+      {step === 'itemPhoto' && (
+        <div className="relative z-10 flex-1 flex flex-col items-center justify-center px-4">
+          {/* Step indicator */}
+          <div className="flex items-center gap-2 mb-4">
+            <div className="w-8 h-8 rounded-full bg-fuchsia-500 text-white font-bold text-sm flex items-center justify-center">1</div>
+            <div className="w-8 h-1 rounded-full bg-white/20" />
+            <div className="w-8 h-8 rounded-full bg-white/20 text-white/40 font-bold text-sm flex items-center justify-center">2</div>
+          </div>
+
+          <h2 className="text-2xl font-bold text-white mb-2 tracking-tight">Photo the Item</h2>
+          <p className="text-slate-400 mb-8 text-base">Take a photo of the clothing item first</p>
+
+          <input
+            ref={itemPhotoRef}
+            type="file"
+            accept="image/*"
+            capture="environment"
+            onChange={handleItemPhotoCapture}
+            className="hidden"
+          />
+
+          {!itemPhoto ? (
+            <>
+              <button
+                onClick={() => itemPhotoRef.current?.click()}
+                className="w-36 h-36 rounded-full bg-gradient-to-br from-fuchsia-500 to-pink-500 shadow-2xl shadow-fuchsia-500/40 flex items-center justify-center hover:scale-105 active:scale-95 transition-all mb-4"
+              >
+                <svg className="w-16 h-16 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
+              </button>
+              <p className="text-white/60 text-lg font-semibold">Tap to take item photo</p>
+            </>
+          ) : (
+            <div className="flex flex-col items-center">
+              <div className="w-44 h-44 rounded-2xl overflow-hidden border-2 border-fuchsia-400/40 mb-3 shadow-xl shadow-fuchsia-500/20">
+                <img src={itemPhoto} alt="Item" className="w-full h-full object-cover" />
+              </div>
+              <button
+                onClick={() => { setItemPhoto(null); if (itemPhotoRef.current) itemPhotoRef.current.value = '' }}
+                className="text-fuchsia-400 text-sm font-semibold mb-5"
+              >
+                Retake
+              </button>
+              <button
+                onClick={() => setStep('tagCapture')}
+                className="w-full max-w-sm py-4 rounded-2xl bg-gradient-to-r from-fuchsia-500 to-pink-500 text-white font-bold text-xl shadow-2xl shadow-fuchsia-500/30 hover:scale-[1.02] active:scale-[0.98] transition-all"
+              >
+                Next: Photo the Tag →
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* === STEP 4b: TAG CAPTURE (photo + description + quantity) === */}
       {step === 'tagCapture' && (
         <div className="relative z-10 flex-1 min-h-0 flex flex-col p-4 overflow-y-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
           <div className="flex-1 flex flex-col items-center">
+            {/* Step indicator */}
+            <div className="flex items-center gap-2 mb-3">
+              <div className="w-8 h-8 rounded-full bg-emerald-500 text-white font-bold text-sm flex items-center justify-center">✓</div>
+              <div className="w-8 h-1 rounded-full bg-fuchsia-500" />
+              <div className="w-8 h-8 rounded-full bg-fuchsia-500 text-white font-bold text-sm flex items-center justify-center">2</div>
+            </div>
+
             {/* Photo capture / preview */}
             {!photo ? (
               <>
@@ -448,16 +544,18 @@ export default function KickstartSort() {
                   onChange={handlePhotoCapture}
                   className="hidden"
                 />
+                <h2 className="text-xl font-bold text-white mb-1 tracking-tight">Now Photo the Tag</h2>
+                <p className="text-slate-400 mb-4 text-sm">Flip it over and snap the price tag</p>
                 <button
                   onClick={() => photoInputRef.current?.click()}
-                  className="w-24 h-24 rounded-full bg-gradient-to-br from-fuchsia-500 to-pink-500 shadow-2xl shadow-fuchsia-500/40 flex items-center justify-center hover:scale-105 active:scale-95 transition-all mt-2 mb-2"
+                  className="w-24 h-24 rounded-full bg-gradient-to-br from-fuchsia-500 to-pink-500 shadow-2xl shadow-fuchsia-500/40 flex items-center justify-center hover:scale-105 active:scale-95 transition-all mb-2"
                 >
                   <svg className="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
                   </svg>
                 </button>
-                <p className="text-slate-500 text-sm mb-4">Tap to photo the tag</p>
+                <p className="text-white/60 text-sm font-semibold mb-4">Tap to take tag photo</p>
               </>
             ) : (
               <>
@@ -468,51 +566,14 @@ export default function KickstartSort() {
                   onClick={() => { setPhoto(null); if (photoInputRef.current) photoInputRef.current.value = '' }}
                   className="text-fuchsia-400 text-sm font-semibold mb-3"
                 >
-                  Retake Photo
+                  Retake Tag Photo
                 </button>
               </>
             )}
 
-            {/* Barcode scan (optional) */}
+            {/* Category dropdown */}
             <div className="w-full max-w-sm mb-3">
-              <label className="text-slate-400 text-xs uppercase tracking-wider mb-1 block">Barcode (optional)</label>
-              {scannedUpc ? (
-                <div className="flex items-center gap-2 bg-emerald-500/20 border border-emerald-500/30 rounded-xl px-4 py-3">
-                  <span className="text-emerald-400 text-lg">✓</span>
-                  <span className="text-white font-mono font-semibold flex-1">{scannedUpc}</span>
-                  <button
-                    onClick={() => setScannedUpc(null)}
-                    className="text-slate-400 text-sm"
-                  >
-                    Clear
-                  </button>
-                </div>
-              ) : barcodeScanning ? (
-                <div>
-                  <div id="kickstart-barcode-reader" className="w-full rounded-xl overflow-hidden mb-2" />
-                  <button
-                    onClick={stopBarcodeScanner}
-                    className="w-full py-2 rounded-xl bg-white/10 border border-white/20 text-white/60 text-sm font-semibold"
-                  >
-                    Cancel Scan
-                  </button>
-                </div>
-              ) : (
-                <button
-                  onClick={startBarcodeScanner}
-                  className="w-full flex items-center justify-center gap-2 bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-white/60 font-semibold hover:bg-white/15 transition-all"
-                >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" />
-                  </svg>
-                  Scan Barcode
-                </button>
-              )}
-            </div>
-
-            {/* Description dropdown */}
-            <div className="w-full max-w-sm mb-3">
-              <label className="text-slate-400 text-xs uppercase tracking-wider mb-1 block">Category</label>
+              <label className="text-slate-400 text-xs uppercase tracking-wider mb-1 block">Category *</label>
               <select
                 value={description}
                 onChange={e => setDescription(e.target.value)}
@@ -555,9 +616,9 @@ export default function KickstartSort() {
           {/* Save button */}
           <button
             onClick={() => handleSave(true)}
-            disabled={saving || !photo}
+            disabled={saving || !photo || !description}
             className={`w-full py-4 rounded-2xl font-bold text-xl transition-all shrink-0 ${
-              saving || !photo
+              saving || !photo || !description
                 ? 'bg-white/10 text-white/50 cursor-not-allowed'
                 : 'bg-gradient-to-r from-fuchsia-500 to-pink-500 text-white shadow-2xl shadow-fuchsia-500/30 hover:scale-[1.02] active:scale-[0.98]'
             }`}

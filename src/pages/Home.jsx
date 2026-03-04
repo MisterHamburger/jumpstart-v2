@@ -1,19 +1,41 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 
 export default function Home() {
   const navigate = useNavigate()
+  const longPressTimer = useRef(null)
+
+  const handleTitleTouchStart = () => {
+    longPressTimer.current = setTimeout(() => {
+      navigate('/lookup')
+    }, 500)
+  }
+
+  const handleTitleTouchEnd = () => {
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current)
+      longPressTimer.current = null
+    }
+  }
 
   return (
     <div className="h-screen flex flex-col items-center justify-start px-4 py-6 bg-[#0a0f1a] overflow-hidden">
       {/* Subtle gradient overlay */}
       <div className="fixed inset-0 bg-gradient-to-br from-purple-900/20 via-transparent to-cyan-900/10 pointer-events-none" />
-      
+
       <div className="w-full max-w-md flex flex-col items-center relative z-10">
-        {/* Logo / Header */}
+        {/* Logo / Header — long press to open Item Lookup */}
         <div className="mb-6 text-center">
-          <h1 className="text-4xl font-extrabold text-white mb-1 tracking-tight">Jumpstart</h1>
+          <h1
+            className="text-4xl font-extrabold text-white mb-1 tracking-tight select-none cursor-default"
+            onTouchStart={handleTitleTouchStart}
+            onTouchEnd={handleTitleTouchEnd}
+            onTouchCancel={handleTitleTouchEnd}
+            onMouseDown={handleTitleTouchStart}
+            onMouseUp={handleTitleTouchEnd}
+            onMouseLeave={handleTitleTouchEnd}
+          >Jumpstart</h1>
           <p className="text-slate-500 text-sm font-medium">Inventory Management</p>
         </div>
 
