@@ -87,61 +87,110 @@ export default function AdminProfitability() {
   async function loadBundleData() {
     setBundleData(prev => ({ ...prev, loading: true }))
 
-    // Get all sold boxes
-    const { data: boxes } = await supabase
+    // === Jumpstart bundles ===
+    const { data: jsBoxes } = await supabase
       .from('jumpstart_bundle_boxes')
       .select('*')
       .not('sold_at', 'is', null)
       .order('sold_at', { ascending: false })
 
-    if (!boxes || boxes.length === 0) {
+    let jsBoxStats = []
+    if (jsBoxes && jsBoxes.length > 0) {
+      const jsBoxNumbers = jsBoxes.map(b => b.box_number)
+      const { data: manifestItems } = await supabase
+        .from('bundle_manifest')
+        .select('*')
+        .in('box_number', jsBoxNumbers)
+
+      jsBoxStats = jsBoxes.map(box => {
+        const items = (manifestItems || []).filter(i => i.box_number === box.box_number)
+        const totalMsrp = items.reduce((sum, i) => sum + (i.msrp || 0), 0)
+        const totalCost = items.reduce((sum, i) => sum + (i.cost_freight || i.cost || 0), 0)
+        const pct = box.price_percentage || 10
+        const salePrice = totalMsrp * (pct / 100)
+        const profit = salePrice - totalCost
+        const margin = salePrice > 0 ? (profit / salePrice) * 100 : 0
+        return {
+          boxNumber: box.box_number,
+          channel: 'Jumpstart',
+          soldAt: box.sold_at,
+          pricePercentage: pct,
+          pricingLabel: `${pct}%`,
+          itemCount: items.length,
+          totalMsrp, totalCost, salePrice, profit, margin
+        }
+      })
+    }
+
+    // === Kickstart bundles ===
+    const { data: ksBoxes } = await supabase
+      .from('kickstart_bundle_boxes')
+      .select('*')
+      .not('sold_at', 'is', null)
+      .order('sold_at', { ascending: false })
+
+    let ksBoxStats = []
+    if (ksBoxes && ksBoxes.length > 0) {
+      const ksBoxNumbers = ksBoxes.map(b => b.box_number)
+      const { data: ksScans } = await supabase
+        .from('kickstart_bundle_scans')
+        .select('box_number, intake_id')
+        .in('box_number', ksBoxNumbers)
+
+      // Fetch intake data for all scanned items
+      const allIntakeIds = (ksScans || []).map(s => s.intake_id)
+      let intakeMap = {}
+      if (allIntakeIds.length > 0) {
+        const { data: intakeData } = await supabase
+          .from('kickstart_intake')
+          .select('id, cost, true_cost, msrp')
+          .in('id', allIntakeIds)
+        ;(intakeData || []).forEach(i => { intakeMap[i.id] = i })
+      }
+
+      ksBoxStats = ksBoxes.map(box => {
+        const scans = (ksScans || []).filter(s => s.box_number === box.box_number)
+        const items = scans.map(s => intakeMap[s.intake_id] || { cost: 0, true_cost: 0, msrp: 0 })
+        const totalMsrp = items.reduce((sum, i) => sum + (i.msrp || 0), 0)
+        const totalCost = items.reduce((sum, i) => sum + (i.true_cost || i.cost || 0), 0)
+        const markup = box.markup_percentage || 25
+        const salePrice = totalCost * (1 + markup / 100)
+        const profit = salePrice - totalCost
+        const margin = salePrice > 0 ? (profit / salePrice) * 100 : 0
+        return {
+          boxNumber: box.box_number,
+          channel: 'Kickstart',
+          soldAt: box.sold_at,
+          pricePercentage: markup,
+          pricingLabel: `+${markup}%`,
+          itemCount: scans.length,
+          totalMsrp, totalCost, salePrice, profit, margin
+        }
+      })
+    }
+
+    // Merge both channels sorted by sold date
+    const allBoxStats = [...jsBoxStats, ...ksBoxStats].sort((a, b) =>
+      new Date(b.soldAt) - new Date(a.soldAt)
+    )
+
+    if (allBoxStats.length === 0) {
       setBundleData({ boxes: [], summary: null, loading: false })
       return
     }
 
-    // Get all bundle items for sold boxes
-    const boxNumbers = boxes.map(b => b.box_number)
-    const { data: manifestItems } = await supabase
-      .from('bundle_manifest')
-      .select('*')
-      .in('box_number', boxNumbers)
-
-    // Calculate per-box stats
-    const boxStats = boxes.map(box => {
-      const items = (manifestItems || []).filter(i => i.box_number === box.box_number)
-      const totalMsrp = items.reduce((sum, i) => sum + (i.msrp || 0), 0)
-      const totalCost = items.reduce((sum, i) => sum + (i.cost_freight || i.cost || 0), 0)
-      const pct = box.price_percentage || 10
-      const salePrice = totalMsrp * (pct / 100)
-      const profit = salePrice - totalCost
-      const margin = salePrice > 0 ? (profit / salePrice) * 100 : 0
-
-      return {
-        boxNumber: box.box_number,
-        soldAt: box.sold_at,
-        pricePercentage: pct,
-        itemCount: items.length,
-        totalMsrp,
-        totalCost,
-        salePrice,
-        profit,
-        margin
-      }
-    })
-
-    // Calculate summary
     const summary = {
-      totalBoxes: boxStats.length,
-      totalRevenue: boxStats.reduce((sum, b) => sum + b.salePrice, 0),
-      totalCost: boxStats.reduce((sum, b) => sum + b.totalCost, 0),
-      totalProfit: boxStats.reduce((sum, b) => sum + b.profit, 0),
-      totalItems: boxStats.reduce((sum, b) => sum + b.itemCount, 0),
-      profitableBoxes: boxStats.filter(b => b.profit >= 0).length,
-      losingBoxes: boxStats.filter(b => b.profit < 0).length
+      totalBoxes: allBoxStats.length,
+      totalRevenue: allBoxStats.reduce((sum, b) => sum + b.salePrice, 0),
+      totalCost: allBoxStats.reduce((sum, b) => sum + b.totalCost, 0),
+      totalProfit: allBoxStats.reduce((sum, b) => sum + b.profit, 0),
+      totalItems: allBoxStats.reduce((sum, b) => sum + b.itemCount, 0),
+      profitableBoxes: allBoxStats.filter(b => b.profit >= 0).length,
+      losingBoxes: allBoxStats.filter(b => b.profit < 0).length
     }
     summary.overallMargin = summary.totalRevenue > 0 ? (summary.totalProfit / summary.totalRevenue) * 100 : 0
 
-    setBundleData({ boxes: boxStats, summary, loading: false })
+    setBundleData({ boxes: allBoxStats, summary, loading: false })
   }
 
   // Derive channel filter from activeTab
@@ -696,11 +745,13 @@ function BundlesView({ data, onRefresh }) {
                   <td className="py-4 px-4 text-white font-bold">
                     <div className="flex items-center gap-2">
                       Box #{box.boxNumber}
+                      {box.channel === 'Kickstart' && <span className="text-[10px] px-1.5 py-0.5 rounded bg-fuchsia-500/20 text-fuchsia-400 font-semibold">KS</span>}
+                      {box.channel === 'Jumpstart' && <span className="text-[10px] px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-400 font-semibold">JS</span>}
                       {box.profit < 0 && <span className="text-[10px] px-1.5 py-0.5 rounded bg-pink-500/20 text-pink-400 font-semibold">LOSS</span>}
                     </div>
                   </td>
                   <td className="py-4 px-3 text-center text-slate-300">{box.itemCount}</td>
-                  <td className="py-4 px-3 text-center text-slate-400">{box.pricePercentage}%</td>
+                  <td className="py-4 px-3 text-center text-slate-400">{box.pricingLabel || `${box.pricePercentage}%`}</td>
                   <td className="py-4 px-3 text-right text-slate-400">${box.totalMsrp.toFixed(0)}</td>
                   <td className="py-4 px-3 text-right text-slate-300">${box.salePrice.toFixed(2)}</td>
                   <td className="py-4 px-3 text-right text-slate-500">${box.totalCost.toFixed(2)}</td>

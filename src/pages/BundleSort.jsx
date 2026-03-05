@@ -128,7 +128,7 @@ export default function BundleSort() {
           note: b.note || '',
           salePrice: b.sale_price,
           soldAt: b.sold_at,
-          markupPercentage: b.markup_percentage || 50,
+          markupPercentage: b.markup_percentage || 25,
           itemCount: (scansByBox[b.box_number] || []).length,
           items: (scansByBox[b.box_number] || []).map(s => ({
             intakeId: s.intake_id,
@@ -197,7 +197,7 @@ export default function BundleSort() {
         const intakeIds = scans.map(s => s.intake_id)
         const { data: intakeData } = await supabase
           .from('kickstart_intake')
-          .select('id, brand, description, color, size, cost, msrp')
+          .select('id, brand, description, color, size, cost, true_cost, msrp')
           .in('id', intakeIds)
 
         const intakeMap = {}
@@ -213,7 +213,7 @@ export default function BundleSort() {
             description: intake.description,
             color: intake.color,
             size: intake.size,
-            cost: intake.cost || 0,
+            cost: intake.true_cost || intake.cost || 0,
             msrp: intake.msrp || 0
           }
         })
@@ -559,14 +559,14 @@ export default function BundleSort() {
       note: '',
       itemCount: 0,
       items: [],
-      ...(isKickstart ? { markupPercentage: 50 } : { pricePercentage: 10 })
+      ...(isKickstart ? { markupPercentage: 25 } : { pricePercentage: 10 })
     }
     setBoxes(prev => [newBox, ...prev])
     await supabase.from(table).insert({
       box_number: newBoxNum,
       status: 'empty',
       note: '',
-      ...(isKickstart ? { markup_percentage: 50 } : {})
+      ...(isKickstart ? { markup_percentage: 25 } : {})
     })
     fetchBoxes()
   }
@@ -597,7 +597,7 @@ export default function BundleSort() {
     let calculatedPrice
     if (isKickstart) {
       const totalCost = items.reduce((sum, item) => sum + (item.cost || 0), 0)
-      const markup = viewingBox.markupPercentage || 50
+      const markup = viewingBox.markupPercentage || 25
       calculatedPrice = totalCost * (1 + markup / 100)
     } else {
       const totalMsrp = items.reduce((sum, item) => sum + (item.msrp || 0), 0)
@@ -658,7 +658,7 @@ export default function BundleSort() {
         // Kickstart PDF: cost + markup pricing
         const totalCost = items.reduce((sum, item) => sum + (item.cost || 0), 0)
         const totalMsrp = items.reduce((sum, item) => sum + (item.msrp || 0), 0)
-        const markup = viewingBox.markupPercentage || 50
+        const markup = viewingBox.markupPercentage || 25
         const salePrice = totalCost * (1 + markup / 100)
 
         const tableWidth = 234
@@ -1094,7 +1094,7 @@ export default function BundleSort() {
     // Pricing differs by channel
     let customerPrice, pricingLabel, pricingParam
     if (isKickstart) {
-      pricingParam = viewingBox.markupPercentage || 50
+      pricingParam = viewingBox.markupPercentage || 25
       customerPrice = totalCost * (1 + pricingParam / 100)
       pricingLabel = `+${pricingParam}%`
     } else {

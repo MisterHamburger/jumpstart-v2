@@ -683,7 +683,7 @@ function ShowUpload() {
                       {isComplete && <span className="text-[10px] font-bold uppercase tracking-wider bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded-full">Complete</span>}
                     </div>
                     <div className="text-xs text-slate-500 mt-0.5">
-                      {show.total_items || 0} items · {show.scanned_count || 0} scanned
+                      {show.total_items || 0} items{show.scanned_count ? ` · ${show.scanned_count} scanned` : ''}
                     </div>
                   </div>
                   <button
@@ -907,16 +907,39 @@ function ExpenseUpload() {
     Papa.parse(file, {
       header: true, skipEmptyLines: true,
       complete: async (results) => {
-        const expenses = results.data.map(row => ({
+        // Only keep EXPENSES and PAYROLL rows
+        const parsed = results.data.map(row => ({
           date: getField(row, 'date', 'Date') || null,
           description: getField(row, 'name', 'Description', 'Vendor') || '',
           amount: parseFloat((getField(row, 'amount', 'Amount') || '0').toString().replace(/[$,]/g, '')) || 0,
-          category: (getField(row, 'category', 'Category') || 'EXPENSES').toUpperCase()
-        })).filter(e => e.date && e.amount)
+          category: (getField(row, 'category', 'Category') || '').toUpperCase()
+        })).filter(e => e.date && e.amount && (e.category === 'EXPENSES' || e.category === 'PAYROLL'))
 
-        const { error } = await supabase.from('expenses').insert(expenses)
+        if (parsed.length === 0) {
+          setStatus('⚠️ No EXPENSES or PAYROLL rows found in CSV')
+          return
+        }
+
+        setStatus(`Found ${parsed.length} expense/payroll rows. Checking for duplicates...`)
+
+        // Fetch all existing records to deduplicate (date + description + amount)
+        const { data: existing } = await supabase.from('expenses').select('date, description, amount')
+        const existingKeys = new Set(
+          (existing || []).map(e => `${e.date}|${e.description}|${e.amount}`)
+        )
+
+        const newRows = parsed.filter(e => !existingKeys.has(`${e.date}|${e.description}|${e.amount}`))
+
+        if (newRows.length === 0) {
+          setStatus(`✅ All ${parsed.length} rows already exist — nothing to upload`)
+          return
+        }
+
+        const { error } = await supabase.from('expenses').insert(newRows)
         if (error) { setStatus(`❌ Error: ${error.message}`); return }
-        setStatus(`✅ Uploaded ${expenses.length} expenses`)
+
+        const skipped = parsed.length - newRows.length
+        setStatus(`✅ Uploaded ${newRows.length} new rows${skipped > 0 ? ` (${skipped} duplicates skipped)` : ''}`)
       }
     })
   }
@@ -925,7 +948,7 @@ function ExpenseUpload() {
     <div className="relative overflow-hidden rounded-2xl bg-gradient-to-b from-slate-800/60 to-slate-900/40 border border-white/[0.08] p-5 shadow-xl shadow-black/30">
       <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent" />
       <h3 className="font-bold text-lg mb-2">Upload Expenses CSV</h3>
-      <p className="text-sm text-slate-400 mb-4">Upload Copilot transactions CSV. Only EXPENSES and PAYROLL categories are used in the P&L.</p>
+      <p className="text-sm text-slate-400 mb-4">Upload Copilot transactions CSV. Only EXPENSES and PAYROLL rows are imported. Duplicates are automatically skipped.</p>
       <DropZone onFile={handleFile} label="Drop expenses CSV here" />
       {status && <p className="text-sm text-slate-300 mt-3">{status}</p>}
     </div>

@@ -13,7 +13,7 @@ export function generateKickstartManifest(trip, items) {
   }
 
   const totalMsrp = items.reduce((sum, item) => sum + (parseFloat(item.msrp) || 0), 0)
-  const totalCost = items.reduce((sum, item) => sum + (parseFloat(item.cost) || 0), 0)
+  const totalCost = items.reduce((sum, item) => sum + (parseFloat(item.true_cost || item.cost) || 0), 0)
   const tripDate = new Date(trip.created_at).toLocaleDateString()
 
   const doc = new jsPDF({ orientation: 'landscape' })
@@ -41,7 +41,7 @@ export function generateKickstartManifest(trip, items) {
     item.size || '',
     item.style_number || '',
     item.msrp ? `$${parseFloat(item.msrp).toFixed(2)}` : '',
-    item.cost ? `$${parseFloat(item.cost).toFixed(2)}` : ''
+    (item.true_cost || item.cost) ? `$${parseFloat(item.true_cost || item.cost).toFixed(2)}` : ''
   ])
 
   autoTable(doc, {
