@@ -60,7 +60,7 @@ export default function AdminProfitability() {
   const [expanded, setExpanded] = useState(null)
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
-  const [hideWacItems, setHideWacItems] = useState(true) // Hide WAC items by default
+  const [hideWacItems, setHideWacItems] = useState(false) // Include WAC items by default
   const [bundleData, setBundleData] = useState({ boxes: [], summary: null, loading: true })
   const PAGE_SIZE = 100
 
@@ -237,6 +237,7 @@ export default function AdminProfitability() {
 
   // Load stats from ALL matching items — paginate through Supabase's 1000 row cap
   const [fullSummary, setFullSummary] = useState(null)
+  const [showWacMap, setShowWacMap] = useState({})
   useEffect(() => {
     if (activeTab === 'bundles') return
     async function loadStats() {
@@ -244,7 +245,7 @@ export default function AdminProfitability() {
       let from = 0
       const batchSize = 1000
       while (true) {
-        let query = supabase.from('profitability').select('profit, net_payout, buyer_paid, margin, cost_freight').range(from, from + batchSize - 1)
+        let query = supabase.from('profitability').select('profit, net_payout, buyer_paid, margin, cost_freight, is_bad_barcode, show_name').range(from, from + batchSize - 1)
         query = applyFilters(query)
         const { data } = await query
         if (!data || data.length === 0) break
@@ -254,11 +255,40 @@ export default function AdminProfitability() {
       }
       if (allData.length > 0) {
         const n = allData.length
-        const totalProfit = allData.reduce((sum, i) => sum + Number(i.profit || 0), 0)
-        const totalNet = allData.reduce((sum, i) => sum + Number(i.net_payout || 0), 0)
-        const totalHammer = allData.reduce((sum, i) => sum + Number(i.buyer_paid || 0), 0)
-        const totalMargin = allData.reduce((sum, i) => sum + Number(i.margin || 0), 0)
-        const totalCost = allData.reduce((sum, i) => sum + Number(i.cost_freight || 0), 0)
+        // Build per-show WAC map: avg cost_freight of matched items in each show
+        const showCosts = {}
+        for (const i of allData) {
+          const show = i.show_name || '_unknown'
+          if (!showCosts[show]) showCosts[show] = { total: 0, count: 0 }
+          if (!i.is_bad_barcode && Number(i.cost_freight) > 0) {
+            showCosts[show].total += Number(i.cost_freight)
+            showCosts[show].count++
+          }
+        }
+        const wacMap = {}
+        for (const [show, data] of Object.entries(showCosts)) {
+          wacMap[show] = data.count > 0 ? data.total / data.count : 0
+        }
+        setShowWacMap(wacMap)
+        // Global avg cost (from matched items only) for the summary card
+        const itemsWithCost = allData.filter(i => !i.is_bad_barcode && Number(i.cost_freight) > 0)
+        const avgCost = itemsWithCost.length > 0
+          ? itemsWithCost.reduce((sum, i) => sum + Number(i.cost_freight), 0) / itemsWithCost.length
+          : 0
+        // Recalculate totals using per-show WAC for bad barcode items
+        let totalProfit = 0, totalNet = 0, totalHammer = 0, totalCost = 0
+        for (const i of allData) {
+          const net = Number(i.net_payout || 0)
+          const useWac = i.is_bad_barcode && !Number(i.cost_freight)
+          const showWac = wacMap[i.show_name || '_unknown'] || avgCost
+          const cost = useWac ? showWac : Number(i.cost_freight || 0)
+          const profit = useWac ? net - showWac : Number(i.profit || 0)
+          totalNet += net
+          totalHammer += Number(i.buyer_paid || 0)
+          totalCost += cost
+          totalProfit += profit
+        }
+        const totalMargin = totalHammer > 0 ? (totalProfit / totalHammer) * 100 : 0
         setFullSummary({
           items_sold: n,
           total_profit: totalProfit,
@@ -266,8 +296,8 @@ export default function AdminProfitability() {
           avg_hammer: totalHammer / n,
           avg_net: totalNet / n,
           avg_profit_per_item: totalProfit / n,
-          avg_margin: totalMargin / n,
-          avg_cost_per_item: totalCost / n,
+          avg_margin: totalMargin,
+          avg_cost_per_item: avgCost,
         })
       } else {
         setFullSummary(null)
@@ -462,7 +492,7 @@ export default function AdminProfitability() {
               : 'bg-slate-800/50 border-white/[0.08] text-slate-400 hover:text-white hover:border-white/[0.12]'
           }`}
         >
-          {hideWacItems ? 'Include WAC ($15.50)' : '✓ WAC Included'}
+          {hideWacItems ? 'Include WAC (per show avg)' : '✓ WAC (per show avg)'}
         </button>
       </div>
 
@@ -525,8 +555,14 @@ export default function AdminProfitability() {
                 <tbody>
                   {items.map((item, i) => {
                     const isExp = expanded === i
-                    const profitNum = Number(item.profit)
-                    const marginNum = Number(item.margin)
+                    const showWac = showWacMap[item.show_name] || Number(s?.avg_cost_per_item || 0)
+                    const useWac = item.is_bad_barcode && !Number(item.cost_freight)
+                    const costFreight = useWac ? showWac : Number(item.cost_freight || 0)
+                    const netPayout = Number(item.net_payout)
+                    const profitNum = useWac ? Math.round((netPayout - showWac) * 100) / 100 : Number(item.profit)
+                    const marginNum = useWac && Number(item.buyer_paid) > 0
+                      ? Math.round((profitNum / Number(item.buyer_paid)) * 1000) / 10
+                      : Number(item.margin)
                     const couponAmt = Number(item.coupon_amount || 0)
                     return (
                       <Fragment key={i}>
@@ -542,7 +578,8 @@ export default function AdminProfitability() {
                             <div className="flex items-center gap-2">
                               <span className="truncate">{item.description || item.product_name}</span>
                               {item.is_bundle && <span className="shrink-0 text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400 font-semibold">Bundle</span>}
-                              {item.is_wac_cost && <span className="shrink-0 text-[10px] px-1.5 py-0.5 rounded bg-pink-500/20 text-pink-400 font-semibold">WAC</span>}
+                              {item.is_bad_barcode && <span className="shrink-0 text-[10px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400 font-semibold">Not In Manifest/Bad Barcode</span>}
+                              {(item.is_wac_cost || useWac) && <span className="shrink-0 text-[10px] px-1.5 py-0.5 rounded bg-pink-500/20 text-pink-400 font-semibold">WAC</span>}
                             </div>
                           </td>
                           <td className="py-4 px-3 text-right text-slate-300">${Number(item.original_hammer).toFixed(2)}</td>
@@ -552,7 +589,7 @@ export default function AdminProfitability() {
                           <td className="py-4 px-3 text-right text-slate-300">${Number(item.buyer_paid).toFixed(2)}</td>
                           <td className="py-4 px-3 text-right text-slate-500">-${Number(item.total_fees).toFixed(2)}</td>
                           <td className="py-4 px-3 text-right text-slate-300">${Number(item.net_payout).toFixed(2)}</td>
-                          <td className="py-4 px-3 text-right text-slate-500">${Number(item.cost_freight || 0).toFixed(2)}</td>
+                          <td className="py-4 px-3 text-right text-slate-500">${costFreight.toFixed(2)}</td>
                           <td className={`py-4 px-3 text-right font-bold ${profitNum >= 0 ? 'text-cyan-400' : 'text-pink-400'}`}>
                             ${profitNum.toFixed(2)}
                           </td>

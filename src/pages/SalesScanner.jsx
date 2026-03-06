@@ -12,6 +12,11 @@ function LazyPhoto({ intakeId }) {
   const ref = useRef(null)
 
   useEffect(() => {
+    setSrc(null)
+    setLoaded(false)
+  }, [intakeId])
+
+  useEffect(() => {
     if (!intakeId) return
     const observer = new IntersectionObserver(([entry]) => {
       if (entry.isIntersecting && !loaded) {
@@ -84,8 +89,10 @@ export default function SalesScanner() {
   // No-barcode item picker (Kickstart only)
   const [noBarcodeStep, setNoBarcodeStep] = useState(null) // null | 'size' | 'category' | 'pickItem'
   const [noBarcodeSize, setNoBarcodeSize] = useState(null)
+  const [noBarcodeCondition, setNoBarcodeCondition] = useState(null)
   const [noBarcodeCategory, setNoBarcodeCategory] = useState(null)
   const [noBarcodeCategories, setNoBarcodeCategories] = useState([])
+  const [openFilter, setOpenFilter] = useState(null) // 'size' | 'condition' | 'category' | null
   const [noBarcodeItems, setNoBarcodeItems] = useState([])
   const [noBarcodeAllItems, setNoBarcodeAllItems] = useState([])
   const [noBarcodeLoading, setNoBarcodeLoading] = useState(false)
@@ -94,6 +101,7 @@ export default function SalesScanner() {
   const [showItemPicker, setShowItemPicker] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const html5QrcodeRef = useRef(null)
+  const scannerStartingRef = useRef(false)
   const initialScannedRef = useRef(null)
 
   const totalItems = showData?.totalItems || 0
@@ -126,8 +134,8 @@ export default function SalesScanner() {
   // Start scanner on mount (unless excluded modal is showing)
   // For Kickstart, load item picker instead of scanner
   useEffect(() => {
-    if (!showExcludedModal) {
-      if (showData?.channel === 'Kickstart') {
+    if (!showExcludedModal && showData?.channel) {
+      if (showData.channel === 'Kickstart') {
         // For Kickstart, show item picker as main interface
         setShowItemPicker(true)
         loadAllUnsoldItems()
@@ -267,6 +275,8 @@ export default function SalesScanner() {
   }
 
   const startScanner = async () => {
+    if (scannerStartingRef.current) return // Prevent concurrent starts
+    scannerStartingRef.current = true
     try {
       if (html5QrcodeRef.current) {
         const old = html5QrcodeRef.current
@@ -289,6 +299,8 @@ export default function SalesScanner() {
       console.error("Camera error:", err)
       setCameraError(err.message)
       setIsScanning(false)
+    } finally {
+      scannerStartingRef.current = false
     }
   }
 
@@ -366,8 +378,10 @@ export default function SalesScanner() {
       setNoBarcodeAllItems(available)
       setNoBarcodeCategories(cats)
       setNoBarcodeSize(null) // Reset filters
+      setNoBarcodeCondition(null)
       setNoBarcodeCategory(null)
       setSearchQuery('')
+      setOpenFilter(null)
     } catch (err) {
       console.error('Error loading unsold items:', err)
     }
@@ -435,6 +449,11 @@ export default function SalesScanner() {
       filtered = filtered.filter(i => i.size === noBarcodeSize)
     }
 
+    // Filter by condition
+    if (noBarcodeCondition) {
+      filtered = filtered.filter(i => (i.condition || '') === noBarcodeCondition)
+    }
+
     // Filter by category
     if (noBarcodeCategory) {
       filtered = filtered.filter(i => (i.description || 'Uncategorized') === noBarcodeCategory)
@@ -496,12 +515,14 @@ export default function SalesScanner() {
   const cancelNoBarcode = async () => {
     setNoBarcodeStep(null)
     setNoBarcodeSize(null)
+    setNoBarcodeCondition(null)
     setNoBarcodeCategory(null)
     setNoBarcodeCategories([])
     setNoBarcodeItems([])
     setNoBarcodeAllItems([])
     setShowItemPicker(false)
     setSearchQuery('')
+    setOpenFilter(null)
     setScannerKey(prev => prev + 1)
     // For Jumpstart only - restart scanner
     if (showData?.channel !== 'Kickstart') {
@@ -685,7 +706,7 @@ export default function SalesScanner() {
             </div>
           </div>
           <button
-            onClick={() => { setShowExcludedModal(false); startScanner(); }}
+            onClick={() => { setShowExcludedModal(false) }}
             className="w-full py-4 px-8 rounded-2xl font-bold text-lg bg-gradient-to-r from-cyan-600 to-teal-600 text-white shadow-lg shadow-cyan-500/30 hover:scale-[1.02] active:scale-[0.98] transition-all"
           >
             Got it — Start Scanning
@@ -828,9 +849,9 @@ export default function SalesScanner() {
                 </div>
               ) : (
                 <div className="w-full max-w-sm space-y-2 mb-4">
-                  {noBarcodeItems.map((group, idx) => (
+                  {noBarcodeItems.map((group) => (
                     <button
-                      key={idx}
+                      key={group.ids[0]}
                       onClick={() => handlePickNoBarcodeItem(group)}
                       className="w-full text-left bg-white/5 border border-white/10 rounded-2xl p-3 hover:bg-white/10 active:scale-[0.98] transition-all"
                     >
@@ -868,77 +889,133 @@ export default function SalesScanner() {
       ) : !scannedBarcode ? (
         showItemPicker ? (
           <div className="relative z-10 flex-1 flex flex-col overflow-hidden">
-            {/* Filters - fixed height, scrollable if needed */}
-            <div className="px-4 py-3 bg-slate-800/50 border-b border-white/10 space-y-3 flex-shrink-0 max-h-[40vh] overflow-y-auto">
+            {/* Filters — pill row with popovers + search */}
+            <div className="px-4 py-2 bg-slate-800/50 border-b border-white/10 space-y-2 flex-shrink-0">
+            {/* Filter pills row */}
+            <div className="flex gap-2">
+              {/* Size pill */}
+              <div className="relative">
+                <button
+                  onClick={() => setOpenFilter(openFilter === 'size' ? null : 'size')}
+                  className={`px-3 py-1.5 rounded-lg text-sm font-semibold transition-all whitespace-nowrap flex items-center gap-1 ${
+                    noBarcodeSize
+                      ? 'bg-fuchsia-500 text-white'
+                      : 'bg-white/10 text-white/60 border border-white/20'
+                  }`}
+                >
+                  {noBarcodeSize || 'Size'}
+                  {noBarcodeSize ? (
+                    <span onClick={(e) => { e.stopPropagation(); setNoBarcodeSize(null); setOpenFilter(null) }} className="ml-0.5 opacity-70 hover:opacity-100">&times;</span>
+                  ) : (
+                    <span className="text-[10px] opacity-50">&#9662;</span>
+                  )}
+                </button>
+                {openFilter === 'size' && (
+                  <div className="absolute top-full left-0 mt-1 bg-slate-800 border border-white/20 rounded-xl p-2 z-50 shadow-xl shadow-black/50 flex flex-wrap gap-1.5 min-w-[200px]">
+                    {['XS', 'S', 'M', 'L', 'XL', 'XXL', 'One Size'].map(s => (
+                      <button
+                        key={s}
+                        onClick={() => { setNoBarcodeSize(s); setOpenFilter(null) }}
+                        className={`px-3 py-1.5 rounded-lg text-sm font-semibold transition-all ${
+                          noBarcodeSize === s
+                            ? 'bg-fuchsia-500 text-white'
+                            : 'bg-white/10 text-white/60 hover:bg-white/20'
+                        }`}
+                      >
+                        {s}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Condition pill */}
+              <div className="relative">
+                <button
+                  onClick={() => setOpenFilter(openFilter === 'condition' ? null : 'condition')}
+                  className={`px-3 py-1.5 rounded-lg text-sm font-semibold transition-all whitespace-nowrap flex items-center gap-1 ${
+                    noBarcodeCondition
+                      ? 'bg-fuchsia-500 text-white'
+                      : 'bg-white/10 text-white/60 border border-white/20'
+                  }`}
+                >
+                  {noBarcodeCondition || 'Condition'}
+                  {noBarcodeCondition ? (
+                    <span onClick={(e) => { e.stopPropagation(); setNoBarcodeCondition(null); setOpenFilter(null) }} className="ml-0.5 opacity-70 hover:opacity-100">&times;</span>
+                  ) : (
+                    <span className="text-[10px] opacity-50">&#9662;</span>
+                  )}
+                </button>
+                {openFilter === 'condition' && (
+                  <div className="absolute top-full left-0 mt-1 bg-slate-800 border border-white/20 rounded-xl p-2 z-50 shadow-xl shadow-black/50 flex flex-wrap gap-1.5">
+                    {['NWT', 'NWOT', 'Pre-loved/Nuuly'].map(c => (
+                      <button
+                        key={c}
+                        onClick={() => { setNoBarcodeCondition(c); setOpenFilter(null) }}
+                        className={`px-3 py-1.5 rounded-lg text-sm font-semibold transition-all whitespace-nowrap ${
+                          noBarcodeCondition === c
+                            ? 'bg-fuchsia-500 text-white'
+                            : 'bg-white/10 text-white/60 hover:bg-white/20'
+                        }`}
+                      >
+                        {c}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Category pill */}
+              <div className="relative">
+                <button
+                  onClick={() => setOpenFilter(openFilter === 'category' ? null : 'category')}
+                  className={`px-3 py-1.5 rounded-lg text-sm font-semibold transition-all whitespace-nowrap flex items-center gap-1 ${
+                    noBarcodeCategory
+                      ? 'bg-fuchsia-500 text-white'
+                      : 'bg-white/10 text-white/60 border border-white/20'
+                  }`}
+                >
+                  {noBarcodeCategory || 'Category'}
+                  {noBarcodeCategory ? (
+                    <span onClick={(e) => { e.stopPropagation(); setNoBarcodeCategory(null); setOpenFilter(null) }} className="ml-0.5 opacity-70 hover:opacity-100">&times;</span>
+                  ) : (
+                    <span className="text-[10px] opacity-50">&#9662;</span>
+                  )}
+                </button>
+                {openFilter === 'category' && (
+                  <div className="absolute top-full right-0 mt-1 bg-slate-800 border border-white/20 rounded-xl p-2 z-50 shadow-xl shadow-black/50 flex flex-wrap gap-1.5 min-w-[200px] max-w-[280px]">
+                    {noBarcodeCategories.slice(0, 8).map(cat => (
+                      <button
+                        key={cat.name}
+                        onClick={() => { setNoBarcodeCategory(cat.name); setOpenFilter(null) }}
+                        className={`px-3 py-1.5 rounded-lg text-sm font-semibold transition-all whitespace-nowrap ${
+                          noBarcodeCategory === cat.name
+                            ? 'bg-fuchsia-500 text-white'
+                            : 'bg-white/10 text-white/60 hover:bg-white/20'
+                        }`}
+                      >
+                        {cat.name}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
             {/* Search box */}
             <input
               type="text"
               placeholder="Search by brand, description, color..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full px-4 py-3 rounded-xl bg-white/10 border border-white/20 text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-fuchsia-500"
+              className="w-full px-4 py-2.5 rounded-xl bg-white/10 border border-white/20 text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-fuchsia-500 text-sm"
             />
-
-            {/* Size filter */}
-            <div>
-              <p className="text-white/60 text-xs font-semibold mb-2">SIZE</p>
-              <div className="flex gap-2 flex-wrap">
-                <button
-                  onClick={() => setNoBarcodeSize(null)}
-                  className={`px-3 py-1.5 rounded-lg text-sm font-semibold transition-all ${
-                    !noBarcodeSize
-                      ? 'bg-fuchsia-500 text-white'
-                      : 'bg-white/10 text-white/60 hover:bg-white/20'
-                  }`}
-                >
-                  All
-                </button>
-                {['XS', 'S', 'M', 'L', 'XL', 'XXL', 'One Size'].map(s => (
-                  <button
-                    key={s}
-                    onClick={() => setNoBarcodeSize(s)}
-                    className={`px-3 py-1.5 rounded-lg text-sm font-semibold transition-all ${
-                      noBarcodeSize === s
-                        ? 'bg-fuchsia-500 text-white'
-                        : 'bg-white/10 text-white/60 hover:bg-white/20'
-                    }`}
-                  >
-                    {s}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Category filter */}
-            <div>
-              <p className="text-white/60 text-xs font-semibold mb-2">CATEGORY</p>
-              <div className="flex gap-2 flex-wrap">
-                <button
-                  onClick={() => setNoBarcodeCategory(null)}
-                  className={`px-3 py-1.5 rounded-lg text-sm font-semibold transition-all ${
-                    !noBarcodeCategory
-                      ? 'bg-fuchsia-500 text-white'
-                      : 'bg-white/10 text-white/60 hover:bg-white/20'
-                  }`}
-                >
-                  All
-                </button>
-                {noBarcodeCategories.slice(0, 8).map(cat => (
-                  <button
-                    key={cat.name}
-                    onClick={() => setNoBarcodeCategory(cat.name)}
-                    className={`px-3 py-1.5 rounded-lg text-sm font-semibold transition-all ${
-                      noBarcodeCategory === cat.name
-                        ? 'bg-fuchsia-500 text-white'
-                        : 'bg-white/10 text-white/60 hover:bg-white/20'
-                    }`}
-                  >
-                    {cat.name} ({cat.count})
-                  </button>
-                ))}
-              </div>
-            </div>
           </div>
+
+          {/* Dismiss popover when tapping items list */}
+          {openFilter && (
+            <div className="fixed inset-0 z-40" onClick={() => setOpenFilter(null)} />
+          )}
 
           {/* Items list */}
           <div className="flex-1 overflow-y-auto p-4 min-h-0">
@@ -952,7 +1029,7 @@ export default function SalesScanner() {
                 <div className="text-center py-12">
                   <p className="text-white/50 text-lg mb-2">No items found</p>
                   <button
-                    onClick={() => { setNoBarcodeSize(null); setNoBarcodeCategory(null); setSearchQuery('') }}
+                    onClick={() => { setNoBarcodeSize(null); setNoBarcodeCondition(null); setNoBarcodeCategory(null); setSearchQuery('') }}
                     className="text-fuchsia-400 text-sm underline"
                   >
                     Clear filters
@@ -961,9 +1038,9 @@ export default function SalesScanner() {
               ) : (
                 <div className="max-w-2xl mx-auto space-y-2">
                   <p className="text-white/40 text-xs mb-3">{filteredGroups.length} result{filteredGroups.length !== 1 ? 's' : ''}</p>
-                  {filteredGroups.map((group, idx) => (
+                  {filteredGroups.map((group) => (
                     <button
-                      key={idx}
+                      key={group.ids[0]}
                       onClick={() => handlePickNoBarcodeItem(group)}
                       className="w-full text-left bg-white/5 border border-white/10 rounded-2xl p-3 hover:bg-fuchsia-500/10 hover:border-fuchsia-500/30 active:scale-[0.98] transition-all"
                     >
@@ -1231,7 +1308,24 @@ export default function SalesScanner() {
             >
               ←
             </button>
-            <div className="text-center">
+            <div
+              className="text-center select-none"
+              onTouchStart={(e) => {
+                e.currentTarget._longPress = setTimeout(() => {
+                  if (confirm(`Mark this show as complete with ${remainingItems.length} item${remainingItems.length !== 1 ? 's' : ''} remaining?`)) {
+                    supabase.from('shows')
+                      .update({ status: 'completed', scanned_count: scannedCount })
+                      .eq('id', showId)
+                      .then(() => {
+                        setShowRemainingModal(false)
+                        setShowCompletion(true)
+                      })
+                  }
+                }, 1500)
+              }}
+              onTouchEnd={(e) => { clearTimeout(e.currentTarget._longPress) }}
+              onTouchMove={(e) => { clearTimeout(e.currentTarget._longPress) }}
+            >
               <h3 className="text-xl font-bold text-white">Remaining</h3>
               <p className="text-white/50 text-sm">{remainingItems.length} items left</p>
             </div>
