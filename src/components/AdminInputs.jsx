@@ -683,7 +683,7 @@ function ShowUpload() {
                       {isComplete && <span className="text-[10px] font-bold uppercase tracking-wider bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded-full">Complete</span>}
                     </div>
                     <div className="text-xs text-slate-500 mt-0.5">
-                      {show.total_items || 0} items{show.scanned_count ? ` · ${show.scanned_count} scanned` : ''}
+                      {show.total_items || 0} items
                     </div>
                   </div>
                   <button
