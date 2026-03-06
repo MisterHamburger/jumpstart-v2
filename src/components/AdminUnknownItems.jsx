@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { supabase } from '../lib/supabase'
+import { supabase, fetchAll } from '../lib/supabase'
 
 export default function AdminUnknownItems() {
   const [unknownItems, setUnknownItems] = useState([])
@@ -16,30 +16,25 @@ export default function AdminUnknownItems() {
     try {
       // Get items with enriched or pending_enrichment status (matches sales scanner)
       // Don't load photos initially - too much data
-      const { data: allItems } = await supabase
+      const allItems = await fetchAll(() => supabase
         .from('kickstart_intake')
         .select('id, brand, description, color, condition, size, status, upc, style_number, msrp, created_at')
         .in('status', ['enriched', 'pending_enrichment'])
-        .order('created_at', { ascending: false })
-
-      console.log('Total items loaded:', allItems?.length)
-      console.log('Sample of first 3 items:', allItems?.slice(0, 3))
+        .order('created_at', { ascending: false }))
 
       // Filter for items where BOTH description AND color are empty (that's what shows as "Unknown")
-      const itemsWithMissingData = (allItems || []).filter(item =>
+      const itemsWithMissingData = allItems.filter(item =>
         (!item.description || item.description.trim() === '') &&
         (!item.color || item.color.trim() === '')
       )
 
-      console.log('Items with missing desc AND color:', itemsWithMissingData.length)
-
       // Get sold intake_ids to filter out
-      const { data: soldData } = await supabase
+      const soldData = await fetchAll(() => supabase
         .from('kickstart_sold_scans')
         .select('intake_id')
-        .not('intake_id', 'is', null)
+        .not('intake_id', 'is', null))
 
-      const soldIds = new Set((soldData || []).map(s => s.intake_id))
+      const soldIds = new Set(soldData.map(s => s.intake_id))
       const unsold = itemsWithMissingData.filter(item => !soldIds.has(item.id))
 
       console.log('Unsold unknown items:', unsold.length)

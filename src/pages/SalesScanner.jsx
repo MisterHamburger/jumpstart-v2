@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate, useParams, useLocation } from 'react-router-dom'
 import { Html5Qrcode } from 'html5-qrcode'
-import { supabase } from '../lib/supabase'
+import { supabase, fetchAll } from '../lib/supabase'
 import { normalizeBarcode } from '../lib/barcodes'
 
 // Lazy-loading photo thumbnail for No Barcode picker — tap to expand
@@ -268,10 +268,11 @@ export default function SalesScanner() {
 
   const startScanner = async () => {
     try {
-      if (html5QrcodeRef.current && isScanning) {
-        await html5QrcodeRef.current.stop()
+      if (html5QrcodeRef.current) {
+        const old = html5QrcodeRef.current
         html5QrcodeRef.current = null
         setIsScanning(false)
+        try { await old.stop() } catch (e) {}
       }
       await new Promise(resolve => setTimeout(resolve, 200))
       const html5QrCode = new Html5Qrcode("sales-reader")
@@ -292,10 +293,12 @@ export default function SalesScanner() {
   }
 
   const stopScanner = async () => {
-    if (html5QrcodeRef.current && isScanning) {
+    const scanner = html5QrcodeRef.current
+    if (scanner) {
+      html5QrcodeRef.current = null
+      setIsScanning(false)
       try {
-        await html5QrcodeRef.current.stop()
-        setIsScanning(false)
+        await scanner.stop()
       } catch (err) {
         console.error("Stop error:", err)
       }
@@ -334,19 +337,19 @@ export default function SalesScanner() {
   const loadAllUnsoldItems = async () => {
     setNoBarcodeLoading(true)
     try {
-      const { data: intakeItems } = await supabase
+      const intakeItems = await fetchAll(() => supabase
         .from('kickstart_intake')
         .select('id, brand, description, color, condition, size')
-        .in('status', ['enriched', 'pending_enrichment'])
+        .in('status', ['enriched', 'pending_enrichment']))
 
       // Get already-sold intake_ids
-      const { data: soldData } = await supabase
+      const soldData = await fetchAll(() => supabase
         .from('kickstart_sold_scans')
         .select('intake_id')
-        .not('intake_id', 'is', null)
+        .not('intake_id', 'is', null))
 
-      const soldIds = new Set((soldData || []).map(s => s.intake_id))
-      const available = (intakeItems || [])
+      const soldIds = new Set(soldData.map(s => s.intake_id))
+      const available = intakeItems
         .filter(item => !soldIds.has(item.id))
         .sort((a, b) => b.id - a.id) // newest first
 
@@ -376,21 +379,24 @@ export default function SalesScanner() {
     setNoBarcodeLoading(true)
     setNoBarcodeSize(size)
     try {
-      let query = supabase
-        .from('kickstart_intake')
-        .select('id, brand, description, color, condition, size')
-        .in('status', ['enriched', 'pending_enrichment'])
-      if (size) query = query.eq('size', size)
-      const { data: intakeItems } = await query
+      const buildQuery = () => {
+        let q = supabase
+          .from('kickstart_intake')
+          .select('id, brand, description, color, condition, size')
+          .in('status', ['enriched', 'pending_enrichment'])
+        if (size) q = q.eq('size', size)
+        return q
+      }
+      const intakeItems = await fetchAll(buildQuery)
 
       // Get already-sold intake_ids
-      const { data: soldData } = await supabase
+      const soldData = await fetchAll(() => supabase
         .from('kickstart_sold_scans')
         .select('intake_id')
-        .not('intake_id', 'is', null)
+        .not('intake_id', 'is', null))
 
-      const soldIds = new Set((soldData || []).map(s => s.intake_id))
-      const available = (intakeItems || [])
+      const soldIds = new Set(soldData.map(s => s.intake_id))
+      const available = intakeItems
         .filter(item => !soldIds.has(item.id))
         .sort((a, b) => b.id - a.id) // newest first
 

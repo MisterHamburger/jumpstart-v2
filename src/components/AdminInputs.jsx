@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import Papa from 'papaparse'
-import { supabase } from '../lib/supabase'
+import { supabase, fetchAll } from '../lib/supabase'
 import { normalizeBarcode } from '../lib/barcodes'
 
 export default function AdminInputs() {
@@ -923,9 +923,9 @@ function ExpenseUpload() {
         setStatus(`Found ${parsed.length} expense/payroll rows. Checking for duplicates...`)
 
         // Fetch all existing records to deduplicate (date + description + amount)
-        const { data: existing } = await supabase.from('expenses').select('date, description, amount')
+        const existing = await fetchAll(() => supabase.from('expenses').select('date, description, amount'))
         const existingKeys = new Set(
-          (existing || []).map(e => `${e.date}|${e.description}|${e.amount}`)
+          existing.map(e => `${e.date}|${e.description}|${e.amount}`)
         )
 
         const newRows = parsed.filter(e => !existingKeys.has(`${e.date}|${e.description}|${e.amount}`))
