@@ -189,9 +189,7 @@ export default function SalesSetup() {
                           : 'bg-gradient-to-r from-cyan-600 to-teal-600 text-white shadow-lg shadow-cyan-500/30 border border-cyan-400/50'
                         : 'glass-card hover:bg-white/[0.08]'
                     }`}>
-                    <div className="font-semibold mb-1">{show.showName}</div>
-                    
-                    <div className="text-xs opacity-50 mt-2">{show.scanned} / {show.totalItems} items scanned</div>
+                    <div className="font-semibold">{show.showName}</div>
                   </button>
                 ))}
               </div>
