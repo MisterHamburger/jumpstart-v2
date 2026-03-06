@@ -90,6 +90,9 @@ export default function SalesScanner() {
   const [noBarcodeAllItems, setNoBarcodeAllItems] = useState([])
   const [noBarcodeLoading, setNoBarcodeLoading] = useState(false)
   const [selectedIntakeId, setSelectedIntakeId] = useState(null)
+  // New unified picker state
+  const [showItemPicker, setShowItemPicker] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
   const html5QrcodeRef = useRef(null)
   const initialScannedRef = useRef(null)
 
@@ -121,12 +124,20 @@ export default function SalesScanner() {
   }, [showId])
 
   // Start scanner on mount (unless excluded modal is showing)
+  // For Kickstart, load item picker instead of scanner
   useEffect(() => {
     if (!showExcludedModal) {
-      startScanner()
+      if (showData?.channel === 'Kickstart') {
+        // For Kickstart, show item picker as main interface
+        setShowItemPicker(true)
+        loadAllUnsoldItems()
+      } else {
+        // For Jumpstart, use barcode scanner
+        startScanner()
+      }
     }
     return () => { stopScanner() }
-  }, [])
+  }, [showExcludedModal, showData?.channel])
 
   // Poll for real scanned count (multi-device support)
   useEffect(() => {
@@ -308,10 +319,56 @@ export default function SalesScanner() {
   const handleNoBarcode = async () => {
     await stopScanner()
     if (showData?.channel === 'Kickstart') {
-      setNoBarcodeStep('size')
+      // For Kickstart, item picker is already main interface - this shouldn't be called
+      // But if it is, just ensure picker is loaded
+      if (!showItemPicker) {
+        setShowItemPicker(true)
+        loadAllUnsoldItems()
+      }
     } else {
       setScannedBarcode('NO_BARCODE')
     }
+  }
+
+  // Load all unsold Kickstart items for the unified picker
+  const loadAllUnsoldItems = async () => {
+    setNoBarcodeLoading(true)
+    try {
+      const { data: intakeItems } = await supabase
+        .from('kickstart_intake')
+        .select('id, brand, description, color, condition, size')
+        .in('status', ['enriched', 'pending_enrichment'])
+
+      // Get already-sold intake_ids
+      const { data: soldData } = await supabase
+        .from('kickstart_sold_scans')
+        .select('intake_id')
+        .not('intake_id', 'is', null)
+
+      const soldIds = new Set((soldData || []).map(s => s.intake_id))
+      const available = (intakeItems || [])
+        .filter(item => !soldIds.has(item.id))
+        .sort((a, b) => b.id - a.id) // newest first
+
+      // Extract unique categories with counts
+      const catCounts = {}
+      for (const item of available) {
+        const cat = item.description || 'Uncategorized'
+        catCounts[cat] = (catCounts[cat] || 0) + 1
+      }
+      const cats = Object.entries(catCounts)
+        .map(([name, count]) => ({ name, count }))
+        .sort((a, b) => b.count - a.count)
+
+      setNoBarcodeAllItems(available)
+      setNoBarcodeCategories(cats)
+      setNoBarcodeSize(null) // Reset filters
+      setNoBarcodeCategory(null)
+      setSearchQuery('')
+    } catch (err) {
+      console.error('Error loading unsold items:', err)
+    }
+    setNoBarcodeLoading(false)
   }
 
   // Fetch unsold Kickstart items for a given size, then show category picker
@@ -363,6 +420,42 @@ export default function SalesScanner() {
     setNoBarcodeLoading(false)
   }
 
+  // Filter items based on size, category, and search query
+  const getFilteredItems = () => {
+    let filtered = noBarcodeAllItems
+
+    // Filter by size
+    if (noBarcodeSize) {
+      filtered = filtered.filter(i => i.size === noBarcodeSize)
+    }
+
+    // Filter by category
+    if (noBarcodeCategory) {
+      filtered = filtered.filter(i => (i.description || 'Uncategorized') === noBarcodeCategory)
+    }
+
+    // Filter by search query
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase()
+      filtered = filtered.filter(i => {
+        const searchable = [i.brand, i.description, i.color, i.condition].filter(Boolean).join(' ').toLowerCase()
+        return searchable.includes(query)
+      })
+    }
+
+    // Group by (brand, description, color, condition) — identical items become one row
+    const groups = new Map()
+    for (const item of filtered) {
+      const key = `${item.brand}||${item.description || ''}||${item.color || ''}||${item.condition || ''}`
+      if (!groups.has(key)) {
+        groups.set(key, { brand: item.brand, description: item.description, color: item.color, condition: item.condition, size: item.size, ids: [] })
+      }
+      groups.get(key).ids.push(item.id)
+    }
+
+    return Array.from(groups.values()).sort((a, b) => b.ids.length - a.ids.length)
+  }
+
   // Filter by category, group identical items, show grouped list
   const handleNoBarcodeCategory = (category) => {
     setNoBarcodeCategory(category)
@@ -389,13 +482,9 @@ export default function SalesScanner() {
     const intakeId = group.ids[0]
     setSelectedIntakeId(intakeId)
     const label = [group.brand, group.description, group.color, group.condition].filter(Boolean).join(' - ')
-    setScannedBarcode(`NO_BARCODE: ${label}`)
+    setScannedBarcode(label) // Clean label without NO_BARCODE prefix
     setNoBarcodeStep(null)
-    setNoBarcodeSize(null)
-    setNoBarcodeCategory(null)
-    setNoBarcodeCategories([])
-    setNoBarcodeItems([])
-    setNoBarcodeAllItems([])
+    // Don't close showItemPicker or reset filters - they'll return to it after submitting
   }
 
   const cancelNoBarcode = async () => {
@@ -405,8 +494,13 @@ export default function SalesScanner() {
     setNoBarcodeCategories([])
     setNoBarcodeItems([])
     setNoBarcodeAllItems([])
+    setShowItemPicker(false)
+    setSearchQuery('')
     setScannerKey(prev => prev + 1)
-    await startScanner()
+    // For Jumpstart only - restart scanner
+    if (showData?.channel !== 'Kickstart') {
+      await startScanner()
+    }
   }
 
   const handleSubmit = async (e) => {
@@ -509,7 +603,12 @@ export default function SalesScanner() {
         setSelectedIntakeId(null)
         setScannerKey(prev => prev + 1)
         setSubmitting(false)
-        await startScanner()
+        // For Kickstart, return to item picker; for Jumpstart, restart scanner
+        if (showData?.channel === 'Kickstart') {
+          // Already in item picker - just clearing scannedBarcode returns us there
+        } else {
+          await startScanner()
+        }
         loadScans()
       }, 500)
 
@@ -534,6 +633,23 @@ export default function SalesScanner() {
   const handleFinish = async () => {
     await stopScanner()
     navigate('/sales')
+  }
+
+  const handleBack = async () => {
+    // If in listing number entry screen, go back to item picker
+    if (scannedBarcode) {
+      setScannedBarcode(null)
+      setListingNumber('')
+      setSelectedIntakeId(null)
+      setShowWarning(null)
+      // Don't restart scanner for Kickstart (item picker is main screen)
+      if (showData?.channel !== 'Kickstart') {
+        await startScanner()
+      }
+    } else {
+      // From main screen (item picker or scanner), go back to show list
+      handleFinish()
+    }
   }
 
   // Excluded items interstitial
@@ -603,7 +719,7 @@ export default function SalesScanner() {
 
       {/* Header - Row 1: Back + Show Name */}
       <div className="relative z-10 bg-slate-800/80 backdrop-blur-xl px-4 pt-3 pb-1 flex items-center border-b border-white/5">
-        <button onClick={handleFinish} className="text-white text-2xl mr-3">←</button>
+        <button onClick={handleBack} className="text-white text-2xl mr-3">←</button>
         <p className="text-white font-bold text-base truncate flex-1 text-center">{showName}</p>
       </div>
 
@@ -744,7 +860,148 @@ export default function SalesScanner() {
           )}
         </div>
       ) : !scannedBarcode ? (
-        <div className="relative z-10 flex-1 flex flex-col">
+        showItemPicker ? (
+          <div className="relative z-10 flex-1 flex flex-col overflow-hidden">
+            {/* Filters - fixed height, scrollable if needed */}
+            <div className="px-4 py-3 bg-slate-800/50 border-b border-white/10 space-y-3 flex-shrink-0 max-h-[40vh] overflow-y-auto">
+            {/* Search box */}
+            <input
+              type="text"
+              placeholder="Search by brand, description, color..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full px-4 py-3 rounded-xl bg-white/10 border border-white/20 text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-fuchsia-500"
+            />
+
+            {/* Size filter */}
+            <div>
+              <p className="text-white/60 text-xs font-semibold mb-2">SIZE</p>
+              <div className="flex gap-2 flex-wrap">
+                <button
+                  onClick={() => setNoBarcodeSize(null)}
+                  className={`px-3 py-1.5 rounded-lg text-sm font-semibold transition-all ${
+                    !noBarcodeSize
+                      ? 'bg-fuchsia-500 text-white'
+                      : 'bg-white/10 text-white/60 hover:bg-white/20'
+                  }`}
+                >
+                  All
+                </button>
+                {['XS', 'S', 'M', 'L', 'XL', 'XXL', 'One Size'].map(s => (
+                  <button
+                    key={s}
+                    onClick={() => setNoBarcodeSize(s)}
+                    className={`px-3 py-1.5 rounded-lg text-sm font-semibold transition-all ${
+                      noBarcodeSize === s
+                        ? 'bg-fuchsia-500 text-white'
+                        : 'bg-white/10 text-white/60 hover:bg-white/20'
+                    }`}
+                  >
+                    {s}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Category filter */}
+            <div>
+              <p className="text-white/60 text-xs font-semibold mb-2">CATEGORY</p>
+              <div className="flex gap-2 flex-wrap">
+                <button
+                  onClick={() => setNoBarcodeCategory(null)}
+                  className={`px-3 py-1.5 rounded-lg text-sm font-semibold transition-all ${
+                    !noBarcodeCategory
+                      ? 'bg-fuchsia-500 text-white'
+                      : 'bg-white/10 text-white/60 hover:bg-white/20'
+                  }`}
+                >
+                  All
+                </button>
+                {noBarcodeCategories.slice(0, 8).map(cat => (
+                  <button
+                    key={cat.name}
+                    onClick={() => setNoBarcodeCategory(cat.name)}
+                    className={`px-3 py-1.5 rounded-lg text-sm font-semibold transition-all ${
+                      noBarcodeCategory === cat.name
+                        ? 'bg-fuchsia-500 text-white'
+                        : 'bg-white/10 text-white/60 hover:bg-white/20'
+                    }`}
+                  >
+                    {cat.name} ({cat.count})
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Items list */}
+          <div className="flex-1 overflow-y-auto p-4 min-h-0">
+            {noBarcodeLoading ? (
+              <div className="text-center py-12">
+                <p className="text-white/50 text-lg">Loading...</p>
+              </div>
+            ) : (() => {
+              const filteredGroups = getFilteredItems()
+              return filteredGroups.length === 0 ? (
+                <div className="text-center py-12">
+                  <p className="text-white/50 text-lg mb-2">No items found</p>
+                  <button
+                    onClick={() => { setNoBarcodeSize(null); setNoBarcodeCategory(null); setSearchQuery('') }}
+                    className="text-fuchsia-400 text-sm underline"
+                  >
+                    Clear filters
+                  </button>
+                </div>
+              ) : (
+                <div className="max-w-2xl mx-auto space-y-2">
+                  <p className="text-white/40 text-xs mb-3">{filteredGroups.length} result{filteredGroups.length !== 1 ? 's' : ''}</p>
+                  {filteredGroups.map((group, idx) => (
+                    <button
+                      key={idx}
+                      onClick={() => handlePickNoBarcodeItem(group)}
+                      className="w-full text-left bg-white/5 border border-white/10 rounded-2xl p-3 hover:bg-fuchsia-500/10 hover:border-fuchsia-500/30 active:scale-[0.98] transition-all"
+                    >
+                      <div className="flex items-center gap-3">
+                        <LazyPhoto intakeId={group.ids[0]} />
+                        <div className="min-w-0 flex-1">
+                          <p className="text-white font-semibold text-sm truncate">
+                            {[group.description, group.color].filter(Boolean).join(' — ') || 'Unknown'}
+                          </p>
+                          <p className="text-slate-400 text-xs">
+                            {[group.brand, group.size, group.condition].filter(Boolean).join(' · ')}
+                          </p>
+                        </div>
+                        {group.ids.length > 1 && (
+                          <span className="text-fuchsia-300 font-bold text-sm bg-fuchsia-500/20 px-3 py-1 rounded-full shrink-0">
+                            {group.ids.length}
+                          </span>
+                        )}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )
+            })()}
+          </div>
+
+          {/* Bottom buttons: Remaining + Scans (no Find Item - the whole page is for finding items) */}
+          <div className="relative z-10 px-4 pt-3 flex gap-2 backdrop-blur-xl shrink-0" style={{ paddingBottom: 'calc(12px + env(safe-area-inset-bottom, 12px))' }}>
+            <button
+              onClick={() => { loadRemainingItems(); setShowRemainingModal(true); }}
+              className="flex-1 py-3 rounded-2xl font-bold text-sm bg-gradient-to-r from-indigo-500 to-blue-500 text-white shadow-lg shadow-indigo-500/30 border border-indigo-400/50 active:scale-[0.97] transition-all"
+            >
+              Remaining
+            </button>
+            <button
+              onClick={() => setShowScansModal(true)}
+              className="flex-1 py-3 rounded-2xl font-bold text-sm bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white shadow-lg shadow-violet-500/30 border border-violet-400/50 active:scale-[0.97] transition-all"
+            >
+              Scans
+            </button>
+          </div>
+        </div>
+        ) : (
+          <div className="relative z-10 flex-1 flex flex-col">
           {cameraError ? (
             <div className="flex-1 flex items-center justify-center bg-slate-900">
               <div className="text-center">
@@ -773,7 +1030,7 @@ export default function SalesScanner() {
               onClick={handleNoBarcode}
               className="flex-1 py-3 rounded-2xl font-bold text-sm bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow-lg shadow-amber-500/30 border border-amber-400/50 active:scale-[0.97] transition-all"
             >
-              No Barcode
+              {isKickstart ? 'Find Item' : 'No Barcode'}
             </button>
             <button
               onClick={() => { loadRemainingItems(); setShowRemainingModal(true); }}
@@ -789,6 +1046,7 @@ export default function SalesScanner() {
             </button>
           </div>
         </div>
+        )
       ) : showSuccess ? (
         <div className={`flex-1 flex items-center justify-center bg-gradient-to-br ${isKickstart ? 'from-fuchsia-500/95 via-pink-500/95 to-rose-500/95' : 'from-green-500/95 via-emerald-500/95 to-teal-500/95'}`}>
           <div className="text-center">
@@ -800,7 +1058,7 @@ export default function SalesScanner() {
         <div className="flex-1 flex flex-col items-center justify-center p-4 overflow-hidden">
           <div className="w-full max-w-md flex flex-col" style={{ maxHeight: 'calc(100vh - 180px)' }}>
             <div className={`bg-gradient-to-br ${isKickstart ? 'from-fuchsia-500/20 via-pink-500/20 to-rose-500/20 border-fuchsia-400/30' : 'from-teal-500/20 via-cyan-500/20 to-blue-500/20 border-cyan-400/30'} backdrop-blur-lg rounded-3xl p-4 mb-4 border`}>
-              <p className="text-xs text-white/70 mb-1">Scanned Barcode</p>
+              <p className="text-xs text-white/70 mb-1">{isKickstart ? 'Selected Item' : 'Scanned Barcode'}</p>
               <p className="text-xl font-bold text-white break-all">{scannedBarcode}</p>
             </div>
 
@@ -854,8 +1112,12 @@ export default function SalesScanner() {
                     setScannedBarcode(null)
                     setListingNumber('')
                     setShowWarning(null)
+                    setSelectedIntakeId(null)
                     setScannerKey(prev => prev + 1)
-                    await startScanner()
+                    // For Kickstart, return to item picker; for Jumpstart, restart scanner
+                    if (showData?.channel !== 'Kickstart') {
+                      await startScanner()
+                    }
                   }}
                   className="flex-1 py-4 px-6 rounded-2xl bg-gradient-to-r from-pink-500 to-rose-500 border-2 border-pink-400/60 text-white font-bold text-lg
                              hover:scale-105 transition-all shadow-xl shadow-pink-500/40"
@@ -868,8 +1130,12 @@ export default function SalesScanner() {
                     setScannedBarcode(null)
                     setListingNumber('')
                     setShowWarning(null)
+                    setSelectedIntakeId(null)
                     setScannerKey(prev => prev + 1)
-                    await startScanner()
+                    // For Kickstart, return to item picker; for Jumpstart, restart scanner
+                    if (showData?.channel !== 'Kickstart') {
+                      await startScanner()
+                    }
                   } : handleSubmit}
                   disabled={showWarning ? false : (!listingNumber || submitting)}
                   className={`flex-1 py-4 px-6 rounded-2xl font-bold text-lg transition-all ${

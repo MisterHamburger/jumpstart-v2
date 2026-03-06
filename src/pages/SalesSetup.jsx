@@ -25,7 +25,7 @@ export default function SalesSetup() {
       const { data, error: err } = await supabase
         .from('shows')
         .select('*')
-        .in('status', ['active', 'in-progress'])
+        .not('status', 'in', '(completed,complete)')
         .eq('channel', channel)
         .order('date', { ascending: false })
 

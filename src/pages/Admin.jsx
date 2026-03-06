@@ -5,6 +5,7 @@ import AdminInventory from '../components/AdminInventory'
 import AdminProfitability from '../components/AdminProfitability'
 import AdminScans from '../components/AdminScans'
 import AdminKickstartHauls from '../components/AdminKickstartHauls'
+import AdminUnknownItems from '../components/AdminUnknownItems'
 
 const TABS = [
   { id: 'dashboard', path: '/admin', label: 'Dashboard', icon: 'dashboard' },
@@ -13,6 +14,7 @@ const TABS = [
   { id: 'profitability', path: '/admin/profitability', label: 'Profitability', icon: 'profitability' },
   { id: 'scans', path: '/admin/scans', label: 'Scans', icon: 'scans' },
   { id: 'kickstart', path: '/admin/kickstart', label: 'Kickstart', icon: 'kickstart' },
+  { id: 'unknown', path: '/admin/unknown', label: 'Unknown Items', icon: 'unknown' },
 ]
 
 function NavIcon({ type, active }) {
@@ -67,6 +69,14 @@ function NavIcon({ type, active }) {
         <svg className={baseClass} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
           <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z" />
           <line x1="7" y1="7" x2="7.01" y2="7" />
+        </svg>
+      )
+    case 'unknown':
+      return (
+        <svg className={baseClass} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+          <circle cx="12" cy="12" r="10" />
+          <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
+          <line x1="12" y1="17" x2="12.01" y2="17" />
         </svg>
       )
     default:
@@ -145,6 +155,7 @@ export default function Admin() {
         {activeTab === 'profitability' && <AdminProfitability />}
         {activeTab === 'scans' && <AdminScans />}
         {activeTab === 'kickstart' && <AdminKickstartHauls />}
+        {activeTab === 'unknown' && <AdminUnknownItems />}
       </main>
     </div>
   )
