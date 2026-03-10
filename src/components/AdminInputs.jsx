@@ -901,8 +901,23 @@ function ScannerFeed({ title, subtitle, scans, timeAgo, isActive, isRecent, colo
 // ── EXPENSE UPLOAD ────────────────────────────────
 function ExpenseUpload() {
   const [status, setStatus] = useState('')
+  const [uploadLog, setUploadLog] = useState([])
+  const [logLoading, setLogLoading] = useState(true)
+
+  useEffect(() => { fetchLog() }, [])
+
+  const fetchLog = async () => {
+    const { data } = await supabase
+      .from('expense_upload_log')
+      .select('*')
+      .order('uploaded_at', { ascending: false })
+      .limit(10)
+    setUploadLog(data || [])
+    setLogLoading(false)
+  }
 
   function handleFile(file) {
+    const filename = file.name
     setStatus('Parsing expenses...')
     Papa.parse(file, {
       header: true, skipEmptyLines: true,
@@ -914,13 +929,14 @@ function ExpenseUpload() {
           amount: parseFloat((getField(row, 'amount', 'Amount') || '0').toString().replace(/[$,]/g, '')) || 0,
           category: (getField(row, 'category', 'Category') || '').toUpperCase()
         })).filter(e => e.date && e.amount && (e.category === 'EXPENSES' || e.category === 'PAYROLL'))
+          .filter(e => e.date >= '2026-02-07')
 
         if (parsed.length === 0) {
-          setStatus('⚠️ No EXPENSES or PAYROLL rows found in CSV')
+          setStatus('⚠️ No EXPENSES or PAYROLL rows found (on or after 2/7/26)')
           return
         }
 
-        setStatus(`Found ${parsed.length} expense/payroll rows. Checking for duplicates...`)
+        setStatus(`Found ${parsed.length} expense/payroll rows (on or after 2/7/26). Checking for duplicates...`)
 
         // Fetch all existing records to deduplicate (date + description + amount)
         const existing = await fetchAll(() => supabase.from('expenses').select('date, description, amount'))
@@ -932,6 +948,8 @@ function ExpenseUpload() {
 
         if (newRows.length === 0) {
           setStatus(`✅ All ${parsed.length} rows already exist — nothing to upload`)
+          await supabase.from('expense_upload_log').insert({ rows_added: 0, rows_skipped: parsed.length, filename })
+          fetchLog()
           return
         }
 
@@ -940,6 +958,9 @@ function ExpenseUpload() {
 
         const skipped = parsed.length - newRows.length
         setStatus(`✅ Uploaded ${newRows.length} new rows${skipped > 0 ? ` (${skipped} duplicates skipped)` : ''}`)
+
+        await supabase.from('expense_upload_log').insert({ rows_added: newRows.length, rows_skipped: skipped, filename })
+        fetchLog()
       }
     })
   }
@@ -951,6 +972,33 @@ function ExpenseUpload() {
       <p className="text-sm text-slate-400 mb-4">Upload Copilot transactions CSV. Only EXPENSES and PAYROLL rows are imported. Duplicates are automatically skipped.</p>
       <DropZone onFile={handleFile} label="Drop expenses CSV here" />
       {status && <p className="text-sm text-slate-300 mt-3">{status}</p>}
+
+      <div className="mt-5 pt-4 border-t border-white/10">
+        <h4 className="text-sm font-semibold text-white/70 mb-2">Upload History</h4>
+        {logLoading ? (
+          <p className="text-xs text-slate-500">Loading...</p>
+        ) : uploadLog.length === 0 ? (
+          <p className="text-xs text-slate-500">No uploads yet</p>
+        ) : (
+          <div className="space-y-1.5">
+            {uploadLog.map(log => (
+              <div key={log.id} className="flex items-center justify-between text-xs">
+                <div className="text-slate-400">
+                  {new Date(log.uploaded_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                  {' '}
+                  <span className="text-slate-500">{new Date(log.uploaded_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}</span>
+                </div>
+                <div className="text-right">
+                  {log.rows_added > 0 && <span className="text-emerald-400 font-medium">+{log.rows_added}</span>}
+                  {log.rows_added > 0 && log.rows_skipped > 0 && <span className="text-slate-600 mx-1">·</span>}
+                  {log.rows_skipped > 0 && <span className="text-slate-500">{log.rows_skipped} skipped</span>}
+                  {log.rows_added === 0 && log.rows_skipped === 0 && <span className="text-slate-500">empty</span>}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   )
 }

@@ -5,7 +5,6 @@ import AdminInventory from '../components/AdminInventory'
 import AdminProfitability from '../components/AdminProfitability'
 import AdminScans from '../components/AdminScans'
 import AdminKickstartHauls from '../components/AdminKickstartHauls'
-import AdminUnknownItems from '../components/AdminUnknownItems'
 
 const TABS = [
   { id: 'dashboard', path: '/admin', label: 'Dashboard', icon: 'dashboard' },
@@ -14,7 +13,6 @@ const TABS = [
   { id: 'profitability', path: '/admin/profitability', label: 'Profitability', icon: 'profitability' },
   { id: 'scans', path: '/admin/scans', label: 'Scans', icon: 'scans' },
   { id: 'kickstart', path: '/admin/kickstart', label: 'Kickstart', icon: 'kickstart' },
-  { id: 'unknown', path: '/admin/unknown', label: 'Unknown Items', icon: 'unknown' },
 ]
 
 function NavIcon({ type, active }) {
@@ -155,7 +153,6 @@ export default function Admin() {
         {activeTab === 'profitability' && <AdminProfitability />}
         {activeTab === 'scans' && <AdminScans />}
         {activeTab === 'kickstart' && <AdminKickstartHauls />}
-        {activeTab === 'unknown' && <AdminUnknownItems />}
       </main>
     </div>
   )

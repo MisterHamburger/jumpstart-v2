@@ -35,8 +35,9 @@ export function generateKickstartManifest(trip, items) {
   // Table data
   const tableData = items.map((item, i) => [
     i + 1,
-    item.description || 'Unknown',
     item.brand || '',
+    item.description || 'Unknown',
+    item.condition || '',
     item.color || '',
     item.size || '',
     item.style_number || '',
@@ -46,12 +47,12 @@ export function generateKickstartManifest(trip, items) {
 
   autoTable(doc, {
     startY: 22,
-    head: [['#', 'Description', 'Brand', 'Color', 'Size', 'Style', 'MSRP', 'Cost']],
+    head: [['#', 'Brand', 'Category', 'Condition', 'Color', 'Size', 'Style', 'MSRP', 'Cost']],
     body: tableData,
     theme: 'grid',
     styles: { fontSize: 7, cellPadding: 1, lineWidth: 0.1 },
     headStyles: {
-      fillColor: [157, 23, 77], // fuchsia-900ish
+      fillColor: [157, 23, 77],
       textColor: 255,
       fontStyle: 'bold',
       fontSize: 7,
@@ -60,17 +61,18 @@ export function generateKickstartManifest(trip, items) {
     },
     columnStyles: {
       0: { cellWidth: 10, halign: 'center' }, // #
-      1: { cellWidth: 80 },  // Description
-      2: { cellWidth: 32 },  // Brand
-      3: { cellWidth: 30 },  // Color
-      4: { cellWidth: 15 },  // Size
-      5: { cellWidth: 30 },  // Style
-      6: { cellWidth: 22, halign: 'right' },  // MSRP
-      7: { cellWidth: 22, halign: 'right' }   // Cost
+      1: { cellWidth: 32 },  // Brand
+      2: { cellWidth: 55 },  // Category
+      3: { cellWidth: 32 },  // Condition
+      4: { cellWidth: 30 },  // Color
+      5: { cellWidth: 15 },  // Size
+      6: { cellWidth: 28 },  // Style
+      7: { cellWidth: 22, halign: 'right' },  // MSRP
+      8: { cellWidth: 22, halign: 'right' }   // Cost
     },
     margin: { left: leftMargin, right: leftMargin, top: 10, bottom: 10 },
     didParseCell: function (data) {
-      if (data.section === 'head' && (data.column.index === 6 || data.column.index === 7)) {
+      if (data.section === 'head' && (data.column.index === 7 || data.column.index === 8)) {
         data.cell.styles.halign = 'right'
       }
     }

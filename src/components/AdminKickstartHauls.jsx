@@ -155,6 +155,7 @@ export default function AdminKickstartHauls() {
         description: tag.description || null,
         color: tag.color || null,
         size: tag.size || null,
+        condition: tag.condition || 'NWT',
         msrp: tag.msrp ? parseFloat(tag.msrp) : null,
         cost: tag.cost ? parseFloat(tag.cost) : null,
         photo_data: tag.photo_data || null,
@@ -303,25 +304,34 @@ export default function AdminKickstartHauls() {
 
         {/* Tag photos table */}
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+          <table className="w-full text-sm table-fixed">
             <thead className="sticky top-0 bg-slate-900/90 backdrop-blur z-10">
               <tr className="text-slate-500 text-xs border-b border-white/10">
-                <th className="text-left py-2 px-2">#</th>
-                <th className="text-left py-2 px-2">Description</th>
-                <th className="text-left py-2 px-2">Brand</th>
-                <th className="text-left py-2 px-2">Color</th>
-                <th className="text-left py-2 px-2">Size</th>
-                <th className="text-left py-2 px-2">Style</th>
-                <th className="text-right py-2 px-2">MSRP</th>
-                <th className="text-right py-2 px-2">Cost</th>
-                <th className="text-center py-2 px-2">Status</th>
+                <th className="text-left py-2 px-2 w-8">#</th>
+                <th className="text-left py-2 px-2 w-14">Photo</th>
+                <th className="text-left py-2 px-2 w-[22%]">Category</th>
+                <th className="text-left py-2 px-2 w-[12%]">Brand</th>
+                <th className="text-left py-2 px-2 w-[12%]">Color</th>
+                <th className="text-left py-2 px-2 w-[8%]">Size</th>
+                <th className="text-left py-2 px-2 w-[10%]">Style</th>
+                <th className="text-left py-2 px-2 w-[10%]">Condition</th>
+                <th className="text-right py-2 px-2 w-[8%]">MSRP</th>
+                <th className="text-right py-2 px-2 w-[8%]">Cost</th>
+                <th className="text-center py-2 px-2 w-16">Status</th>
               </tr>
             </thead>
             <tbody>
               {tagPhotos.map((tag, i) => (
                 <tr key={tag.id} className="border-b border-white/5 hover:bg-white/[0.02]">
                   <td className="py-1.5 px-2 text-slate-500">{i + 1}</td>
-                  {['description', 'brand', 'color', 'size', 'style_number', 'msrp', 'cost'].map(field => {
+                  <td className="py-1.5 px-2">
+                    {tag.photo_data ? (
+                      <img src={`data:image/jpeg;base64,${tag.photo_data}`} alt="" className="w-10 h-10 rounded-lg object-cover border border-white/10" />
+                    ) : (
+                      <div className="w-10 h-10 rounded-lg bg-white/5 border border-white/10" />
+                    )}
+                  </td>
+                  {['description', 'brand', 'color', 'size', 'style_number', 'condition', 'msrp', 'cost'].map(field => {
                     const isEditing = editingCell?.id === tag.id && editingCell?.field === field
                     const isNumeric = field === 'msrp' || field === 'cost'
                     const val = tag[field]
@@ -331,19 +341,34 @@ export default function AdminKickstartHauls() {
                       <td key={field}
                         className={`py-1.5 px-2 ${isNumeric ? 'text-right' : 'text-left'} ${
                           field === 'cost' && !val ? 'text-amber-400/60' : 'text-white'
-                        } cursor-pointer hover:bg-white/5`}
+                        } cursor-pointer hover:bg-white/5 truncate`}
                         onClick={() => !isEditing && startEdit(tag.id, field, isNumeric ? val : (val || ''))}
                       >
                         {isEditing ? (
-                          <input
-                            type={isNumeric ? 'number' : 'text'}
-                            value={editValue}
-                            onChange={e => setEditValue(e.target.value)}
-                            onBlur={saveEdit}
-                            onKeyDown={handleEditKeyDown}
-                            autoFocus
-                            className="w-full bg-white/10 border border-fuchsia-400/50 rounded px-1 py-0.5 text-white text-sm focus:outline-none"
-                          />
+                          field === 'condition' ? (
+                            <select
+                              value={editValue}
+                              onChange={e => { setEditValue(e.target.value); }}
+                              onBlur={saveEdit}
+                              autoFocus
+                              className="w-full bg-white/10 border border-fuchsia-400/50 rounded px-1 py-0.5 text-white text-sm focus:outline-none"
+                            >
+                              <option value="">—</option>
+                              <option value="NWT">NWT</option>
+                              <option value="NWOT">NWOT</option>
+                              <option value="Pre-loved/Nuuly">Pre-loved/Nuuly</option>
+                            </select>
+                          ) : (
+                            <input
+                              type={isNumeric ? 'number' : 'text'}
+                              value={editValue}
+                              onChange={e => setEditValue(e.target.value)}
+                              onBlur={saveEdit}
+                              onKeyDown={handleEditKeyDown}
+                              autoFocus
+                              className="w-full bg-white/10 border border-fuchsia-400/50 rounded px-1 py-0.5 text-white text-sm focus:outline-none"
+                            />
+                          )
                         ) : display}
                       </td>
                     )

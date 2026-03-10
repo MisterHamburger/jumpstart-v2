@@ -740,9 +740,9 @@ export default function KickstartSort() {
               </select>
             </div>
 
-            {/* MSRP (optional) */}
+            {/* MSRP */}
             <div className="w-full max-w-sm mb-4">
-              <label className="text-slate-400 text-xs uppercase tracking-wider mb-1 block">MSRP (optional)</label>
+              <label className="text-slate-400 text-xs uppercase tracking-wider mb-1 block">MSRP *</label>
               <div className="relative">
                 <span className="absolute left-4 top-1/2 -translate-y-1/2 text-white/50">$</span>
                 <input
@@ -801,9 +801,9 @@ export default function KickstartSort() {
           <div className="shrink-0 p-4 pt-2">
             <button
               onClick={() => handleSave(false)}
-              disabled={saving || !description || !condition || !color || !size}
+              disabled={saving || !description || !condition || !color || !size || !msrp}
               className={`w-full py-4 rounded-2xl font-bold text-xl transition-all ${
-                saving || !description || !condition || !color || !size
+                saving || !description || !condition || !color || !size || !msrp
                   ? 'bg-white/10 text-white/50 cursor-not-allowed'
                   : 'bg-gradient-to-r from-fuchsia-500 to-pink-500 text-white shadow-2xl shadow-fuchsia-500/30 hover:scale-[1.02] active:scale-[0.98]'
               }`}

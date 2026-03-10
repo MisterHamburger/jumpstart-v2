@@ -27,7 +27,6 @@ export default function App() {
         <Route path="/admin/profitability" element={<Admin />} />
         <Route path="/admin/scans" element={<Admin />} />
         <Route path="/admin/kickstart" element={<Admin />} />
-        <Route path="/admin/unknown" element={<Admin />} />
         <Route path="/kickstart/buyer" element={<KickstartBuyer />} />
         <Route path="/lookup" element={<ItemLookup />} />
       </Routes>

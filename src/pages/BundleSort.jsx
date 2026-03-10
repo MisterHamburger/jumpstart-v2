@@ -77,6 +77,14 @@ export default function BundleSort() {
   const [savingSale, setSavingSale] = useState(false)
   const [editingPercentage, setEditingPercentage] = useState(false)
   const [tempPercentage, setTempPercentage] = useState('')
+  const [tempPrice, setTempPrice] = useState('')
+  const [editingPrice, setEditingPrice] = useState(false)
+  const [editingCost, setEditingCost] = useState(false)
+  const [tempEditPrice, setTempEditPrice] = useState('')
+  const [tempEditCost, setTempEditCost] = useState('')
+  const [editingItemIdx, setEditingItemIdx] = useState(null) // index of item being edited
+  const [editingItemField, setEditingItemField] = useState(null) // 'cost' or 'price'
+  const [tempItemValue, setTempItemValue] = useState('')
   // Kickstart No Barcode picker state
   const [noBarcodeStep, setNoBarcodeStep] = useState(null) // null | 'size' | 'category' | 'pickItem'
   const [noBarcodeSize, setNoBarcodeSize] = useState(null)
@@ -85,6 +93,9 @@ export default function BundleSort() {
   const [noBarcodeItems, setNoBarcodeItems] = useState([])
   const [noBarcodeAllItems, setNoBarcodeAllItems] = useState([])
   const [noBarcodeLoading, setNoBarcodeLoading] = useState(false)
+  const [noBarcodeQty, setNoBarcodeQty] = useState(1)
+  const [noBarcodeSelectedGroup, setNoBarcodeSelectedGroup] = useState(null)
+  const [noBarcodeFlaws, setNoBarcodeFlaws] = useState(false)
   const html5QrcodeRef = useRef(null)
   const processingRef = useRef(false)
   const scanCountRef = useRef(0)
@@ -129,6 +140,8 @@ export default function BundleSort() {
           salePrice: b.sale_price,
           soldAt: b.sold_at,
           markupPercentage: b.markup_percentage || 25,
+          priceOverride: b.price_override || null,
+          costOverride: b.cost_override || null,
           itemCount: (scansByBox[b.box_number] || []).length,
           items: (scansByBox[b.box_number] || []).map(s => ({
             intakeId: s.intake_id,
@@ -164,6 +177,8 @@ export default function BundleSort() {
           salePrice: b.sale_price,
           soldAt: b.sold_at,
           pricePercentage: b.price_percentage || 10,
+          priceOverride: b.price_override || null,
+          costOverride: b.cost_override || null,
           itemCount: (scansByBox[b.box_number] || []).length,
           items: (scansByBox[b.box_number] || []).map(s => ({
             barcode: s.barcode,
@@ -189,7 +204,7 @@ export default function BundleSort() {
     if (isKickstart) {
       const { data: scans } = await supabase
         .from('kickstart_bundle_scans')
-        .select('id, intake_id, scanned_at')
+        .select('id, intake_id, scanned_at, cost_override, price_override')
         .eq('box_number', box.boxNumber)
         .order('scanned_at')
 
@@ -197,7 +212,7 @@ export default function BundleSort() {
         const intakeIds = scans.map(s => s.intake_id)
         const { data: intakeData } = await supabase
           .from('kickstart_intake')
-          .select('id, brand, description, color, size, cost, true_cost, msrp')
+          .select('id, brand, description, color, size, condition, cost, true_cost, msrp, notes')
           .in('id', intakeIds)
 
         const intakeMap = {}
@@ -213,8 +228,12 @@ export default function BundleSort() {
             description: intake.description,
             color: intake.color,
             size: intake.size,
+            condition: intake.condition,
             cost: intake.true_cost || intake.cost || 0,
-            msrp: intake.msrp || 0
+            msrp: intake.msrp || 0,
+            notes: intake.notes,
+            cost_override: s.cost_override,
+            price_override: s.price_override
           }
         })
         setViewingBox(prev => ({ ...prev, manifestItems }))
@@ -241,7 +260,7 @@ export default function BundleSort() {
     scanCountRef.current = count
     setLastScan(null)
     setShowItemList(false)
-    setNoBarcodeStep(null)
+    setNoBarcodeStep(isKickstart ? 'size' : null)
   }
 
   const closeScanner = async () => {
@@ -503,29 +522,32 @@ export default function BundleSort() {
     setNoBarcodeStep('pickItem')
   }
 
-  const handlePickNoBarcodeItem = async (group) => {
-    const intakeId = group.ids[0]
+  const handlePickNoBarcodeItem = async (group, qty = 1) => {
+    const ids = group.ids.slice(0, qty)
+    const rows = ids.map(id => ({ box_number: activeBox, intake_id: id, has_flaws: noBarcodeFlaws }))
     try {
-      await supabase.from('kickstart_bundle_scans').insert({
-        box_number: activeBox,
-        intake_id: intakeId
-      })
+      await supabase.from('kickstart_bundle_scans').insert(rows)
 
-      const newCount = scanCountRef.current + 1
+      const newCount = scanCountRef.current + qty
       scanCountRef.current = newCount
       setScanCount(newCount)
+
+      const desc = [group.brand, group.description, group.color].filter(Boolean).join(' — ')
       setLastScan({
-        description: [group.brand, group.description, group.color].filter(Boolean).join(' — '),
+        description: qty > 1 ? `Added ${qty} × ${desc}` : desc,
         added: true
       })
 
-      // Reset picker state
-      setNoBarcodeStep(null)
+      // Reset picker state — Kickstart goes back to size, Jumpstart to camera
+      setNoBarcodeStep(isKickstart ? 'size' : null)
       setNoBarcodeSize(null)
       setNoBarcodeCategory(null)
       setNoBarcodeCategories([])
       setNoBarcodeItems([])
       setNoBarcodeAllItems([])
+      setNoBarcodeQty(1)
+      setNoBarcodeSelectedGroup(null)
+      setNoBarcodeFlaws(false)
 
       if (newCount >= 40) {
         await supabase.from('kickstart_bundle_boxes')
@@ -540,13 +562,20 @@ export default function BundleSort() {
   }
 
   const cancelNoBarcode = async () => {
-    setNoBarcodeStep(null)
     setNoBarcodeSize(null)
     setNoBarcodeCategory(null)
     setNoBarcodeCategories([])
     setNoBarcodeItems([])
     setNoBarcodeAllItems([])
-    await startScanner()
+    setNoBarcodeQty(1)
+    setNoBarcodeSelectedGroup(null)
+    setNoBarcodeFlaws(false)
+    if (isKickstart) {
+      setNoBarcodeStep('size')
+    } else {
+      setNoBarcodeStep(null)
+      await startScanner()
+    }
   }
 
   const createNewBox = async () => {
@@ -643,7 +672,83 @@ export default function BundleSort() {
     if (updated) openBox(updated)
   }
 
-  const generatePDF = () => {
+  const saveDirectPrice = async (priceStr) => {
+    const price = parseFloat(priceStr)
+    if (isNaN(price) || price <= 0) return
+    const table = isKickstart ? 'kickstart_bundle_boxes' : 'jumpstart_bundle_boxes'
+    await supabase.from(table)
+      .update({ price_override: price })
+      .eq('box_number', viewingBox.boxNumber)
+    setEditingPrice(false)
+    const allBoxes = await fetchBoxes()
+    const updated = allBoxes.find(b => b.boxNumber === viewingBox.boxNumber)
+    if (updated) openBox(updated)
+  }
+
+  const saveCostOverride = async (costStr) => {
+    const cost = parseFloat(costStr)
+    if (isNaN(cost) || cost <= 0) return
+    const table = isKickstart ? 'kickstart_bundle_boxes' : 'jumpstart_bundle_boxes'
+    await supabase.from(table)
+      .update({ cost_override: cost })
+      .eq('box_number', viewingBox.boxNumber)
+    setEditingCost(false)
+    const allBoxes = await fetchBoxes()
+    const updated = allBoxes.find(b => b.boxNumber === viewingBox.boxNumber)
+    if (updated) openBox(updated)
+  }
+
+  const clearPriceOverride = async () => {
+    const table = isKickstart ? 'kickstart_bundle_boxes' : 'jumpstart_bundle_boxes'
+    await supabase.from(table)
+      .update({ price_override: null })
+      .eq('box_number', viewingBox.boxNumber)
+    setEditingPrice(false)
+    const allBoxes = await fetchBoxes()
+    const updated = allBoxes.find(b => b.boxNumber === viewingBox.boxNumber)
+    if (updated) openBox(updated)
+  }
+
+  const clearCostOverride = async () => {
+    const table = isKickstart ? 'kickstart_bundle_boxes' : 'jumpstart_bundle_boxes'
+    await supabase.from(table)
+      .update({ cost_override: null })
+      .eq('box_number', viewingBox.boxNumber)
+    setEditingCost(false)
+    const allBoxes = await fetchBoxes()
+    const updated = allBoxes.find(b => b.boxNumber === viewingBox.boxNumber)
+    if (updated) openBox(updated)
+  }
+
+  const saveItemOverride = async (scanId, field, value) => {
+    const val = parseFloat(value)
+    if (isNaN(val) || val < 0) return
+    await supabase.from('kickstart_bundle_scans')
+      .update({ [field]: val || null })
+      .eq('id', scanId)
+    setEditingItemIdx(null)
+    setEditingItemField(null)
+    // Refresh box data
+    const allBoxes = await fetchBoxes()
+    const updated = allBoxes.find(b => b.boxNumber === viewingBox.boxNumber)
+    if (updated) openBox(updated)
+  }
+
+  const deleteItemFromBox = async (scanId) => {
+    const table = isKickstart ? 'kickstart_bundle_scans' : 'jumpstart_bundle_scans'
+    await supabase.from(table).delete().eq('id', scanId)
+    // If box was complete and now has fewer items, reopen it
+    const boxTable = isKickstart ? 'kickstart_bundle_boxes' : 'jumpstart_bundle_boxes'
+    await supabase.from(boxTable).update({ status: 'open' }).eq('box_number', viewingBox.boxNumber)
+    const allBoxes = await fetchBoxes()
+    const updated = allBoxes.find(b => b.boxNumber === viewingBox.boxNumber)
+    if (updated) openBox(updated)
+  }
+
+  const [swipedItemIdx, setSwipedItemIdx] = useState(null)
+  const [generatingPdf, setGeneratingPdf] = useState(false)
+
+  const generatePDF = async () => {
     try {
       const items = viewingBox.manifestItems || []
       if (items.length === 0) {
@@ -655,14 +760,40 @@ export default function BundleSort() {
       const pageWidth = doc.internal.pageSize.getWidth()
 
       if (isKickstart) {
+        setGeneratingPdf(true)
+
+        // Fetch photos for all intake items
+        const intakeIds = items.map(i => i.intake_id).filter(Boolean)
+        console.log('PDF: fetching photos for', intakeIds.length, 'items, ids:', intakeIds.slice(0, 5))
+        const photoMap = {}
+        if (intakeIds.length > 0) {
+          // Fetch in batches of 5 to avoid huge payloads
+          for (let i = 0; i < intakeIds.length; i += 5) {
+            const batch = intakeIds.slice(i, i + 5)
+            const { data: photoData, error } = await supabase
+              .from('kickstart_intake')
+              .select('id, item_photo_data, photo_data')
+              .in('id', batch)
+            if (error) console.error('PDF photo fetch error:', error)
+            ;(photoData || []).forEach(p => {
+              const photo = p.item_photo_data || p.photo_data
+              if (photo) photoMap[p.id] = photo
+            })
+          }
+        }
+
+        console.log('PDF: photoMap has', Object.keys(photoMap).length, 'photos')
+
         // Kickstart PDF: cost + markup pricing
-        const totalCost = items.reduce((sum, item) => sum + (item.cost || 0), 0)
+        const calcCost = items.reduce((sum, item) => sum + (item.cost || 0), 0)
+        const totalCost = viewingBox.costOverride || calcCost
         const totalMsrp = items.reduce((sum, item) => sum + (item.msrp || 0), 0)
         const markup = viewingBox.markupPercentage || 25
-        const salePrice = totalCost * (1 + markup / 100)
+        const salePrice = viewingBox.priceOverride || (totalCost * (1 + markup / 100))
 
-        const tableWidth = 234
-        const leftMargin = (pageWidth - tableWidth) / 2
+        const hasPhotos = Object.keys(photoMap).length > 0
+        const imgSize = 20
+        const leftMargin = 8
 
         doc.setTextColor(0, 0, 0)
         doc.setFontSize(14)
@@ -673,37 +804,57 @@ export default function BundleSort() {
         doc.setFont('helvetica', 'normal')
         doc.text(`${items.length} Pieces | Mixed Brands & Categories`, leftMargin, 18)
 
-        const tableData = items.map(item => [
-          item.brand || '',
-          item.description || 'Unknown',
-          item.color || '',
-          item.size || '',
-          `$${(item.msrp || 0).toFixed(2)}`
-        ])
+        const tableData = items.map(item => {
+          const row = []
+          if (hasPhotos) row.push('')  // photo placeholder
+          row.push(item.brand || '', item.description || 'Unknown', item.notes || '', item.condition || '', item.color || '', item.size || '', `$${(item.msrp || 0).toFixed(2)}`)
+          return row
+        })
+
+        const headRow = []
+        if (hasPhotos) headRow.push('')
+        headRow.push('Brand', 'Category', 'Description', 'Condition', 'Color', 'Size', 'MSRP')
+
+        const colStyles = {}
+        let col = 0
+        if (hasPhotos) { colStyles[col] = { cellWidth: imgSize + 3 }; col++ }
+        col++ // Brand - auto
+        col++ // Category - auto
+        col++ // Description - auto
+        col++ // Condition - auto
+        col++ // Color - auto
+        col++ // Size - auto
+        colStyles[col] = { halign: 'right' }  // MSRP
+        const msrpCol = col
 
         autoTable(doc, {
           startY: 22,
-          head: [['Brand', 'Description', 'Color', 'Size', 'MSRP']],
+          head: [headRow],
           body: tableData,
           theme: 'grid',
-          styles: { fontSize: 7, cellPadding: 1, lineWidth: 0.1 },
-          headStyles: { fillColor: [120, 40, 100], textColor: 255, fontStyle: 'bold', fontSize: 7, cellPadding: 1.5, halign: 'left' },
-          columnStyles: {
-            0: { cellWidth: 40 },  // Brand
-            1: { cellWidth: 90 },  // Description
-            2: { cellWidth: 35 },  // Color
-            3: { cellWidth: 25 },  // Size
-            4: { cellWidth: 44, halign: 'right' }  // MSRP
-          },
+          styles: { fontSize: 7, cellPadding: 1, lineWidth: 0.1, ...(hasPhotos ? { minCellHeight: imgSize + 2 } : {}) },
+          headStyles: { fillColor: [120, 40, 100], textColor: 255, fontStyle: 'bold', fontSize: 7, cellPadding: 1.5, halign: 'left', minCellHeight: 0 },
+          columnStyles: colStyles,
           margin: { left: leftMargin, right: leftMargin, top: 10, bottom: 10 },
           didParseCell: function(data) {
-            if (data.section === 'head' && data.column.index === 4) {
+            if (data.section === 'head' && data.column.index === msrpCol) {
               data.cell.styles.halign = 'right'
+            }
+          },
+          didDrawCell: function(data) {
+            if (hasPhotos && data.section === 'body' && data.column.index === 0) {
+              const item = items[data.row.index]
+              const base64 = item?.intake_id ? photoMap[item.intake_id] : null
+              if (base64) {
+                try {
+                  doc.addImage(`data:image/jpeg;base64,${base64}`, 'JPEG', data.cell.x + 1, data.cell.y + 1, imgSize, imgSize)
+                } catch (e) { console.error('PDF image error for item', item?.intake_id, e) }
+              }
             }
           }
         })
 
-        const tableRightEdge = leftMargin + tableWidth
+        const tableRightEdge = pageWidth - leftMargin
         const finalY = doc.lastAutoTable.finalY + 5
 
         doc.setFontSize(9)
@@ -797,6 +948,8 @@ export default function BundleSort() {
     } catch (err) {
       console.error('PDF generation error:', err)
       alert('Error generating PDF: ' + err.message)
+    } finally {
+      setGeneratingPdf(false)
     }
   }
 
@@ -920,7 +1073,7 @@ export default function BundleSort() {
                 >
                   All Items
                 </button>
-                <button onClick={cancelNoBarcode} className="text-white/40 text-sm underline mt-3">Cancel</button>
+                <button onClick={isKickstart ? closeScanner : cancelNoBarcode} className="text-white/40 text-sm underline mt-3">Cancel</button>
               </>
             )}
             {noBarcodeStep === 'category' && (
@@ -962,7 +1115,17 @@ export default function BundleSort() {
             {noBarcodeStep === 'pickItem' && (
               <>
                 <h2 className="text-xl font-bold text-white mb-1 mt-2">{noBarcodeSize ? `Pick Item — ${noBarcodeSize}` : 'Pick Item'}{noBarcodeCategory ? ` — ${noBarcodeCategory}` : ''}</h2>
-                <p className="text-slate-400 mb-4 text-sm">{noBarcodeItems.length} item group{noBarcodeItems.length !== 1 ? 's' : ''}</p>
+                <p className="text-slate-400 mb-2 text-sm">{noBarcodeItems.length} item group{noBarcodeItems.length !== 1 ? 's' : ''}</p>
+                <button
+                  onClick={() => setNoBarcodeFlaws(f => !f)}
+                  className={`mb-4 px-4 py-2 rounded-full font-semibold text-sm transition-all active:scale-95 ${
+                    noBarcodeFlaws
+                      ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow-lg shadow-amber-500/30 border border-amber-400/50'
+                      : 'bg-white/5 text-white/40 border border-white/10'
+                  }`}
+                >
+                  {noBarcodeFlaws ? 'Flaws: Yes' : 'Any Flaws?'}
+                </button>
                 {noBarcodeLoading ? (
                   <p className="text-white/50 text-lg py-12">Loading...</p>
                 ) : noBarcodeItems.length === 0 ? (
@@ -980,7 +1143,15 @@ export default function BundleSort() {
                     {noBarcodeItems.map((group, idx) => (
                       <button
                         key={idx}
-                        onClick={() => handlePickNoBarcodeItem(group)}
+                        onClick={() => {
+                          if (group.ids.length > 1) {
+                            setNoBarcodeSelectedGroup(group)
+                            setNoBarcodeQty(1)
+                            setNoBarcodeStep('quantity')
+                          } else {
+                            handlePickNoBarcodeItem(group)
+                          }
+                        }}
                         className="w-full text-left bg-white/5 border border-white/10 rounded-2xl p-3 hover:bg-white/10 active:scale-[0.98] transition-all"
                       >
                         <div className="flex items-center gap-3">
@@ -1013,6 +1184,75 @@ export default function BundleSort() {
                 </div>
               </>
             )}
+            {noBarcodeStep === 'quantity' && noBarcodeSelectedGroup && (() => {
+              const remaining = 40 - scanCount
+              const maxQty = Math.min(noBarcodeSelectedGroup.ids.length, remaining)
+              return (
+                <>
+                  <h2 className="text-xl font-bold text-white mb-1 mt-2">How Many?</h2>
+                  <p className="text-slate-400 mb-4 text-sm">{noBarcodeSelectedGroup.ids.length} available</p>
+
+                  <div className="w-full max-w-sm flex flex-col items-center gap-4 mb-6">
+                    <div className="flex items-center gap-3 bg-white/5 border border-white/10 rounded-2xl p-3 w-full">
+                      <LazyPhoto intakeId={noBarcodeSelectedGroup.ids[0]} />
+                      <div className="min-w-0 flex-1">
+                        <p className="text-white font-semibold text-sm truncate">
+                          {[noBarcodeSelectedGroup.description, noBarcodeSelectedGroup.color].filter(Boolean).join(' — ') || 'Unknown'}
+                        </p>
+                        <p className="text-slate-400 text-xs">
+                          {[noBarcodeSelectedGroup.brand, noBarcodeSelectedGroup.size, noBarcodeSelectedGroup.condition].filter(Boolean).join(' · ')}
+                        </p>
+                      </div>
+                    </div>
+
+                    <button
+                      onClick={() => setNoBarcodeFlaws(f => !f)}
+                      className={`px-4 py-2 rounded-full font-semibold text-sm transition-all active:scale-95 ${
+                        noBarcodeFlaws
+                          ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow-lg shadow-amber-500/30 border border-amber-400/50'
+                          : 'bg-white/5 text-white/40 border border-white/10'
+                      }`}
+                    >
+                      {noBarcodeFlaws ? 'Flaws: Yes' : 'Any Flaws?'}
+                    </button>
+
+                    <div className="flex items-center gap-6">
+                      <button
+                        onClick={() => setNoBarcodeQty(q => Math.max(1, q - 1))}
+                        disabled={noBarcodeQty <= 1}
+                        className="w-14 h-14 rounded-2xl bg-white/10 border border-white/20 text-white font-black text-2xl flex items-center justify-center disabled:opacity-30 active:scale-90 transition-all"
+                      >
+                        −
+                      </button>
+                      <span className="text-5xl font-black text-white w-20 text-center tabular-nums">{noBarcodeQty}</span>
+                      <button
+                        onClick={() => setNoBarcodeQty(q => Math.min(maxQty, q + 1))}
+                        disabled={noBarcodeQty >= maxQty}
+                        className="w-14 h-14 rounded-2xl bg-white/10 border border-white/20 text-white font-black text-2xl flex items-center justify-center disabled:opacity-30 active:scale-90 transition-all"
+                      >
+                        +
+                      </button>
+                    </div>
+
+                    <button
+                      onClick={() => handlePickNoBarcodeItem(noBarcodeSelectedGroup, noBarcodeQty)}
+                      className="w-full py-4 rounded-2xl font-bold text-lg bg-gradient-to-r from-fuchsia-500 to-pink-600 text-white shadow-lg shadow-fuchsia-500/30 border border-fuchsia-400/50 active:scale-[0.97] transition-all"
+                    >
+                      Add {noBarcodeQty} Item{noBarcodeQty !== 1 ? 's' : ''}
+                    </button>
+                  </div>
+
+                  <div className="flex gap-3 w-full max-w-sm">
+                    <button onClick={() => { setNoBarcodeStep('pickItem'); setNoBarcodeSelectedGroup(null); setNoBarcodeQty(1) }} className="flex-1 py-3 rounded-2xl bg-white/10 border border-white/20 text-white font-semibold text-sm">
+                      ← Back
+                    </button>
+                    <button onClick={cancelNoBarcode} className="flex-1 py-3 rounded-2xl bg-white/10 border border-white/20 text-white/50 font-semibold text-sm">
+                      Cancel
+                    </button>
+                  </div>
+                </>
+              )
+            })()}
           </div>
         ) : (
           <>
@@ -1085,9 +1325,10 @@ export default function BundleSort() {
     const isComplete = viewingBox.status === 'complete'
     const pct = progressPercent(viewingBox.itemCount)
     const manifestItems = viewingBox.manifestItems || []
-    const totalCost = isKickstart
-      ? manifestItems.reduce((sum, item) => sum + (item.cost || 0), 0)
-      : manifestItems.reduce((sum, item) => sum + (item.cost_freight || item.cost || 0), 0)
+
+    // Per-item effective cost and price helpers
+    const getItemCost = (item) => item.cost_override != null ? item.cost_override : (isKickstart ? (item.cost || 0) : (item.cost_freight || item.cost || 0))
+    const totalCost = viewingBox.costOverride || manifestItems.reduce((sum, item) => sum + getItemCost(item), 0)
     const totalMsrp = manifestItems.reduce((sum, item) => sum + (item.msrp || 0), 0)
     const isSold = viewingBox.salePrice != null
 
@@ -1095,12 +1336,28 @@ export default function BundleSort() {
     let customerPrice, pricingLabel, pricingParam
     if (isKickstart) {
       pricingParam = viewingBox.markupPercentage || 25
-      customerPrice = totalCost * (1 + pricingParam / 100)
+      // Sum per-item price overrides, fall back to box override, fall back to markup calc
+      const hasAnyItemPriceOverride = manifestItems.some(i => i.price_override != null)
       pricingLabel = `+${pricingParam}%`
+      if (viewingBox.priceOverride) {
+        customerPrice = viewingBox.priceOverride
+      } else if (hasAnyItemPriceOverride) {
+        customerPrice = manifestItems.reduce((sum, item) => {
+          if (item.price_override != null) return sum + item.price_override
+          return sum + getItemCost(item) * (1 + pricingParam / 100)
+        }, 0)
+      } else {
+        customerPrice = totalCost * (1 + pricingParam / 100)
+      }
     } else {
       pricingParam = viewingBox.pricePercentage || 10
-      customerPrice = totalMsrp * (pricingParam / 100)
       pricingLabel = `${pricingParam}%`
+      customerPrice = viewingBox.priceOverride || (totalMsrp * (pricingParam / 100))
+    }
+    const getItemPrice = (item) => {
+      if (item.price_override != null) return item.price_override
+      if (isKickstart) return getItemCost(item) * (1 + pricingParam / 100)
+      return (item.msrp || 0) * (pricingParam / 100)
     }
     const profit = customerPrice - totalCost
     const margin = customerPrice > 0 ? (profit / customerPrice) * 100 : null
@@ -1133,41 +1390,109 @@ export default function BundleSort() {
 
         {/* Stats cards */}
         <div className="px-4 pt-4 pb-2">
-          <div className="grid grid-cols-4 gap-2 mb-3">
-            <div className="bg-white/5 rounded-xl p-3 text-center border border-white/10">
-              <p className="text-2xl font-bold text-white">{viewingBox.itemCount}</p>
-              <p className="text-xs text-slate-400">Items</p>
-            </div>
-            <div className="bg-white/5 rounded-xl p-3 text-center border border-white/10">
-              <p className="text-2xl font-bold text-cyan-400">${totalMsrp.toFixed(0)}</p>
-              <p className="text-xs text-slate-400">MSRP</p>
-            </div>
-            <div className="bg-white/5 rounded-xl p-3 text-center border border-white/10">
-              <p className="text-2xl font-bold text-fuchsia-400">${totalCost.toFixed(2)}</p>
-              <p className="text-xs text-slate-400">Cost</p>
-            </div>
-            <div
-              className="bg-emerald-500/10 rounded-xl p-3 text-center border border-emerald-500/30 cursor-pointer hover:border-emerald-400/50 transition-all"
-              onClick={() => { setEditingPercentage(true); setTempPercentage(String(pricingParam)); }}
-            >
-              <p className="text-2xl font-bold text-emerald-400">${customerPrice.toFixed(2)}</p>
-              <p className="text-xs text-emerald-300/60">Price ({pricingLabel})</p>
-            </div>
-          </div>
+          {(() => {
+            const itemCount = viewingBox.itemCount || 1
+            const msrpPerItem = totalMsrp / itemCount
+            const costPerItem = totalCost / itemCount
+            const pricePerItem = customerPrice / itemCount
+            const profitPerItem = profit / itemCount
+            return (<>
+              <div className="grid grid-cols-4 gap-2 mb-2">
+                {/* Items */}
+                <div className="bg-white/5 rounded-xl p-2.5 text-center border border-white/10">
+                  <p className="text-[10px] uppercase tracking-wider text-slate-400 mb-1">Items</p>
+                  <p className="text-lg font-bold text-white">{viewingBox.itemCount}</p>
+                </div>
+                {/* MSRP */}
+                <div className="bg-white/5 rounded-xl p-2.5 text-center border border-white/10">
+                  <p className="text-[10px] uppercase tracking-wider text-slate-400 mb-1">MSRP</p>
+                  <p className="text-lg font-bold text-cyan-400">${totalMsrp.toFixed(0)}</p>
+                  <p className="text-sm font-semibold text-cyan-400/60">${msrpPerItem.toFixed(2)}/ea</p>
+                </div>
+                {/* Cost — tappable */}
+                <div
+                  className={`rounded-xl p-2.5 text-center border cursor-pointer transition-all ${editingCost ? 'bg-fuchsia-500/15 border-fuchsia-500/40' : 'bg-white/5 border-white/10 hover:border-fuchsia-400/30'}`}
+                  onClick={() => { if (!editingCost) { setEditingCost(true); setEditingPrice(false); setEditingPercentage(false); setTempEditCost(totalCost.toFixed(2)); } }}
+                >
+                  <p className="text-[10px] uppercase tracking-wider text-slate-400 mb-1">Cost {viewingBox.costOverride ? '(edited)' : ''}</p>
+                  <p className="text-lg font-bold text-fuchsia-400">${totalCost.toFixed(2)}</p>
+                  <p className="text-sm font-semibold text-fuchsia-400/60">${costPerItem.toFixed(2)}/ea</p>
+                </div>
+                {/* Price — tappable */}
+                <div
+                  className={`rounded-xl p-2.5 text-center border cursor-pointer transition-all ${editingPrice || editingPercentage ? 'bg-emerald-500/15 border-emerald-500/40' : 'bg-emerald-500/10 border-emerald-500/30 hover:border-emerald-400/50'}`}
+                  onClick={() => { if (!editingPrice && !editingPercentage) { setEditingPrice(true); setEditingCost(false); setTempEditPrice(customerPrice.toFixed(2)); } }}
+                >
+                  <p className="text-[10px] uppercase tracking-wider text-emerald-300/60 mb-1">Price {pricingLabel !== 'custom' ? `(${pricingLabel})` : '(custom)'}</p>
+                  <p className="text-lg font-bold text-emerald-400">${customerPrice.toFixed(2)}</p>
+                  <p className="text-sm font-semibold text-emerald-400/60">${pricePerItem.toFixed(2)}/ea</p>
+                </div>
+              </div>
+            </>)
+          })()}
 
-          {/* Percentage / Markup editor */}
-          {editingPercentage && (
-            <div className="bg-slate-800/80 rounded-xl p-3 mb-3 border border-white/10">
-              <p className="text-xs text-slate-400 mb-2">
-                {isKickstart ? 'Adjust markup on cost' : 'Adjust pricing percentage'}
-              </p>
+          {/* Cost editor */}
+          {editingCost && (
+            <div className="bg-slate-800/80 rounded-xl p-3 mb-2 border border-fuchsia-500/30">
+              <p className="text-xs text-slate-400 mb-2">Edit total cost</p>
+              <div className="flex gap-2">
+                <div className="relative flex-1">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-white/50 text-sm">$</span>
+                  <input
+                    type="number"
+                    autoFocus
+                    value={tempEditCost}
+                    onChange={e => setTempEditCost(e.target.value)}
+                    onKeyDown={e => e.key === 'Enter' && saveCostOverride(tempEditCost)}
+                    className="w-full bg-white/10 border border-white/20 rounded-lg pl-7 pr-3 py-2.5 text-white text-base font-semibold"
+                    placeholder="0.00"
+                  />
+                </div>
+                <button onClick={() => saveCostOverride(tempEditCost)} className="px-4 py-2.5 rounded-lg bg-fuchsia-500/30 text-fuchsia-300 text-sm font-semibold">Save</button>
+                <button onClick={() => setEditingCost(false)} className="px-3 py-2.5 rounded-lg bg-white/10 text-slate-400 text-sm">Cancel</button>
+              </div>
+              {viewingBox.costOverride && (
+                <button onClick={clearCostOverride} className="text-xs text-slate-500 hover:text-slate-300 mt-2">Reset to calculated (${calculatedCost.toFixed(2)})</button>
+              )}
+            </div>
+          )}
+
+          {/* Price editor */}
+          {editingPrice && (
+            <div className="bg-slate-800/80 rounded-xl p-3 mb-2 border border-emerald-500/30">
+              <p className="text-xs text-slate-400 mb-2">Set price directly</p>
+              <div className="flex gap-2 mb-3">
+                <div className="relative flex-1">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-white/50 text-sm">$</span>
+                  <input
+                    type="number"
+                    autoFocus
+                    value={tempEditPrice}
+                    onChange={e => setTempEditPrice(e.target.value)}
+                    onKeyDown={e => e.key === 'Enter' && saveDirectPrice(tempEditPrice)}
+                    className="w-full bg-white/10 border border-white/20 rounded-lg pl-7 pr-3 py-2.5 text-white text-base font-semibold"
+                    placeholder="0.00"
+                  />
+                </div>
+                <button onClick={() => saveDirectPrice(tempEditPrice)} className="px-4 py-2.5 rounded-lg bg-emerald-500/30 text-emerald-300 text-sm font-semibold">Save</button>
+                <button onClick={() => setEditingPrice(false)} className="px-3 py-2.5 rounded-lg bg-white/10 text-slate-400 text-sm">Cancel</button>
+              </div>
+              <p className="text-xs text-slate-400 mb-2">Or use markup presets</p>
               <div className="flex gap-2">
                 {(isKickstart ? [25, 50, 75, 100] : [8, 10, 12, 15]).map(pctVal => (
                   <button
                     key={pctVal}
-                    onClick={() => savePercentage(pctVal)}
+                    onClick={async () => {
+                      const table = isKickstart ? 'kickstart_bundle_boxes' : 'jumpstart_bundle_boxes'
+                      const field = isKickstart ? 'markup_percentage' : 'price_percentage'
+                      await supabase.from(table).update({ [field]: pctVal, price_override: null }).eq('box_number', viewingBox.boxNumber)
+                      setEditingPrice(false)
+                      const allBoxes = await fetchBoxes()
+                      const updated = allBoxes.find(b => b.boxNumber === viewingBox.boxNumber)
+                      if (updated) openBox(updated)
+                    }}
                     className={`flex-1 py-2 rounded-lg text-sm font-semibold transition-all ${
-                      pricingParam === pctVal
+                      !viewingBox.priceOverride && pricingParam === pctVal
                         ? 'bg-emerald-500 text-white'
                         : 'bg-white/10 text-white hover:bg-white/20'
                     }`}
@@ -1175,16 +1500,10 @@ export default function BundleSort() {
                     {isKickstart ? `+${pctVal}%` : `${pctVal}%`}
                   </button>
                 ))}
-                <input
-                  type="number"
-                  value={tempPercentage}
-                  onChange={e => setTempPercentage(e.target.value)}
-                  onBlur={() => savePercentage(tempPercentage)}
-                  onKeyDown={e => e.key === 'Enter' && savePercentage(tempPercentage)}
-                  className="w-16 bg-white/10 border border-white/20 rounded-lg px-2 py-2 text-white text-sm text-center"
-                  placeholder="%"
-                />
               </div>
+              {viewingBox.priceOverride && (
+                <button onClick={clearPriceOverride} className="text-xs text-slate-500 hover:text-slate-300 mt-2">Reset to markup calculation</button>
+              )}
             </div>
           )}
 
@@ -1192,14 +1511,18 @@ export default function BundleSort() {
           <div className={`rounded-xl p-3 mb-3 border ${profit >= 0 ? 'bg-emerald-500/10 border-emerald-500/30' : 'bg-red-500/10 border-red-500/30'}`}>
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-xs text-slate-400 mb-1">{isSold ? 'SOLD' : 'PROJECTED'}</p>
-                <p className="text-xl font-bold text-white">${customerPrice.toFixed(2)}</p>
-              </div>
-              <div className="text-right">
+                <p className="text-[10px] uppercase tracking-wider text-slate-400 mb-1">{isSold ? 'SOLD' : 'PROJECTED'} PROFIT</p>
                 <p className={`text-xl font-bold ${profit >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
                   {profit >= 0 ? '+' : ''}${profit.toFixed(2)}
                 </p>
-                <p className="text-xs text-slate-400">{margin?.toFixed(1)}% margin</p>
+              </div>
+              <div className="text-right">
+                <p className="text-sm text-slate-400">{margin?.toFixed(1)}% margin</p>
+                {(viewingBox.itemCount || 0) > 0 && (
+                  <p className={`text-sm font-semibold ${profit >= 0 ? 'text-emerald-400/60' : 'text-red-400/60'}`}>
+                    {profit >= 0 ? '+' : ''}${(profit / viewingBox.itemCount).toFixed(2)}/item
+                  </p>
+                )}
               </div>
             </div>
             {isSold && (
@@ -1222,8 +1545,8 @@ export default function BundleSort() {
               </button>
             )}
             {isComplete && (
-              <button onClick={generatePDF} className="flex-1 bg-gradient-to-r from-fuchsia-500 to-purple-600 py-3 rounded-xl text-white font-bold text-sm shadow-lg shadow-fuchsia-500/25 active:scale-[0.98] transition-all">
-                Generate PDF
+              <button onClick={generatePDF} disabled={generatingPdf} className={`flex-1 bg-gradient-to-r from-fuchsia-500 to-purple-600 py-3 rounded-xl text-white font-bold text-sm shadow-lg shadow-fuchsia-500/25 transition-all ${generatingPdf ? 'opacity-60' : 'active:scale-[0.98]'}`}>
+                {generatingPdf ? 'Generating...' : 'Generate PDF'}
               </button>
             )}
           </div>
@@ -1237,29 +1560,97 @@ export default function BundleSort() {
             <>
               <p className="text-slate-500 text-xs uppercase tracking-wider mb-2 font-semibold">{manifestItems.length} Items</p>
               <div className="space-y-2">
-                {manifestItems.map((item, i) => (
-                  <div key={i} className="bg-white/5 rounded-xl p-3 border border-white/10">
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="flex-1 min-w-0">
-                        <p className="text-white text-sm font-medium leading-tight line-clamp-2">
-                          {isKickstart
-                            ? [item.brand, item.description].filter(Boolean).join(' — ') || 'Unknown item'
-                            : item.description || 'Unknown item'
-                          }
-                        </p>
-                        <div className="flex flex-wrap gap-x-3 gap-y-1 mt-1.5 text-xs text-slate-400">
-                          {item.color && <span>{item.color}</span>}
-                          {item.size && <span>Size: {item.size}</span>}
-                          {!isKickstart && item.category && <span>{item.category}</span>}
+                {manifestItems.map((item, i) => {
+                  const isSwiped = swipedItemIdx === i
+                  return (
+                  <div key={item.scan_id || i} className="relative overflow-hidden rounded-xl" style={{ height: 'auto' }}>
+                    {/* Delete button — only rendered when swiped */}
+                    {isSwiped && (
+                      <button
+                        onClick={() => { if (confirm('Remove this item from the box?')) { deleteItemFromBox(item.scan_id); setSwipedItemIdx(null) } }}
+                        className="absolute right-0 top-0 bottom-0 w-20 bg-red-500 flex items-center justify-center z-10"
+                      >
+                        <span className="text-white font-bold text-xs">Delete</span>
+                      </button>
+                    )}
+                    {/* Row content */}
+                    <div
+                      className={`bg-white/5 p-3 border border-white/10 rounded-xl transition-transform duration-200 ease-out ${isSwiped ? '-translate-x-20' : 'translate-x-0'}`}
+                      onTouchStart={e => { e.currentTarget._startX = e.touches[0].clientX; e.currentTarget._startY = e.touches[0].clientY }}
+                      onTouchEnd={e => {
+                        const dx = e.currentTarget._startX - e.changedTouches[0].clientX
+                        const dy = Math.abs(e.currentTarget._startY - e.changedTouches[0].clientY)
+                        if (dy > 30) return // vertical scroll, ignore
+                        if (dx > 60) setSwipedItemIdx(i)
+                        else if (dx < -30 || Math.abs(dx) < 10) setSwipedItemIdx(null)
+                      }}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex-1 min-w-0">
+                          <p className="text-white text-sm font-medium leading-tight line-clamp-2">
+                            {isKickstart
+                              ? [item.brand, item.description].filter(Boolean).join(' — ') || 'Unknown item'
+                              : item.description || 'Unknown item'
+                            }
+                          </p>
+                          <div className="flex flex-wrap gap-x-3 gap-y-1 mt-1.5 text-xs text-slate-400">
+                            {item.color && <span>{item.color}</span>}
+                            {item.size && <span>Size: {item.size}</span>}
+                            {!isKickstart && item.category && <span>{item.category}</span>}
+                            <span>${(item.msrp || 0).toFixed(0)} MSRP</span>
+                          </div>
                         </div>
-                      </div>
-                      <div className="text-right shrink-0">
-                        <p className="text-fuchsia-400 font-semibold text-sm">${(isKickstart ? (item.cost || 0) : (item.cost_freight || item.cost || 0)).toFixed(2)}</p>
-                        <p className="text-slate-500 text-xs">${(item.msrp || 0).toFixed(0)} MSRP</p>
+                        <div className="flex items-start gap-3 shrink-0">
+                          {/* Cost - tappable */}
+                          <div className="text-right">
+                            {editingItemIdx === i && editingItemField === 'cost' ? (
+                              <input
+                                type="number"
+                                autoFocus
+                                value={tempItemValue}
+                                onChange={e => setTempItemValue(e.target.value)}
+                                onBlur={() => saveItemOverride(item.scan_id, 'cost_override', tempItemValue)}
+                                onKeyDown={e => { if (e.key === 'Enter') saveItemOverride(item.scan_id, 'cost_override', tempItemValue); if (e.key === 'Escape') { setEditingItemIdx(null); setEditingItemField(null); } }}
+                                className="w-20 bg-fuchsia-500/20 border border-fuchsia-500/40 rounded px-1.5 py-0.5 text-fuchsia-300 text-sm text-right font-semibold"
+                              />
+                            ) : (
+                              <p
+                                className="text-fuchsia-400 font-semibold text-sm cursor-pointer hover:text-fuchsia-300 transition-colors"
+                                onClick={() => { setEditingItemIdx(i); setEditingItemField('cost'); setTempItemValue(getItemCost(item).toFixed(2)); }}
+                              >
+                                ${getItemCost(item).toFixed(2)}
+                              </p>
+                            )}
+                            <p className="text-fuchsia-400/40 text-[10px]">Cost{item.cost_override != null ? '*' : ''}</p>
+                          </div>
+                          {/* Price - tappable */}
+                          <div className="text-right">
+                            {editingItemIdx === i && editingItemField === 'price' ? (
+                              <input
+                                type="number"
+                                autoFocus
+                                value={tempItemValue}
+                                onChange={e => setTempItemValue(e.target.value)}
+                                onBlur={() => saveItemOverride(item.scan_id, 'price_override', tempItemValue)}
+                                onKeyDown={e => { if (e.key === 'Enter') saveItemOverride(item.scan_id, 'price_override', tempItemValue); if (e.key === 'Escape') { setEditingItemIdx(null); setEditingItemField(null); } }}
+                                className="w-20 bg-emerald-500/20 border border-emerald-500/40 rounded px-1.5 py-0.5 text-emerald-300 text-sm text-right font-semibold"
+                              />
+                            ) : (
+                              <p
+                                className="text-emerald-400 font-semibold text-sm cursor-pointer hover:text-emerald-300 transition-colors"
+                                onClick={() => { setEditingItemIdx(i); setEditingItemField('price'); setTempItemValue(getItemPrice(item).toFixed(2)); }}
+                              >
+                                ${getItemPrice(item).toFixed(2)}
+                              </p>
+                            )}
+                            <p className="text-emerald-400/40 text-[10px]">Price{item.price_override != null ? '*' : ''}</p>
+                          </div>
+                        </div>
                       </div>
                     </div>
                   </div>
-                ))}
+                  )
+                })}
               </div>
             </>
           )}
