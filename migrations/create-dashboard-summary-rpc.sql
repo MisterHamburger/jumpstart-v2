@@ -2,7 +2,11 @@
 -- Cards: avg sale price, profit/unit, gross profit, net profit
 -- P&L table: revenue, fees, net revenue, COGS, gross profit, expenses, payroll, net profit
 -- Run in Supabase Dashboard > SQL Editor
--- Date: 2026-03-09
+-- Date: 2026-03-10
+-- FIX: net_revenue and gross_profit are DERIVED (not independently summed) so P&L always reconciles.
+--   net_revenue = revenue - fees
+--   cogs = SUM(cost_freight) for ALL items (not just matched barcodes)
+--   gross_profit = net_revenue - cogs
 
 DROP FUNCTION IF EXISTS get_dashboard_summary(date, date);
 
@@ -24,9 +28,9 @@ BEGIN
     COUNT(*)::BIGINT AS items,
     COALESCE(SUM(buyer_paid), 0) AS revenue,
     COALESCE(SUM(total_fees), 0) AS fees,
-    COALESCE(SUM(net_payout), 0) AS net_revenue,
-    COALESCE(SUM(CASE WHEN is_bad_barcode THEN 0 ELSE cost_freight END), 0) AS cogs,
-    COALESCE(SUM(profit), 0) AS gross_profit
+    ROUND(COALESCE(SUM(buyer_paid), 0) - COALESCE(SUM(total_fees), 0), 2) AS net_revenue,
+    COALESCE(SUM(cost_freight), 0) AS cogs,
+    ROUND(COALESCE(SUM(buyer_paid), 0) - COALESCE(SUM(total_fees), 0) - COALESCE(SUM(cost_freight), 0), 2) AS gross_profit
   INTO js
   FROM profitability
   WHERE channel = 'Jumpstart'
@@ -37,9 +41,9 @@ BEGIN
     COUNT(*)::BIGINT AS items,
     COALESCE(SUM(buyer_paid), 0) AS revenue,
     COALESCE(SUM(total_fees), 0) AS fees,
-    COALESCE(SUM(net_payout), 0) AS net_revenue,
-    COALESCE(SUM(CASE WHEN is_bad_barcode THEN 0 ELSE cost_freight END), 0) AS cogs,
-    COALESCE(SUM(profit), 0) AS gross_profit
+    ROUND(COALESCE(SUM(buyer_paid), 0) - COALESCE(SUM(total_fees), 0), 2) AS net_revenue,
+    COALESCE(SUM(cost_freight), 0) AS cogs,
+    ROUND(COALESCE(SUM(buyer_paid), 0) - COALESCE(SUM(total_fees), 0) - COALESCE(SUM(cost_freight), 0), 2) AS gross_profit
   INTO ks
   FROM profitability
   WHERE channel = 'Kickstart'

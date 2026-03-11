@@ -10,8 +10,10 @@ const DATE_RANGES = [
   { label: 'Custom', value: 'custom' },
 ]
 
+const BUSINESS_START = '2026-02-07'
+
 function getDateRange(range) {
-  if (range === 'all') return { start: '2026-02-07', end: null }
+  if (range === 'all') return { start: BUSINESS_START, end: null }
   const now = new Date()
   let start, end = null
   if (range === 'month') {
@@ -24,8 +26,11 @@ function getDateRange(range) {
   } else if (range === '30d') {
     start = new Date(now); start.setDate(start.getDate() - 30)
   }
+  // Clamp start date: never go before business start
+  let startStr = start ? start.toISOString().split('T')[0] : null
+  if (startStr && startStr < BUSINESS_START) startStr = BUSINESS_START
   return {
-    start: start ? start.toISOString().split('T')[0] : null,
+    start: startStr,
     end: end ? end.toISOString().split('T')[0] : null,
   }
 }

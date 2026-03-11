@@ -75,6 +75,8 @@ export default function BundleSort() {
   const [showSoldModal, setShowSoldModal] = useState(false)
   const [salePrice, setSalePrice] = useState('')
   const [savingSale, setSavingSale] = useState(false)
+  const [shippingCharged, setShippingCharged] = useState('')
+  const [shippingCost, setShippingCost] = useState('')
   const [editingPercentage, setEditingPercentage] = useState(false)
   const [tempPercentage, setTempPercentage] = useState('')
   const [tempPrice, setTempPrice] = useState('')
@@ -139,6 +141,8 @@ export default function BundleSort() {
           note: b.note || '',
           salePrice: b.sale_price,
           soldAt: b.sold_at,
+          shippingCharged: b.shipping_charged || 0,
+          shippingCost: b.shipping_cost || 0,
           markupPercentage: b.markup_percentage || 25,
           priceOverride: b.price_override || null,
           costOverride: b.cost_override || null,
@@ -176,6 +180,8 @@ export default function BundleSort() {
           note: b.note || '',
           salePrice: b.sale_price,
           soldAt: b.sold_at,
+          shippingCharged: b.shipping_charged || 0,
+          shippingCost: b.shipping_cost || 0,
           pricePercentage: b.price_percentage || 10,
           priceOverride: b.price_override || null,
           costOverride: b.cost_override || null,
@@ -618,30 +624,22 @@ export default function BundleSort() {
     fetchBoxes()
   }
 
-  const markAsSold = async () => {
+  const markAsSold = async (finalPrice) => {
     setSavingSale(true)
-    const items = viewingBox.manifestItems || []
     const table = isKickstart ? 'kickstart_bundle_boxes' : 'jumpstart_bundle_boxes'
-
-    let calculatedPrice
-    if (isKickstart) {
-      const totalCost = items.reduce((sum, item) => sum + (item.cost || 0), 0)
-      const markup = viewingBox.markupPercentage || 25
-      calculatedPrice = totalCost * (1 + markup / 100)
-    } else {
-      const totalMsrp = items.reduce((sum, item) => sum + (item.msrp || 0), 0)
-      const pct = viewingBox.pricePercentage || 10
-      calculatedPrice = totalMsrp * (pct / 100)
-    }
 
     await supabase.from(table)
       .update({
-        sale_price: calculatedPrice,
-        sold_at: new Date().toISOString()
+        sale_price: finalPrice,
+        sold_at: new Date().toISOString(),
+        shipping_charged: parseFloat(shippingCharged) || 0,
+        shipping_cost: parseFloat(shippingCost) || 0
       })
       .eq('box_number', viewingBox.boxNumber)
     setSavingSale(false)
     setShowSoldModal(false)
+    setShippingCharged('')
+    setShippingCost('')
     const allBoxes = await fetchBoxes()
     const updated = allBoxes.find(b => b.boxNumber === viewingBox.boxNumber)
     if (updated) openBox(updated)
@@ -651,7 +649,7 @@ export default function BundleSort() {
     if (!confirm('Clear sale data for this box?')) return
     const table = isKickstart ? 'kickstart_bundle_boxes' : 'jumpstart_bundle_boxes'
     await supabase.from(table)
-      .update({ sale_price: null, sold_at: null })
+      .update({ sale_price: null, sold_at: null, shipping_charged: 0, shipping_cost: 0 })
       .eq('box_number', viewingBox.boxNumber)
     const allBoxes = await fetchBoxes()
     const updated = allBoxes.find(b => b.boxNumber === viewingBox.boxNumber)
@@ -1359,8 +1357,10 @@ export default function BundleSort() {
       if (isKickstart) return getItemCost(item) * (1 + pricingParam / 100)
       return (item.msrp || 0) * (pricingParam / 100)
     }
-    const profit = customerPrice - totalCost
-    const margin = customerPrice > 0 ? (profit / customerPrice) * 100 : null
+    const shippingProfit = (viewingBox.shippingCharged || 0) - (viewingBox.shippingCost || 0)
+    const profit = customerPrice - totalCost + shippingProfit
+    const totalRevenue = customerPrice + (viewingBox.shippingCharged || 0)
+    const margin = totalRevenue > 0 ? (profit / totalRevenue) * 100 : null
 
     return (
       <div className="min-h-screen flex flex-col bg-[#0a0f1a]">
@@ -1525,10 +1525,13 @@ export default function BundleSort() {
                 )}
               </div>
             </div>
-            {isSold && (
-              <button onClick={clearSale} className="text-xs text-slate-500 hover:text-slate-300 mt-2">
-                Clear sale
-              </button>
+            {isSold && viewingBox.shippingCharged > 0 && (
+              <div className="flex justify-between text-xs text-slate-500 mt-2 pt-2 border-t border-white/5">
+                <span>Shipping: charged ${viewingBox.shippingCharged.toFixed(2)} · cost ${viewingBox.shippingCost.toFixed(2)}</span>
+                <span className={(viewingBox.shippingCharged - viewingBox.shippingCost) >= 0 ? 'text-emerald-400/60' : 'text-red-400/60'}>
+                  {(viewingBox.shippingCharged - viewingBox.shippingCost) >= 0 ? '+' : ''}${(viewingBox.shippingCharged - viewingBox.shippingCost).toFixed(2)}
+                </span>
+              </div>
             )}
           </div>
 
@@ -1542,6 +1545,11 @@ export default function BundleSort() {
             {isComplete && !isSold && (
               <button onClick={() => setShowSoldModal(true)} className="flex-1 bg-gradient-to-r from-emerald-500 to-green-600 py-3 rounded-xl text-white font-bold text-sm shadow-lg shadow-emerald-500/25 active:scale-[0.98] transition-all">
                 Mark as Sold
+              </button>
+            )}
+            {isSold && (
+              <button onClick={clearSale} className="flex-1 bg-gradient-to-r from-amber-500 to-orange-600 py-3 rounded-xl text-white font-bold text-sm shadow-lg shadow-amber-500/25 active:scale-[0.98] transition-all">
+                Unsell Box
               </button>
             )}
             {isComplete && (
@@ -1561,30 +1569,8 @@ export default function BundleSort() {
               <p className="text-slate-500 text-xs uppercase tracking-wider mb-2 font-semibold">{manifestItems.length} Items</p>
               <div className="space-y-2">
                 {manifestItems.map((item, i) => {
-                  const isSwiped = swipedItemIdx === i
                   return (
-                  <div key={item.scan_id || i} className="relative overflow-hidden rounded-xl" style={{ height: 'auto' }}>
-                    {/* Delete button — only rendered when swiped */}
-                    {isSwiped && (
-                      <button
-                        onClick={() => { if (confirm('Remove this item from the box?')) { deleteItemFromBox(item.scan_id); setSwipedItemIdx(null) } }}
-                        className="absolute right-0 top-0 bottom-0 w-20 bg-red-500 flex items-center justify-center z-10"
-                      >
-                        <span className="text-white font-bold text-xs">Delete</span>
-                      </button>
-                    )}
-                    {/* Row content */}
-                    <div
-                      className={`bg-white/5 p-3 border border-white/10 rounded-xl transition-transform duration-200 ease-out ${isSwiped ? '-translate-x-20' : 'translate-x-0'}`}
-                      onTouchStart={e => { e.currentTarget._startX = e.touches[0].clientX; e.currentTarget._startY = e.touches[0].clientY }}
-                      onTouchEnd={e => {
-                        const dx = e.currentTarget._startX - e.changedTouches[0].clientX
-                        const dy = Math.abs(e.currentTarget._startY - e.changedTouches[0].clientY)
-                        if (dy > 30) return // vertical scroll, ignore
-                        if (dx > 60) setSwipedItemIdx(i)
-                        else if (dx < -30 || Math.abs(dx) < 10) setSwipedItemIdx(null)
-                      }}
-                    >
+                  <div key={item.scan_id || i} className="bg-white/5 p-3 border border-white/10 rounded-xl">
                       <div className="flex items-start justify-between gap-2">
                         <div className="flex-1 min-w-0">
                           <p className="text-white text-sm font-medium leading-tight line-clamp-2">
@@ -1645,9 +1631,15 @@ export default function BundleSort() {
                             )}
                             <p className="text-emerald-400/40 text-[10px]">Price{item.price_override != null ? '*' : ''}</p>
                           </div>
+                          {/* Delete button */}
+                          <button
+                            onClick={() => { if (confirm('Remove this item from the box?')) deleteItemFromBox(item.scan_id) }}
+                            className="mt-0.5 w-7 h-7 rounded-full bg-red-500/10 border border-red-500/20 flex items-center justify-center hover:bg-red-500/30 transition-colors"
+                          >
+                            <span className="text-red-400 text-xs font-bold">X</span>
+                          </button>
                         </div>
                       </div>
-                    </div>
                   </div>
                   )
                 })}
@@ -1657,7 +1649,13 @@ export default function BundleSort() {
         </div>
 
         {/* Mark as Sold Modal */}
-        {showSoldModal && (
+        {showSoldModal && (() => {
+          const modalShipCharged = parseFloat(shippingCharged) || 0
+          const modalShipCost = parseFloat(shippingCost) || 0
+          const modalShipProfit = modalShipCharged - modalShipCost
+          const modalProfit = customerPrice - totalCost + modalShipProfit
+          const modalTotalRevenue = customerPrice + modalShipCharged
+          return (
           <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
             <div className="bg-slate-800 rounded-2xl p-6 w-full max-w-sm border border-white/10">
               <h3 className="text-xl font-bold text-white mb-2">Mark as Sold</h3>
@@ -1675,21 +1673,57 @@ export default function BundleSort() {
                       : `${pricingParam}% of $${totalMsrp.toFixed(2)} MSRP`
                     }
                   </span>
-                  <span className={`font-semibold ${profit >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                    {profit >= 0 ? '+' : ''}${profit.toFixed(2)} profit
+                  <span className={`font-semibold ${modalProfit >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                    {modalProfit >= 0 ? '+' : ''}${modalProfit.toFixed(2)} profit
                   </span>
                 </div>
               </div>
 
+              {/* Shipping fields */}
+              <div className="space-y-3 mb-4">
+                <div>
+                  <label className="text-xs text-slate-400 mb-1 block">Shipping charged to customer</label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500">$</span>
+                    <input
+                      type="number" inputMode="decimal" step="0.01" min="0"
+                      value={shippingCharged} onChange={e => setShippingCharged(e.target.value)}
+                      placeholder="0.00"
+                      className="w-full bg-slate-700/50 border border-white/10 rounded-xl py-2.5 pl-7 pr-3 text-white text-sm focus:outline-none focus:border-emerald-500"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="text-xs text-slate-400 mb-1 block">Actual shipping cost</label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500">$</span>
+                    <input
+                      type="number" inputMode="decimal" step="0.01" min="0"
+                      value={shippingCost} onChange={e => setShippingCost(e.target.value)}
+                      placeholder="0.00"
+                      className="w-full bg-slate-700/50 border border-white/10 rounded-xl py-2.5 pl-7 pr-3 text-white text-sm focus:outline-none focus:border-emerald-500"
+                    />
+                  </div>
+                </div>
+                {(modalShipCharged > 0 || modalShipCost > 0) && (
+                  <div className="flex justify-between text-xs text-slate-500">
+                    <span>Shipping profit</span>
+                    <span className={modalShipProfit >= 0 ? 'text-emerald-400' : 'text-red-400'}>
+                      {modalShipProfit >= 0 ? '+' : ''}${modalShipProfit.toFixed(2)}
+                    </span>
+                  </div>
+                )}
+              </div>
+
               <div className="flex gap-3">
                 <button
-                  onClick={() => setShowSoldModal(false)}
+                  onClick={() => { setShowSoldModal(false); setShippingCharged(''); setShippingCost('') }}
                   className="flex-1 bg-white/10 py-3 rounded-xl text-white font-semibold border border-white/10"
                 >
                   Cancel
                 </button>
                 <button
-                  onClick={markAsSold}
+                  onClick={() => markAsSold(customerPrice)}
                   disabled={savingSale}
                   className="flex-1 bg-gradient-to-r from-emerald-500 to-green-600 py-3 rounded-xl text-white font-bold disabled:opacity-50"
                 >
@@ -1698,7 +1732,8 @@ export default function BundleSort() {
               </div>
             </div>
           </div>
-        )}
+          )
+        })()}
       </div>
     )
   }
@@ -1762,7 +1797,7 @@ export default function BundleSort() {
           const borderColor = isSold ? 'border-emerald-400/30' :
                               box.status === 'complete' ? 'border-fuchsia-400/30' :
                               box.status === 'in-progress' ? (isKickstart ? 'border-fuchsia-400/30' : 'border-cyan-400/30') : 'border-white/10'
-          const statusText = isSold ? `Sold · $${box.salePrice.toFixed(2)}` :
+          const statusText = isSold ? `Sold · $${box.salePrice.toFixed(2)}${box.shippingCharged > 0 ? ` + $${box.shippingCharged.toFixed(0)} ship` : ''}` :
                              box.status === 'complete' ? 'Complete' : box.status === 'in-progress' ? 'In Progress' : 'Empty'
 
           return (

@@ -108,8 +108,12 @@ export default function AdminProfitability() {
         const totalCost = items.reduce((sum, i) => sum + (i.cost_freight || i.cost || 0), 0)
         const pct = box.price_percentage || 10
         const salePrice = totalMsrp * (pct / 100)
-        const profit = salePrice - totalCost
-        const margin = salePrice > 0 ? (profit / salePrice) * 100 : 0
+        const shippingCharged = box.shipping_charged || 0
+        const shippingCost = box.shipping_cost || 0
+        const shippingProfit = shippingCharged - shippingCost
+        const profit = salePrice - totalCost + shippingProfit
+        const totalRevenue = salePrice + shippingCharged
+        const margin = totalRevenue > 0 ? (profit / totalRevenue) * 100 : 0
         return {
           boxNumber: box.box_number,
           channel: 'Jumpstart',
@@ -117,7 +121,8 @@ export default function AdminProfitability() {
           pricePercentage: pct,
           pricingLabel: `${pct}%`,
           itemCount: items.length,
-          totalMsrp, totalCost, salePrice, profit, margin
+          totalMsrp, totalCost, salePrice, profit, margin,
+          shippingCharged, shippingCost, totalRevenue
         }
       })
     }
@@ -155,8 +160,12 @@ export default function AdminProfitability() {
         const totalCost = items.reduce((sum, i) => sum + (i.true_cost || i.cost || 0), 0)
         const markup = box.markup_percentage || 25
         const salePrice = totalCost * (1 + markup / 100)
-        const profit = salePrice - totalCost
-        const margin = salePrice > 0 ? (profit / salePrice) * 100 : 0
+        const shippingCharged = box.shipping_charged || 0
+        const shippingCost = box.shipping_cost || 0
+        const shippingProfit = shippingCharged - shippingCost
+        const profit = salePrice - totalCost + shippingProfit
+        const totalRevenue = salePrice + shippingCharged
+        const margin = totalRevenue > 0 ? (profit / totalRevenue) * 100 : 0
         return {
           boxNumber: box.box_number,
           channel: 'Kickstart',
@@ -164,7 +173,8 @@ export default function AdminProfitability() {
           pricePercentage: markup,
           pricingLabel: `+${markup}%`,
           itemCount: scans.length,
-          totalMsrp, totalCost, salePrice, profit, margin
+          totalMsrp, totalCost, salePrice, profit, margin,
+          shippingCharged, shippingCost, totalRevenue
         }
       })
     }
@@ -181,8 +191,9 @@ export default function AdminProfitability() {
 
     const summary = {
       totalBoxes: allBoxStats.length,
-      totalRevenue: allBoxStats.reduce((sum, b) => sum + b.salePrice, 0),
+      totalRevenue: allBoxStats.reduce((sum, b) => sum + (b.totalRevenue || b.salePrice), 0),
       totalCost: allBoxStats.reduce((sum, b) => sum + b.totalCost, 0),
+      totalShippingCost: allBoxStats.reduce((sum, b) => sum + (b.shippingCost || 0), 0),
       totalProfit: allBoxStats.reduce((sum, b) => sum + b.profit, 0),
       totalItems: allBoxStats.reduce((sum, b) => sum + b.itemCount, 0),
       profitableBoxes: allBoxStats.filter(b => b.profit >= 0).length,
@@ -216,7 +227,7 @@ export default function AdminProfitability() {
   function applyFilters(query) {
     if (channel !== 'all') query = query.eq('channel', channel)
     if (selectedShow !== 'all') query = query.eq('show_name', selectedShow)
-    if (search) query = query.or(`description.ilike.%${search}%,barcode.ilike.%${search}%,category.ilike.%${search}%,product_name.ilike.%${search}%`)
+    if (search) query = query.or(`description.ilike.%${search}%,barcode.ilike.%${search}%,category.ilike.%${search}%,product_name.ilike.%${search}%,show_name.ilike.%${search}%`)
     if (dateFrom) query = query.gte('show_date', dateFrom)
     if (dateTo) query = query.lte('show_date', dateTo)
     if (hideWacItems) query = query.eq('is_wac_cost', false) // Hide items using WAC by default
@@ -577,8 +588,7 @@ export default function AdminProfitability() {
                           <td className="py-4 px-4 max-w-[280px] text-white font-medium">
                             <div className="flex items-center gap-2">
                               <span className="truncate">{item.description || item.product_name}</span>
-                              {item.is_bundle && <span className="shrink-0 text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400 font-semibold">Bundle</span>}
-                              {item.is_bad_barcode && <span className="shrink-0 text-[10px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400 font-semibold">Not In Manifest/Bad Barcode</span>}
+                              {item.is_bundle && <span className="shrink-0 text-[10px] px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-400 font-semibold">Bundle</span>}
                               {(item.is_wac_cost || useWac) && <span className="shrink-0 text-[10px] px-1.5 py-0.5 rounded bg-pink-500/20 text-pink-400 font-semibold">WAC</span>}
                             </div>
                           </td>
@@ -790,8 +800,14 @@ function BundlesView({ data, onRefresh }) {
                   <td className="py-4 px-3 text-center text-slate-300">{box.itemCount}</td>
                   <td className="py-4 px-3 text-center text-slate-400">{box.pricingLabel || `${box.pricePercentage}%`}</td>
                   <td className="py-4 px-3 text-right text-slate-400">${box.totalMsrp.toFixed(0)}</td>
-                  <td className="py-4 px-3 text-right text-slate-300">${box.salePrice.toFixed(2)}</td>
-                  <td className="py-4 px-3 text-right text-slate-500">${box.totalCost.toFixed(2)}</td>
+                  <td className="py-4 px-3 text-right text-slate-300">
+                    ${box.salePrice.toFixed(2)}
+                    {box.shippingCharged > 0 && <div className="text-[10px] text-slate-500">+${box.shippingCharged.toFixed(0)} ship</div>}
+                  </td>
+                  <td className="py-4 px-3 text-right text-slate-500">
+                    ${box.totalCost.toFixed(2)}
+                    {box.shippingCost > 0 && <div className="text-[10px] text-slate-600">+${box.shippingCost.toFixed(0)} ship</div>}
+                  </td>
                   <td className={`py-4 px-3 text-right font-bold ${box.profit >= 0 ? 'text-emerald-400' : 'text-pink-400'}`}>
                     {box.profit >= 0 ? '+' : ''}${box.profit.toFixed(2)}
                   </td>
