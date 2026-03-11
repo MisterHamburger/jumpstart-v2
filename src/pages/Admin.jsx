@@ -4,7 +4,7 @@ import AdminInputs from '../components/AdminInputs'
 import AdminInventory from '../components/AdminInventory'
 import AdminProfitability from '../components/AdminProfitability'
 import AdminScans from '../components/AdminScans'
-import AdminKickstartHauls from '../components/AdminKickstartHauls'
+import AdminDataCheck from '../components/AdminDataCheck'
 
 const TABS = [
   { id: 'dashboard', path: '/admin', label: 'Dashboard', icon: 'dashboard' },
@@ -12,7 +12,7 @@ const TABS = [
   { id: 'inventory', path: '/admin/inventory', label: 'Inventory', icon: 'inventory' },
   { id: 'profitability', path: '/admin/profitability', label: 'Profitability', icon: 'profitability' },
   { id: 'scans', path: '/admin/scans', label: 'Scans', icon: 'scans' },
-  { id: 'kickstart', path: '/admin/kickstart', label: 'Kickstart', icon: 'kickstart' },
+  { id: 'datacheck', path: '/admin/data-check', label: 'Data Check', icon: 'datacheck' },
 ]
 
 function NavIcon({ type, active }) {
@@ -67,6 +67,13 @@ function NavIcon({ type, active }) {
         <svg className={baseClass} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
           <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z" />
           <line x1="7" y1="7" x2="7.01" y2="7" />
+        </svg>
+      )
+    case 'datacheck':
+      return (
+        <svg className={baseClass} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M9 11l3 3L22 4" />
+          <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
         </svg>
       )
     case 'unknown':
@@ -152,7 +159,7 @@ export default function Admin() {
         {activeTab === 'inventory' && <AdminInventory />}
         {activeTab === 'profitability' && <AdminProfitability />}
         {activeTab === 'scans' && <AdminScans />}
-        {activeTab === 'kickstart' && <AdminKickstartHauls />}
+        {activeTab === 'datacheck' && <AdminDataCheck />}
       </main>
     </div>
   )

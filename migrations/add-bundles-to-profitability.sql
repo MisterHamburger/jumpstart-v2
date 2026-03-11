@@ -9,8 +9,9 @@ DROP VIEW IF EXISTS profitability CASCADE;
 CREATE VIEW profitability AS
 
 -- CTE: per-show average cost for Kickstart items (WAC fallback for unmatched items)
-WITH kickstart_show_wac AS (
-  SELECT s.show_id, ROUND(AVG(COALESCE(k.cost, k2.cost)), 2) AS avg_cost
+-- Shows 38, 40, 41 (early shows with no intake data) use manual $15.50 WAC
+WITH kickstart_show_wac_raw AS (
+  SELECT s.show_id, ROUND(AVG(COALESCE(k.cost, k2.cost)), 2) AS avg_cost, 1 AS priority
   FROM kickstart_sold_scans s
   LEFT JOIN kickstart_intake k ON k.id = s.intake_id
   LEFT JOIN (
@@ -21,6 +22,18 @@ WITH kickstart_show_wac AS (
   ) k2 ON s.intake_id IS NULL AND s.barcode = k2.upc
   WHERE COALESCE(k.cost, k2.cost) IS NOT NULL
   GROUP BY s.show_id
+
+  UNION ALL
+
+  -- Manual WAC overrides for early shows (always wins over calculated)
+  SELECT 38, 15.50, 0
+  UNION ALL SELECT 40, 15.50, 0
+  UNION ALL SELECT 41, 15.50, 0
+),
+kickstart_show_wac AS (
+  SELECT DISTINCT ON (show_id) show_id, avg_cost
+  FROM kickstart_show_wac_raw
+  ORDER BY show_id, priority
 )
 
 -- JUMPSTART: Whatnot live sales
@@ -173,7 +186,7 @@ SELECT
   CASE
     WHEN bb.sale_price > 0 THEN
       ROUND(
-        ((bb.sale_price / NULLIF(item_counts.cnt, 0) - COALESCE(bs.cost_override, m.cost_freight, m.cost, 0))
+        ((bb.sale_price / NULLIF(item_counts.cnt, 0) - COALESCE(m.cost_freight, m.cost, 0))
          / (bb.sale_price / NULLIF(item_counts.cnt, 0))) * 100,
         1
       )
@@ -230,7 +243,7 @@ SELECT
   CASE
     WHEN bb.sale_price > 0 THEN
       ROUND(
-        ((bb.sale_price / NULLIF(item_counts.cnt, 0) - COALESCE(bs.cost_override, ki.cost, 0))
+        ((bb.sale_price / NULLIF(item_counts.cnt, 0) - COALESCE(ki.cost, 0))
          / (bb.sale_price / NULLIF(item_counts.cnt, 0))) * 100,
         1
       )

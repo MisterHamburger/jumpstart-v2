@@ -105,6 +105,7 @@ export default function AdminDashboard() {
     setLoading(false)
   }
 
+
   const stats = data
     ? channel === 'Jumpstart' ? data.jumpstart
     : channel === 'Kickstart' ? data.kickstart
@@ -215,6 +216,7 @@ export default function AdminDashboard() {
               )}
             </div>
           </div>
+
         </>
       )}
     </div>
