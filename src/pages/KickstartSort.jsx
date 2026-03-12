@@ -1,7 +1,62 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { supabase } from '../lib/supabase'
+import { supabase, fetchAll } from '../lib/supabase'
 import { compressPhoto, toBase64 } from '../lib/photos'
+
+// Lazy-loading photo thumbnail — tap to expand
+function LazyPhoto({ intakeId }) {
+  const [src, setSrc] = useState(null)
+  const [loaded, setLoaded] = useState(false)
+  const [expanded, setExpanded] = useState(false)
+  const ref = useRef(null)
+
+  useEffect(() => {
+    setSrc(null)
+    setLoaded(false)
+  }, [intakeId])
+
+  useEffect(() => {
+    if (!intakeId) return
+    const observer = new IntersectionObserver(([entry]) => {
+      if (entry.isIntersecting && !loaded) {
+        setLoaded(true)
+        supabase.from('kickstart_intake').select('item_photo_data, photo_data').eq('id', intakeId).single()
+          .then(({ data }) => {
+            const photo = data?.item_photo_data || data?.photo_data
+            if (photo) setSrc(`data:image/jpeg;base64,${photo}`)
+          })
+      }
+    }, { rootMargin: '200px' })
+    if (ref.current) observer.observe(ref.current)
+    return () => observer.disconnect()
+  }, [intakeId, loaded])
+
+  return (
+    <>
+      <div
+        ref={ref}
+        className="w-14 h-14 rounded-xl border border-white/20 shrink-0 overflow-hidden bg-white/10"
+        onClick={(e) => { if (src) { e.stopPropagation(); setExpanded(true) } }}
+      >
+        {src ? (
+          <img src={src} alt="Tag" className="w-full h-full object-cover" />
+        ) : (
+          <div className="w-full h-full flex items-center justify-center">
+            <span className="text-white/20 text-xs">{loaded ? '...' : ''}</span>
+          </div>
+        )}
+      </div>
+      {expanded && (
+        <div
+          className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4"
+          onClick={(e) => { e.stopPropagation(); setExpanded(false) }}
+        >
+          <img src={src} alt="Tag" className="max-w-full max-h-full rounded-2xl" />
+        </div>
+      )}
+    </>
+  )
+}
 
 const PRICE_BINS = [5, 10, 15, 20, 25, 29, 30, 35, 40]
 const CATEGORIES = [
@@ -21,7 +76,7 @@ const CONDITIONS = ['NWT', 'NWOT', 'Pre-loved/Nuuly']
 
 export default function KickstartSort() {
   const navigate = useNavigate()
-  const [step, setStep] = useState('bin') // bin, brand, details
+  const [step, setStep] = useState('bin') // bin, brand, details, restock, editRecent, editItem
   const [selectedBin, setSelectedBin] = useState(null)
   const [selectedBrand, setSelectedBrand] = useState(null)
   const [customPrice, setCustomPrice] = useState('')
@@ -38,6 +93,179 @@ export default function KickstartSort() {
   const [notes, setNotes] = useState('')
   const [msrp, setMsrp] = useState('')
   const itemPhotoRef = useRef(null)
+
+  // Restock + Edit shared state
+  const [allItems, setAllItems] = useState([])
+  const [categories, setCategories] = useState([])
+  const [itemsLoading, setItemsLoading] = useState(false)
+  const [filterSize, setFilterSize] = useState(null)
+  const [filterCondition, setFilterCondition] = useState(null)
+  const [filterCategory, setFilterCategory] = useState(null)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [openFilter, setOpenFilter] = useState(null) // 'size' | 'category' | 'condition' | null
+  const [editingItem, setEditingItem] = useState(null)
+  const [restockItem, setRestockItem] = useState(null) // item being restocked (read-only confirm)
+  const [restockQty, setRestockQty] = useState(1)
+
+  // --- Load all items (shared by restock + edit) — same pattern as SalesScanner ---
+  const loadAllItems = async () => {
+    setItemsLoading(true)
+    try {
+      const items = await fetchAll(() => supabase
+        .from('kickstart_intake')
+        .select('id, description, brand, color, size, condition, msrp, cost, notes, status, created_at')
+        .neq('description', 'Manual entry')
+        .not('color', 'is', null)
+        .not('size', 'is', null)
+        .order('created_at', { ascending: false }))
+
+      // Extract unique categories with counts
+      const catCounts = {}
+      for (const item of items) {
+        const cat = item.description || 'Uncategorized'
+        catCounts[cat] = (catCounts[cat] || 0) + 1
+      }
+      const cats = Object.entries(catCounts)
+        .map(([name, count]) => ({ name, count }))
+        .sort((a, b) => b.count - a.count)
+
+      setAllItems(items)
+      setCategories(cats)
+      setFilterSize(null)
+      setFilterCondition(null)
+      setFilterCategory(null)
+      setSearchQuery('')
+      setOpenFilter(null)
+    } catch (err) {
+      console.error('Load items error:', err)
+    }
+    setItemsLoading(false)
+  }
+
+  // Client-side filtering
+  const getFilteredItems = () => {
+    let filtered = allItems
+    if (filterSize) filtered = filtered.filter(i => i.size === filterSize)
+    if (filterCondition) filtered = filtered.filter(i => (i.condition || '') === filterCondition)
+    if (filterCategory) filtered = filtered.filter(i => (i.description || 'Uncategorized') === filterCategory)
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase()
+      filtered = filtered.filter(i => {
+        const searchable = [i.brand, i.description, i.color, i.condition, i.notes].filter(Boolean).join(' ').toLowerCase()
+        return searchable.includes(q)
+      })
+    }
+    return filtered
+  }
+
+  // For restock: group identical items
+  const getGroupedItems = () => {
+    const filtered = getFilteredItems()
+    const groups = new Map()
+    for (const item of filtered) {
+      const key = `${item.brand}||${item.description || ''}||${item.color || ''}||${item.size || ''}||${item.condition || ''}`
+      if (!groups.has(key)) {
+        groups.set(key, { ...item, ids: [] })
+      }
+      groups.get(key).ids.push(item.id)
+    }
+    return Array.from(groups.values()).sort((a, b) => b.ids.length - a.ids.length)
+  }
+
+  const resetFilters = () => {
+    setFilterSize(null)
+    setFilterCondition(null)
+    setFilterCategory(null)
+    setSearchQuery('')
+    setOpenFilter(null)
+  }
+
+  const handleRestockSelect = (item) => {
+    setRestockItem(item)
+    setRestockQty(1)
+    setStep('restockConfirm')
+  }
+
+  const handleRestockSave = async () => {
+    if (!restockItem) return
+    setSaving(true)
+    try {
+      const sourceId = restockItem.id || restockItem.ids?.[0]
+
+      // Fetch photo from original item
+      let itemPhotoData = null
+      if (sourceId) {
+        const { data: original } = await supabase
+          .from('kickstart_intake')
+          .select('item_photo_data')
+          .eq('id', sourceId)
+          .single()
+        itemPhotoData = original?.item_photo_data || null
+      }
+
+      const baseRow = {
+        cost: restockItem.cost ? parseFloat(restockItem.cost) : null,
+        brand: restockItem.brand || null,
+        description: restockItem.description || null,
+        color: restockItem.color || null,
+        size: restockItem.size || null,
+        condition: restockItem.condition || null,
+        msrp: restockItem.msrp ? parseFloat(restockItem.msrp) : null,
+        item_photo_data: itemPhotoData,
+        notes: restockItem.notes || null,
+        status: 'enriched',
+      }
+
+      const rows = Array.from({ length: restockQty }, () => ({ ...baseRow }))
+      const { error } = await supabase.from('kickstart_intake').insert(rows)
+      if (error) throw error
+
+      setSessionCount(prev => prev + restockQty)
+      setShowSaved(true)
+      setTimeout(() => {
+        setShowSaved(false)
+        setRestockItem(null)
+        setStep('bin')
+      }, 400)
+    } catch (err) {
+      alert('Save error: ' + (err?.message || JSON.stringify(err)))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleEditSelect = (item) => {
+    setEditingItem({ ...item })
+    setStep('editItem')
+  }
+
+  const handleEditSave = async () => {
+    if (!editingItem) return
+    setSaving(true)
+    try {
+      const { error } = await supabase.from('kickstart_intake').update({
+        cost: editingItem.cost ? parseFloat(editingItem.cost) : null,
+        brand: editingItem.brand || null,
+        description: editingItem.description || null,
+        color: editingItem.color || null,
+        size: editingItem.size || null,
+        condition: editingItem.condition || null,
+        msrp: editingItem.msrp ? parseFloat(editingItem.msrp) : null,
+        notes: editingItem.notes || null,
+      }).eq('id', editingItem.id)
+      if (error) throw error
+      setShowSaved(true)
+      setTimeout(() => {
+        setShowSaved(false)
+        setEditingItem(null)
+        setStep('bin')
+      }, 400)
+    } catch (err) {
+      alert('Save error: ' + err.message)
+    } finally {
+      setSaving(false)
+    }
+  }
 
   const getCost = () => {
     if (showCustom) return parseFloat(customPrice) || 0
@@ -101,12 +329,7 @@ export default function KickstartSort() {
         status: 'enriched',
       }
 
-      const firstRow = { ...baseRow }
-      const rows = [firstRow]
-      if (quantity > 1) {
-        const lightRow = { ...baseRow, item_photo_data: null }
-        for (let i = 1; i < quantity; i++) rows.push({ ...lightRow })
-      }
+      const rows = Array.from({ length: quantity }, () => ({ ...baseRow }))
 
       let { error } = await supabase.from('kickstart_intake').insert(rows)
       if (error) throw error
@@ -154,6 +377,10 @@ export default function KickstartSort() {
         if (itemPhotoRef.current) itemPhotoRef.current.value = ''
         setStep('brand')
         break
+      case 'restock': setStep('bin'); break
+      case 'restockConfirm': setRestockItem(null); setStep('restock'); break
+      case 'editRecent': setStep('bin'); break
+      case 'editItem': setEditingItem(null); setStep('editRecent'); break
     }
   }
 
@@ -162,6 +389,10 @@ export default function KickstartSort() {
       case 'bin': return '← Home'
       case 'brand': return '← Bin'
       case 'details': return '← Brand'
+      case 'restock': return '← Back'
+      case 'restockConfirm': return '← Back'
+      case 'editRecent': return '← Back'
+      case 'editItem': return '← Back'
       default: return '← Back'
     }
   }
@@ -220,16 +451,16 @@ export default function KickstartSort() {
 
       {/* === STEP 1: BIN SELECTION === */}
       {step === 'bin' && (
-        <div className="relative z-10 flex-1 flex flex-col items-center pt-4 px-4 overflow-y-auto">
-          <h2 className="text-xl font-bold text-white mb-1 tracking-tight">Select Price Bin</h2>
-          <p className="text-slate-400 mb-4 text-sm">What did we pay per item?</p>
+        <div className="relative z-10 flex-1 flex flex-col items-center pt-3 px-4 overflow-y-auto">
+          <h2 className="text-lg font-bold text-white mb-0.5 tracking-tight">Select Price Bin</h2>
+          <p className="text-slate-400 mb-2 text-sm">What did we pay per item?</p>
 
-          <div className="w-full max-w-sm grid grid-cols-2 gap-3 mb-3">
+          <div className="w-full max-w-sm grid grid-cols-3 gap-2 mb-3">
             {PRICE_BINS.map(price => (
               <button
                 key={price}
                 onClick={() => handleBinSelect(price)}
-                className="py-5 rounded-2xl bg-gradient-to-br from-fuchsia-500/80 to-pink-500/80 border-2 border-fuchsia-400/40 text-white font-black text-3xl shadow-xl shadow-fuchsia-500/20 hover:scale-105 active:scale-95 transition-all"
+                className="py-3 rounded-xl bg-gradient-to-br from-fuchsia-500/80 to-pink-500/80 border-2 border-fuchsia-400/40 text-white font-black text-xl shadow-lg shadow-fuchsia-500/20 hover:scale-105 active:scale-95 transition-all"
               >
                 ${price}
               </button>
@@ -272,6 +503,22 @@ export default function KickstartSort() {
               </div>
             </div>
           )}
+
+          {/* Restock + Edit buttons */}
+          <div className="w-full max-w-sm flex gap-2 mt-3">
+            <button
+              onClick={() => { resetFilters(); loadAllItems(); setStep('restock') }}
+              className="flex-1 py-3 rounded-2xl bg-cyan-500/20 border border-cyan-500/30 text-cyan-300 font-semibold text-base hover:bg-cyan-500/30 transition-all"
+            >
+              Restock
+            </button>
+            <button
+              onClick={() => { resetFilters(); loadAllItems(); setStep('editRecent') }}
+              className="flex-1 py-3 rounded-2xl bg-orange-500/20 border border-orange-500/30 text-orange-300 font-semibold text-base hover:bg-orange-500/30 transition-all"
+            >
+              Edit Recent
+            </button>
+          </div>
         </div>
       )}
 
@@ -291,6 +538,407 @@ export default function KickstartSort() {
                 {brand}
               </button>
             ))}
+          </div>
+        </div>
+      )}
+
+      {/* === RESTOCK / EDIT ITEM PICKER (shared UI) === */}
+      {(step === 'restock' || step === 'editRecent') && (
+        <div className="relative z-10 flex-1 min-h-0 flex flex-col overflow-hidden">
+          {/* Filter pills + search */}
+          <div className="px-4 py-2 bg-slate-800/50 border-b border-white/10 space-y-2 flex-shrink-0">
+            {/* Filter pills row — Size → Category → Condition */}
+            <div className="flex gap-2">
+              {/* Size pill */}
+              <div className="relative">
+                <button
+                  onClick={() => setOpenFilter(openFilter === 'size' ? null : 'size')}
+                  className={`px-3 py-1.5 rounded-lg text-sm font-semibold transition-all whitespace-nowrap flex items-center gap-1 ${
+                    filterSize
+                      ? 'bg-fuchsia-500 text-white'
+                      : 'bg-white/10 text-white/60 border border-white/20'
+                  }`}
+                >
+                  {filterSize || 'Size'}
+                  {filterSize ? (
+                    <span onClick={(e) => { e.stopPropagation(); setFilterSize(null); setOpenFilter(null) }} className="ml-0.5 opacity-70 hover:opacity-100">&times;</span>
+                  ) : (
+                    <span className="text-[10px] opacity-50">&#9662;</span>
+                  )}
+                </button>
+                {openFilter === 'size' && (
+                  <div className="absolute top-full left-0 mt-1 bg-slate-800 border border-white/20 rounded-xl p-2 z-50 shadow-xl shadow-black/50 flex flex-wrap gap-1.5 min-w-[200px]">
+                    {SIZES.map(s => (
+                      <button
+                        key={s}
+                        onClick={() => { setFilterSize(s); setOpenFilter(null) }}
+                        className={`px-3 py-1.5 rounded-lg text-sm font-semibold transition-all ${
+                          filterSize === s ? 'bg-fuchsia-500 text-white' : 'bg-white/10 text-white/60 hover:bg-white/20'
+                        }`}
+                      >
+                        {s}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Category pill */}
+              <div className="relative">
+                <button
+                  onClick={() => setOpenFilter(openFilter === 'category' ? null : 'category')}
+                  className={`px-3 py-1.5 rounded-lg text-sm font-semibold transition-all whitespace-nowrap flex items-center gap-1 ${
+                    filterCategory
+                      ? 'bg-fuchsia-500 text-white'
+                      : 'bg-white/10 text-white/60 border border-white/20'
+                  }`}
+                >
+                  {filterCategory || 'Category'}
+                  {filterCategory ? (
+                    <span onClick={(e) => { e.stopPropagation(); setFilterCategory(null); setOpenFilter(null) }} className="ml-0.5 opacity-70 hover:opacity-100">&times;</span>
+                  ) : (
+                    <span className="text-[10px] opacity-50">&#9662;</span>
+                  )}
+                </button>
+                {openFilter === 'category' && (
+                  <div className="absolute top-full left-0 mt-1 bg-slate-800 border border-white/20 rounded-xl p-2 z-50 shadow-xl shadow-black/50 flex flex-wrap gap-1.5 min-w-[200px] max-w-[280px]">
+                    {categories.slice(0, 8).map(cat => (
+                      <button
+                        key={cat.name}
+                        onClick={() => { setFilterCategory(cat.name); setOpenFilter(null) }}
+                        className={`px-3 py-1.5 rounded-lg text-sm font-semibold transition-all whitespace-nowrap ${
+                          filterCategory === cat.name ? 'bg-fuchsia-500 text-white' : 'bg-white/10 text-white/60 hover:bg-white/20'
+                        }`}
+                      >
+                        {cat.name}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Condition pill */}
+              <div className="relative">
+                <button
+                  onClick={() => setOpenFilter(openFilter === 'condition' ? null : 'condition')}
+                  className={`px-3 py-1.5 rounded-lg text-sm font-semibold transition-all whitespace-nowrap flex items-center gap-1 ${
+                    filterCondition
+                      ? 'bg-fuchsia-500 text-white'
+                      : 'bg-white/10 text-white/60 border border-white/20'
+                  }`}
+                >
+                  {filterCondition || 'Condition'}
+                  {filterCondition ? (
+                    <span onClick={(e) => { e.stopPropagation(); setFilterCondition(null); setOpenFilter(null) }} className="ml-0.5 opacity-70 hover:opacity-100">&times;</span>
+                  ) : (
+                    <span className="text-[10px] opacity-50">&#9662;</span>
+                  )}
+                </button>
+                {openFilter === 'condition' && (
+                  <div className="absolute top-full left-0 mt-1 bg-slate-800 border border-white/20 rounded-xl p-2 z-50 shadow-xl shadow-black/50 flex flex-wrap gap-1.5">
+                    {CONDITIONS.map(c => (
+                      <button
+                        key={c}
+                        onClick={() => { setFilterCondition(c); setOpenFilter(null) }}
+                        className={`px-3 py-1.5 rounded-lg text-sm font-semibold transition-all whitespace-nowrap ${
+                          filterCondition === c ? 'bg-fuchsia-500 text-white' : 'bg-white/10 text-white/60 hover:bg-white/20'
+                        }`}
+                      >
+                        {c}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Search box */}
+            <input
+              type="text"
+              placeholder="Search by brand, description, color..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full px-4 py-2.5 rounded-xl bg-white/10 border border-white/20 text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-fuchsia-500 text-sm"
+            />
+          </div>
+
+          {/* Dismiss popover when tapping items list */}
+          {openFilter && (
+            <div className="fixed inset-0 z-40" onClick={() => setOpenFilter(null)} />
+          )}
+
+          {/* Items list */}
+          <div className="flex-1 overflow-y-auto p-4 min-h-0">
+            {itemsLoading ? (
+              <div className="text-center py-12"><p className="text-white/50 text-lg">Loading...</p></div>
+            ) : (() => {
+              const items = step === 'restock' ? getGroupedItems() : getFilteredItems()
+              return items.length === 0 ? (
+                <div className="text-center py-12">
+                  <p className="text-white/50 text-lg mb-2">No items found</p>
+                  <button onClick={resetFilters} className="text-fuchsia-400 text-sm underline">Clear filters</button>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <p className="text-white/40 text-xs mb-1">{items.length} result{items.length !== 1 ? 's' : ''}</p>
+                  {items.map((item, i) => (
+                    <button
+                      key={item.id || item.ids?.[0] || i}
+                      onClick={() => step === 'restock' ? handleRestockSelect(item) : handleEditSelect(item)}
+                      className="w-full text-left bg-white/5 border border-white/10 rounded-2xl p-3 hover:bg-fuchsia-500/10 hover:border-fuchsia-500/30 active:scale-[0.98] transition-all"
+                    >
+                      <div className="flex items-center gap-3">
+                        <LazyPhoto intakeId={item.id || item.ids?.[0]} />
+                        <div className="min-w-0 flex-1">
+                          <p className="text-white font-semibold text-sm truncate">
+                            {[item.description, item.color].filter(Boolean).join(' — ') || 'Unknown'}
+                          </p>
+                          {item.notes && (
+                            <p className="text-fuchsia-300/70 text-xs truncate">{item.notes}</p>
+                          )}
+                          <p className="text-slate-400 text-xs">
+                            {[item.brand, item.size, item.condition].filter(Boolean).join(' · ')}
+                          </p>
+                          <p className="text-slate-500 text-xs mt-0.5">
+                            ${parseFloat(item.cost || 0).toFixed(2)}{item.msrp ? ` · MSRP $${parseFloat(item.msrp).toFixed(2)}` : ''}
+                          </p>
+                        </div>
+                        {item.ids && item.ids.length > 1 && (
+                          <span className="text-fuchsia-300 font-bold text-sm bg-fuchsia-500/20 px-3 py-1 rounded-full shrink-0">
+                            {item.ids.length}
+                          </span>
+                        )}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )
+            })()}
+          </div>
+        </div>
+      )}
+
+      {/* === RESTOCK CONFIRM (read-only) === */}
+      {step === 'restockConfirm' && restockItem && (
+        <div className="relative z-10 flex-1 min-h-0 flex flex-col">
+          <div className="flex-1 overflow-y-auto p-4">
+            <h2 className="text-lg font-bold text-white mb-3">Restock Item</h2>
+
+            {/* Photo + summary card */}
+            <div className="bg-white/5 border border-white/10 rounded-2xl p-4 mb-4">
+              <div className="flex gap-4 mb-3">
+                <LazyPhoto intakeId={restockItem.id || restockItem.ids?.[0]} />
+                <div className="min-w-0 flex-1">
+                  <p className="text-white font-semibold text-base">
+                    {[restockItem.description, restockItem.color].filter(Boolean).join(' — ') || 'Unknown'}
+                  </p>
+                  {restockItem.notes && (
+                    <p className="text-fuchsia-300/70 text-sm">{restockItem.notes}</p>
+                  )}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2 text-sm">
+                <div><span className="text-slate-500">Brand</span><p className="text-white">{restockItem.brand || '—'}</p></div>
+                <div><span className="text-slate-500">Size</span><p className="text-white">{restockItem.size || '—'}</p></div>
+                <div><span className="text-slate-500">Category</span><p className="text-white">{restockItem.description || '—'}</p></div>
+                <div><span className="text-slate-500">Condition</span><p className="text-white">{restockItem.condition || '—'}</p></div>
+                <div><span className="text-slate-500">Color</span><p className="text-white">{restockItem.color || '—'}</p></div>
+                <div><span className="text-slate-500">Cost</span><p className="text-white">${parseFloat(restockItem.cost || 0).toFixed(2)}</p></div>
+                <div><span className="text-slate-500">MSRP</span><p className="text-white">{restockItem.msrp ? `$${parseFloat(restockItem.msrp).toFixed(2)}` : '—'}</p></div>
+                {restockItem.ids && restockItem.ids.length > 0 && (
+                  <div><span className="text-slate-500">In stock</span><p className="text-white">{restockItem.ids.length}</p></div>
+                )}
+              </div>
+            </div>
+
+            {/* Quantity picker */}
+            <div className="flex flex-col items-center">
+              <p className="text-slate-400 text-sm mb-3">How many are you adding?</p>
+              <div className="flex items-center gap-5 mb-2">
+                <button
+                  onClick={() => setRestockQty(q => Math.max(1, q - 1))}
+                  className="w-11 h-11 rounded-full bg-white/10 border border-white/20 text-white text-2xl font-bold flex items-center justify-center hover:bg-white/20 active:scale-95 transition-all"
+                >
+                  −
+                </button>
+                <input
+                  type="number"
+                  value={restockQty}
+                  onChange={e => { const v = parseInt(e.target.value, 10); setRestockQty(v > 0 ? v : 1) }}
+                  className="w-20 text-center bg-white/10 border border-white/20 rounded-xl py-2 text-3xl font-black text-white focus:outline-none focus:border-fuchsia-400/50"
+                />
+                <button
+                  onClick={() => setRestockQty(q => q + 1)}
+                  className="w-11 h-11 rounded-full bg-gradient-to-br from-fuchsia-500 to-pink-500 text-white text-2xl font-bold flex items-center justify-center hover:scale-105 active:scale-95 transition-all shadow-lg shadow-fuchsia-500/30"
+                >
+                  +
+                </button>
+              </div>
+              {restockQty > 1 && (
+                <p className="text-slate-400 text-sm">
+                  Total: <span className="text-white font-bold">${(parseFloat(restockItem.cost || 0) * restockQty).toFixed(2)}</span> for {restockQty} items
+                </p>
+              )}
+            </div>
+          </div>
+
+          {/* Save button */}
+          <div className="shrink-0 p-4 pt-2">
+            <button
+              onClick={handleRestockSave}
+              disabled={saving}
+              className={`w-full py-4 rounded-2xl font-bold text-xl transition-all ${
+                saving
+                  ? 'bg-white/10 text-white/50 cursor-wait'
+                  : 'bg-gradient-to-r from-fuchsia-500 to-pink-500 text-white shadow-2xl shadow-fuchsia-500/30 hover:scale-[1.02] active:scale-[0.98]'
+              }`}
+            >
+              {saving ? 'Saving...' : restockQty > 1 ? `Add ${restockQty} Items` : 'Add 1 Item'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* === EDIT ITEM === */}
+      {step === 'editItem' && editingItem && (
+        <div className="relative z-10 flex-1 min-h-0 flex flex-col">
+          <div className="flex-1 overflow-y-auto p-4">
+            <h2 className="text-lg font-bold text-white mb-3">Edit Item #{editingItem.id}</h2>
+            <div className="flex flex-col items-center">
+
+              {/* Cost */}
+              <div className="w-full max-w-sm mb-3">
+                <label className="text-slate-400 text-xs uppercase tracking-wider mb-1 block">Cost</label>
+                <div className="relative">
+                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-white/50">$</span>
+                  <input
+                    type="number"
+                    value={editingItem.cost || ''}
+                    onChange={e => setEditingItem(prev => ({ ...prev, cost: e.target.value }))}
+                    className="w-full bg-white/10 border border-white/20 rounded-xl pl-8 pr-4 py-3 text-white text-base font-semibold placeholder-slate-500 focus:outline-none focus:border-orange-400/50"
+                  />
+                </div>
+              </div>
+
+              {/* Brand */}
+              <div className="w-full max-w-sm mb-3">
+                <label className="text-slate-400 text-xs uppercase tracking-wider mb-1 block">Brand</label>
+                <select
+                  value={editingItem.brand || ''}
+                  onChange={e => setEditingItem(prev => ({ ...prev, brand: e.target.value }))}
+                  className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-white text-base font-semibold appearance-none focus:outline-none focus:border-orange-400/50"
+                >
+                  <option value="" className="bg-[#1a1f2e]">Select...</option>
+                  <option value="Free People" className="bg-[#1a1f2e]">Free People</option>
+                  <option value="Urban Outfitters" className="bg-[#1a1f2e]">Urban Outfitters</option>
+                  <option value="Anthropologie" className="bg-[#1a1f2e]">Anthropologie</option>
+                </select>
+              </div>
+
+              {/* Size */}
+              <div className="w-full max-w-sm mb-3">
+                <label className="text-slate-400 text-xs uppercase tracking-wider mb-2 block">Size</label>
+                <div className="grid grid-cols-4 gap-2">
+                  {SIZES.map(s => (
+                    <button
+                      key={s}
+                      onClick={() => setEditingItem(prev => ({ ...prev, size: prev.size === s ? '' : s }))}
+                      className={`py-2.5 rounded-xl text-sm font-bold transition-all active:scale-95 ${
+                        editingItem.size === s
+                          ? 'bg-orange-500 text-white'
+                          : 'bg-white/10 text-white/60 border border-white/10'
+                      }`}
+                    >
+                      {s}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Category */}
+              <div className="w-full max-w-sm mb-3">
+                <label className="text-slate-400 text-xs uppercase tracking-wider mb-1 block">Category</label>
+                <select
+                  value={editingItem.description || ''}
+                  onChange={e => setEditingItem(prev => ({ ...prev, description: e.target.value }))}
+                  className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-white text-base font-semibold appearance-none focus:outline-none focus:border-orange-400/50"
+                >
+                  <option value="" className="bg-[#1a1f2e]">Select...</option>
+                  {CATEGORIES.map(cat => <option key={cat} value={cat} className="bg-[#1a1f2e]">{cat}</option>)}
+                </select>
+              </div>
+
+              {/* Condition */}
+              <div className="w-full max-w-sm mb-3">
+                <label className="text-slate-400 text-xs uppercase tracking-wider mb-1 block">Condition</label>
+                <select
+                  value={editingItem.condition || ''}
+                  onChange={e => setEditingItem(prev => ({ ...prev, condition: e.target.value }))}
+                  className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-white text-base font-semibold appearance-none focus:outline-none focus:border-orange-400/50"
+                >
+                  <option value="" className="bg-[#1a1f2e]">Select...</option>
+                  {CONDITIONS.map(c => <option key={c} value={c} className="bg-[#1a1f2e]">{c}</option>)}
+                </select>
+              </div>
+
+              {/* Color */}
+              <div className="w-full max-w-sm mb-3">
+                <label className="text-slate-400 text-xs uppercase tracking-wider mb-1 block">Color</label>
+                <select
+                  value={editingItem.color || ''}
+                  onChange={e => setEditingItem(prev => ({ ...prev, color: e.target.value }))}
+                  className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-white text-base font-semibold appearance-none focus:outline-none focus:border-orange-400/50"
+                >
+                  <option value="" className="bg-[#1a1f2e]">Select...</option>
+                  {COLOR_GROUPS.map(group => (
+                    <optgroup key={group.label} label={group.label} className="bg-[#1a1f2e] text-slate-400">
+                      {group.colors.map(c => <option key={c} value={c} className="bg-[#1a1f2e] text-white">{c}</option>)}
+                    </optgroup>
+                  ))}
+                </select>
+              </div>
+
+              {/* MSRP */}
+              <div className="w-full max-w-sm mb-3">
+                <label className="text-slate-400 text-xs uppercase tracking-wider mb-1 block">MSRP</label>
+                <div className="relative">
+                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-white/50">$</span>
+                  <input
+                    type="number"
+                    value={editingItem.msrp || ''}
+                    onChange={e => setEditingItem(prev => ({ ...prev, msrp: e.target.value }))}
+                    className="w-full bg-white/10 border border-white/20 rounded-xl pl-8 pr-4 py-3 text-white text-base font-semibold placeholder-slate-500 focus:outline-none focus:border-orange-400/50"
+                  />
+                </div>
+              </div>
+
+              {/* Notes */}
+              <div className="w-full max-w-sm mb-3">
+                <label className="text-slate-400 text-xs uppercase tracking-wider mb-1 block">Notes</label>
+                <input
+                  type="text"
+                  value={editingItem.notes || ''}
+                  onChange={e => setEditingItem(prev => ({ ...prev, notes: e.target.value }))}
+                  className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-white text-sm placeholder-slate-500 focus:outline-none focus:border-orange-400/50"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Save button */}
+          <div className="shrink-0 p-4 pt-2">
+            <button
+              onClick={handleEditSave}
+              disabled={saving}
+              className={`w-full py-4 rounded-2xl font-bold text-xl transition-all ${
+                saving
+                  ? 'bg-white/10 text-white/50 cursor-wait'
+                  : 'bg-gradient-to-r from-orange-500 to-orange-600 text-white shadow-2xl shadow-orange-500/30 hover:scale-[1.02] active:scale-[0.98]'
+              }`}
+            >
+              {saving ? 'Saving...' : 'Save Changes'}
+            </button>
           </div>
         </div>
       )}
@@ -338,19 +986,24 @@ export default function KickstartSort() {
               )}
             </div>
 
-            {/* Condition dropdown */}
-            <div className="w-full max-w-sm mb-3">
-              <label className="text-slate-400 text-xs uppercase tracking-wider mb-1 block">Condition *</label>
-              <select
-                value={condition}
-                onChange={e => setCondition(e.target.value)}
-                className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-white text-base font-semibold appearance-none focus:outline-none focus:border-fuchsia-400/50"
-              >
-                <option value="" className="bg-[#1a1f2e]">Select condition...</option>
-                {CONDITIONS.map(c => (
-                  <option key={c} value={c} className="bg-[#1a1f2e]">{c}</option>
+            {/* Size buttons */}
+            <div className="w-full max-w-sm mb-4">
+              <label className="text-slate-400 text-xs uppercase tracking-wider mb-2 block">Size *</label>
+              <div className="grid grid-cols-4 gap-2">
+                {SIZES.map(s => (
+                  <button
+                    key={s}
+                    onClick={() => setSize(size === s ? '' : s)}
+                    className={`py-2.5 rounded-xl text-sm font-bold transition-all active:scale-95 ${
+                      size === s
+                        ? 'bg-fuchsia-500 text-white'
+                        : 'bg-white/10 text-white/60 border border-white/10'
+                    }`}
+                  >
+                    {s}
+                  </button>
                 ))}
-              </select>
+              </div>
             </div>
 
             {/* Category dropdown */}
@@ -364,6 +1017,21 @@ export default function KickstartSort() {
                 <option value="" className="bg-[#1a1f2e]">Select category...</option>
                 {CATEGORIES.map(cat => (
                   <option key={cat} value={cat} className="bg-[#1a1f2e]">{cat}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Condition dropdown */}
+            <div className="w-full max-w-sm mb-3">
+              <label className="text-slate-400 text-xs uppercase tracking-wider mb-1 block">Condition *</label>
+              <select
+                value={condition}
+                onChange={e => setCondition(e.target.value)}
+                className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-white text-base font-semibold appearance-none focus:outline-none focus:border-fuchsia-400/50"
+              >
+                <option value="" className="bg-[#1a1f2e]">Select condition...</option>
+                {CONDITIONS.map(c => (
+                  <option key={c} value={c} className="bg-[#1a1f2e]">{c}</option>
                 ))}
               </select>
             </div>
@@ -385,26 +1053,6 @@ export default function KickstartSort() {
                   </optgroup>
                 ))}
               </select>
-            </div>
-
-            {/* Size buttons */}
-            <div className="w-full max-w-sm mb-4">
-              <label className="text-slate-400 text-xs uppercase tracking-wider mb-2 block">Size *</label>
-              <div className="grid grid-cols-4 gap-2">
-                {SIZES.map(s => (
-                  <button
-                    key={s}
-                    onClick={() => setSize(size === s ? '' : s)}
-                    className={`py-2.5 rounded-xl text-sm font-bold transition-all active:scale-95 ${
-                      size === s
-                        ? 'bg-fuchsia-500 text-white'
-                        : 'bg-white/10 text-white/60 border border-white/10'
-                    }`}
-                  >
-                    {s}
-                  </button>
-                ))}
-              </div>
             </div>
 
             {/* MSRP */}

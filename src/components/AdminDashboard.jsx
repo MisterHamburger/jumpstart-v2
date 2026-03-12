@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 
 const DATE_RANGES = [
-  { label: 'All time', value: 'all' },
+  { label: 'All time (Beginning 2/7/26)', value: 'all' },
   { label: 'This month', value: 'month' },
   { label: 'Last month', value: 'lastmonth' },
   { label: 'Last 7 days', value: '7d' },
@@ -10,10 +10,8 @@ const DATE_RANGES = [
   { label: 'Custom', value: 'custom' },
 ]
 
-const BUSINESS_START = '2026-02-07'
-
 function getDateRange(range) {
-  if (range === 'all') return { start: BUSINESS_START, end: null }
+  if (range === 'all') return { start: null, end: null }
   const now = new Date()
   let start, end = null
   if (range === 'month') {
@@ -26,11 +24,8 @@ function getDateRange(range) {
   } else if (range === '30d') {
     start = new Date(now); start.setDate(start.getDate() - 30)
   }
-  // Clamp start date: never go before business start
-  let startStr = start ? start.toISOString().split('T')[0] : null
-  if (startStr && startStr < BUSINESS_START) startStr = BUSINESS_START
   return {
-    start: startStr,
+    start: start ? start.toISOString().split('T')[0] : null,
     end: end ? end.toISOString().split('T')[0] : null,
   }
 }
@@ -99,7 +94,7 @@ export default function AdminDashboard() {
 
     setData({
       jumpstart, kickstart, combined,
-      totalExpenses: Number(raw.expenses) || 0,
+      totalOpex: Number(raw.expenses) || 0,
       totalPayroll: Number(raw.payroll) || 0,
     })
     setLoading(false)
@@ -116,7 +111,7 @@ export default function AdminDashboard() {
   const avgSalePrice = stats && stats.items > 0 ? stats.revenue / stats.items : 0
   const profitPerUnit = stats && stats.items > 0 ? stats.grossProfit / stats.items : 0
   const margin = stats && stats.revenue > 0 ? (stats.grossProfit / stats.revenue) * 100 : 0
-  const netProfit = stats ? stats.grossProfit - (data?.totalExpenses || 0) - (data?.totalPayroll || 0) : 0
+  const netProfit = stats ? stats.grossProfit - (data?.totalOpex || 0) - (data?.totalPayroll || 0) : 0
 
   return (
     <div>
@@ -142,9 +137,6 @@ export default function AdminDashboard() {
           className="bg-slate-800 border border-white/[0.1] text-white text-sm rounded-lg px-3 py-1.5 focus:outline-none focus:border-violet-500">
           {DATE_RANGES.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
         </select>
-        {dateRange === 'all' && (
-          <span className="text-xs text-slate-500">(Beginning 2/7/26)</span>
-        )}
         {dateRange === 'custom' && (
           <div className="flex items-center gap-2">
             <input type="date" value={customStart} onChange={e => setCustomStart(e.target.value)}
@@ -204,9 +196,9 @@ export default function AdminDashboard() {
               {isSummary && (
                 <>
                   <div className="mt-4">
-                    <PLRow label="Expenses" value={-(data?.totalExpenses || 0)} />
+                    <PLRow label="OpEx" value={-(data?.totalOpex || 0)} />
                     <PLRow label="Payroll" value={-(data?.totalPayroll || 0)} />
-                    <PLRow label="Total Expenses" value={-((data?.totalExpenses || 0) + (data?.totalPayroll || 0))} bold />
+                    <PLRow label="Total Expenses" value={-((data?.totalOpex || 0) + (data?.totalPayroll || 0))} bold />
                   </div>
 
                   <div className="border-t border-white/[0.1] mt-2 pt-2">

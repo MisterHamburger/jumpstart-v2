@@ -928,15 +928,14 @@ function ExpenseUpload() {
           description: getField(row, 'name', 'Description', 'Vendor') || '',
           amount: parseFloat((getField(row, 'amount', 'Amount') || '0').toString().replace(/[$,]/g, '')) || 0,
           category: (getField(row, 'category', 'Category') || '').toUpperCase()
-        })).filter(e => e.date && e.amount && (e.category === 'EXPENSES' || e.category === 'PAYROLL'))
-          .filter(e => e.date >= '2026-02-07')
+        })).filter(e => e.date && e.amount && (e.category === 'OPEX' || e.category === 'PAYROLL'))
 
         if (parsed.length === 0) {
-          setStatus('⚠️ No EXPENSES or PAYROLL rows found (on or after 2/7/26)')
+          setStatus('⚠️ No OPEX or PAYROLL rows found')
           return
         }
 
-        setStatus(`Found ${parsed.length} expense/payroll rows (on or after 2/7/26). Checking for duplicates...`)
+        setStatus(`Found ${parsed.length} expense/payroll rows. Checking for duplicates...`)
 
         // Fetch all existing records to deduplicate (date + description + amount)
         const existing = await fetchAll(() => supabase.from('expenses').select('date, description, amount'))
@@ -969,12 +968,28 @@ function ExpenseUpload() {
     <div className="relative overflow-hidden rounded-2xl bg-gradient-to-b from-slate-800/60 to-slate-900/40 border border-white/[0.08] p-5 shadow-xl shadow-black/30">
       <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent" />
       <h3 className="font-bold text-lg mb-2">Upload Expenses CSV</h3>
-      <p className="text-sm text-slate-400 mb-4">Upload Copilot transactions CSV. Only EXPENSES and PAYROLL rows are imported. Duplicates are automatically skipped.</p>
+      <p className="text-sm text-slate-400 mb-4">Upload Copilot transactions CSV. Only OPEX and PAYROLL rows are imported. Everything else is ignored. Duplicates are automatically skipped.</p>
       <DropZone onFile={handleFile} label="Drop expenses CSV here" />
       {status && <p className="text-sm text-slate-300 mt-3">{status}</p>}
 
-      <div className="mt-5 pt-4 border-t border-white/10">
-        <h4 className="text-sm font-semibold text-white/70 mb-2">Upload History</h4>
+      <div className="mt-5 pt-4 border-t border-white/10 flex items-center justify-between mb-2">
+        <h4 className="text-sm font-semibold text-white/70">Upload History</h4>
+        <button
+          onClick={async () => {
+            if (!window.confirm('⚠️ DELETE ALL EXPENSE DATA?\n\nThis will permanently remove ALL OpEx and Payroll rows from the database. You will need to re-upload your Copilot CSV to restore the data.\n\nAre you sure?')) return
+            setStatus('Deleting all expenses...')
+            const { error } = await supabase.from('expenses').delete().neq('id', 0)
+            if (error) { setStatus(`❌ Delete failed: ${error.message}`); return }
+            await supabase.from('expense_upload_log').delete().neq('id', 0)
+            setStatus('✅ All expense data deleted. Upload a new CSV to reload.')
+            fetchLog()
+          }}
+          className="text-xs text-red-400 hover:text-red-300 hover:bg-red-500/10 px-2 py-1 rounded transition-colors"
+        >
+          Delete All
+        </button>
+      </div>
+      <div>
         {logLoading ? (
           <p className="text-xs text-slate-500">Loading...</p>
         ) : uploadLog.length === 0 ? (
@@ -982,13 +997,14 @@ function ExpenseUpload() {
         ) : (
           <div className="space-y-1.5">
             {uploadLog.map(log => (
-              <div key={log.id} className="flex items-center justify-between text-xs">
-                <div className="text-slate-400">
+              <div key={log.id} className="flex items-center justify-between text-xs gap-3">
+                <div className="text-slate-400 flex-shrink-0">
                   {new Date(log.uploaded_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
                   {' '}
                   <span className="text-slate-500">{new Date(log.uploaded_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}</span>
                 </div>
-                <div className="text-right">
+                {log.filename && <span className="text-slate-500 truncate min-w-0">{log.filename}</span>}
+                <div className="text-right flex-shrink-0">
                   {log.rows_added > 0 && <span className="text-emerald-400 font-medium">+{log.rows_added}</span>}
                   {log.rows_added > 0 && log.rows_skipped > 0 && <span className="text-slate-600 mx-1">·</span>}
                   {log.rows_skipped > 0 && <span className="text-slate-500">{log.rows_skipped} skipped</span>}
