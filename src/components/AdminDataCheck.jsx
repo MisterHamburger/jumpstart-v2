@@ -426,7 +426,7 @@ export default function AdminDataCheck() {
         <button
           onClick={() => dashData ? runChecks(dashData) : loadAndRun()}
           disabled={running}
-          className="px-5 py-2.5 rounded-xl text-sm font-semibold bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white shadow-lg shadow-purple-500/25 hover:shadow-purple-500/40 transition-all disabled:opacity-50"
+          className="px-5 py-2.5 rounded-xl text-sm font-semibold bg-cyan-600 text-white shadow-lg shadow-cyan-600/30 hover:bg-cyan-500 hover:scale-105 active:scale-95 transition-all disabled:opacity-50"
         >
           {running ? 'Running...' : 'Run All Checks'}
         </button>

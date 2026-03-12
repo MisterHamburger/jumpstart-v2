@@ -321,13 +321,13 @@ export default function AdminProfitability() {
 
   // Styled dropdown classes - clean style without left border accent
   const dropdownStyles = `
-    relative bg-slate-800/50
-    border border-white/[0.08]
-    rounded-xl px-4 py-3 text-sm text-white 
-    focus:outline-none focus:border-cyan-500/50
+    relative bg-white/5
+    border border-white/10
+    rounded-2xl px-4 py-3 text-sm text-white
+    focus:outline-none focus:border-cyan-500/50 focus:ring-4 focus:ring-cyan-500/10
     transition-all duration-200 cursor-pointer
     shadow-lg shadow-black/20
-    hover:bg-slate-700/50 hover:border-white/[0.12]
+    hover:bg-white/[0.08] hover:border-white/[0.12]
     appearance-none
   `
 
@@ -343,10 +343,10 @@ export default function AdminProfitability() {
     <div className="min-h-screen">
       {/* Header row */}
       <div className="flex items-center justify-between mb-6">
-        <h2 className="text-2xl font-extrabold tracking-tight text-white">Profitability</h2>
+        <h2 className="text-2xl font-extrabold tracking-tight text-white font-heading">Profitability</h2>
         {/* Single row of tabs */}
-        <div className="relative p-[1px] rounded-2xl bg-gradient-to-r from-purple-500/60 via-fuchsia-500/60 to-cyan-500/60 shadow-lg shadow-purple-500/10">
-          <div className="flex gap-1 bg-[#080c14] rounded-2xl p-1.5">
+        <div className="relative p-[1px] rounded-3xl bg-gradient-to-r from-cyan-500/60 via-cyan-400/60 to-cyan-500/60 shadow-lg shadow-cyan-600/30">
+          <div className="flex gap-1 bg-[#080c14] rounded-3xl p-1.5">
             {[
               { key: 'summary', label: 'Summary' },
               { key: 'Jumpstart', label: 'Jumpstart' },
@@ -358,7 +358,7 @@ export default function AdminProfitability() {
                 onClick={() => { setActiveTab(tab.key); setPage(0); setSelectedShow('all') }}
                 className={`px-5 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200 ${
                   activeTab === tab.key
-                    ? 'bg-gradient-to-r from-purple-600 via-fuchsia-600 to-purple-600 text-white shadow-lg shadow-purple-500/30'
+                    ? 'bg-cyan-600 hover:bg-cyan-500 text-white shadow-lg shadow-cyan-600/30'
                     : 'text-slate-400 hover:text-white hover:bg-white/5'
                 }`}
               >
@@ -381,9 +381,9 @@ export default function AdminProfitability() {
       {s && (
         <div className="mb-6 space-y-4">
           {/* Hero Card */}
-          <div className="relative rounded-3xl shadow-2xl shadow-purple-900/20">
+          <div className="relative rounded-3xl shadow-2xl shadow-cyan-900/20">
             {/* Gradient border */}
-            <div className="absolute inset-0 bg-gradient-to-r from-purple-600 via-fuchsia-500 to-cyan-500 rounded-3xl" />
+            <div className="absolute inset-0 bg-gradient-to-r from-cyan-600 via-cyan-500 to-cyan-400 rounded-3xl" />
             
             {/* Inner card */}
             <div className="relative m-[1.5px] rounded-3xl bg-gradient-to-br from-[#1a1035] via-[#0f1629] to-[#0a1a2e] p-7">
@@ -391,14 +391,14 @@ export default function AdminProfitability() {
               <div className="absolute inset-x-0 top-0 h-[1px] bg-gradient-to-r from-transparent via-white/20 to-transparent" />
               
               {/* Glow orbs */}
-              <div className="absolute top-0 right-1/4 w-80 h-80 bg-purple-600/25 rounded-full blur-[100px] pointer-events-none" />
+              <div className="absolute top-0 right-1/4 w-80 h-80 bg-cyan-600/25 rounded-full blur-[100px] pointer-events-none" />
               <div className="absolute bottom-0 left-1/4 w-80 h-80 bg-cyan-600/20 rounded-full blur-[100px] pointer-events-none" />
-              <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-40 h-40 bg-fuchsia-500/15 rounded-full blur-[60px] pointer-events-none" />
+              <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-40 h-40 bg-cyan-500/15 rounded-full blur-[60px] pointer-events-none" />
               
               {/* Content */}
               <div className="relative flex items-center justify-between">
                 <div>
-                  <div className="text-xs uppercase tracking-[0.25em] font-semibold text-purple-300/50 mb-3">Total Profit</div>
+                  <div className="text-xs uppercase tracking-[0.25em] font-semibold text-cyan-300/50 mb-3">Total Profit</div>
                   <div 
                     className={`text-5xl font-black tracking-tight ${Number(s.total_profit) >= 0 ? 'text-cyan-400' : 'text-pink-400'}`}
                     style={{ 
@@ -439,7 +439,7 @@ export default function AdminProfitability() {
       <div className="flex gap-3 mb-5 items-center flex-wrap">
         {/* Search Input */}
         <div className="relative flex-1 min-w-[240px]">
-          <div className="relative flex items-center bg-slate-800/50 border border-white/[0.08] rounded-xl shadow-lg shadow-black/20 focus-within:border-cyan-500/50 transition-all">
+          <div className="relative flex items-center bg-white/5 border border-white/10 rounded-2xl shadow-lg shadow-black/20 focus-within:border-cyan-500/50 focus-within:ring-4 focus-within:ring-cyan-500/10 transition-all">
             <svg className="ml-4 w-4 h-4 text-slate-500 group-focus-within:text-cyan-400 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
             </svg>
@@ -466,7 +466,7 @@ export default function AdminProfitability() {
         </select>
 
         {/* Date Range */}
-        <div className="flex items-center bg-slate-800/50 border border-white/[0.08] rounded-xl px-4 py-2 shadow-lg shadow-black/20 hover:border-white/[0.12] transition-all">
+        <div className="flex items-center bg-white/5 border border-white/10 rounded-2xl px-4 py-2 shadow-lg shadow-black/20 hover:border-white/[0.12] transition-all">
           <input
             type="date"
             value={dateFrom}
@@ -500,7 +500,7 @@ export default function AdminProfitability() {
           className={`px-4 py-3 rounded-xl text-sm font-medium transition-all duration-200 border ${
             !hideWacItems
               ? 'bg-cyan-500/20 border-cyan-500/50 text-cyan-300'
-              : 'bg-slate-800/50 border-white/[0.08] text-slate-400 hover:text-white hover:border-white/[0.12]'
+              : 'bg-white/5 border-white/10 text-slate-400 hover:text-white hover:border-white/[0.12]'
           }`}
         >
           {hideWacItems ? 'Include WAC (per show avg)' : '✓ WAC (per show avg)'}
@@ -511,7 +511,7 @@ export default function AdminProfitability() {
       {(selectedShow !== 'all' || search || dateFrom || dateTo) && (
         <div className="flex gap-2 mb-5 flex-wrap">
           {selectedShow !== 'all' && (
-            <FilterPill color="purple" onClear={() => setSelectedShow('all')}>
+            <FilterPill color="cyan" onClear={() => setSelectedShow('all')}>
               {formatShowName(selectedShow)}
             </FilterPill>
           )}
@@ -532,8 +532,8 @@ export default function AdminProfitability() {
       {loading ? (
         <div className="flex items-center justify-center py-24">
           <div className="relative">
-            <div className="w-12 h-12 border-2 border-purple-500/20 rounded-full" />
-            <div className="absolute inset-0 w-12 h-12 border-2 border-transparent border-t-purple-500 rounded-full animate-spin" />
+            <div className="w-12 h-12 border-2 border-cyan-500/20 rounded-full" />
+            <div className="absolute inset-0 w-12 h-12 border-2 border-transparent border-t-cyan-500 rounded-full animate-spin" />
           </div>
         </div>
       ) : items.length === 0 ? (
@@ -541,11 +541,11 @@ export default function AdminProfitability() {
       ) : (
         <>
           {/* Table */}
-          <div className="relative rounded-2xl shadow-xl shadow-black/20">
+          <div className="relative rounded-3xl shadow-xl shadow-black/20">
             {/* Gradient border effect */}
-            <div className="absolute inset-0 bg-gradient-to-b from-purple-500/30 via-transparent to-cyan-500/20 rounded-2xl pointer-events-none" />
-            
-            <div className="relative bg-gradient-to-b from-[#0d1320] to-[#080c14] border border-white/[0.06] rounded-2xl overflow-auto" style={{maxHeight: "calc(100vh - 280px)"}}>
+            <div className="absolute inset-0 bg-gradient-to-b from-cyan-500/30 via-transparent to-cyan-500/20 rounded-3xl pointer-events-none" />
+
+            <div className="relative glass-card rounded-3xl overflow-auto" style={{maxHeight: "calc(100vh - 280px)"}}>
               {/* Inner highlight */}
               <div className="absolute inset-x-0 top-0 h-[1px] bg-gradient-to-r from-transparent via-white/10 to-transparent" />
               
@@ -581,8 +581,8 @@ export default function AdminProfitability() {
                           onClick={() => setExpanded(isExp ? null : i)} 
                           className={`
                             cursor-pointer transition-all duration-200 border-b border-white/[0.04]
-                            hover:bg-gradient-to-r hover:from-purple-600/10 hover:via-purple-600/5 hover:to-transparent
-                            ${isExp ? 'bg-gradient-to-r from-purple-600/15 via-purple-600/10 to-transparent' : ''}
+                            hover:bg-gradient-to-r hover:from-cyan-600/10 hover:via-cyan-600/5 hover:to-transparent
+                            ${isExp ? 'bg-gradient-to-r from-cyan-600/15 via-cyan-600/10 to-transparent' : ''}
                           `}
                         >
                           <td className="py-4 px-4 max-w-[280px] text-white font-medium">
@@ -729,27 +729,27 @@ function BundlesView({ data, onRefresh }) {
 
         {/* Stats Row */}
         <div className="grid grid-cols-5 gap-3">
-          <div className="relative overflow-hidden rounded-2xl bg-gradient-to-b from-slate-800/60 to-slate-900/40 border border-white/[0.08] p-4 shadow-xl shadow-black/30">
+          <div className="relative overflow-hidden rounded-3xl glass-card p-4 shadow-xl shadow-black/30">
             <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent" />
             <div className="text-[10px] uppercase tracking-[0.2em] font-semibold text-slate-500 mb-1.5">Items Sold</div>
             <div className="text-lg font-bold text-white">{summary.totalItems}</div>
           </div>
-          <div className="relative overflow-hidden rounded-2xl bg-gradient-to-b from-slate-800/60 to-slate-900/40 border border-white/[0.08] p-4 shadow-xl shadow-black/30">
+          <div className="relative overflow-hidden rounded-3xl glass-card p-4 shadow-xl shadow-black/30">
             <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent" />
             <div className="text-[10px] uppercase tracking-[0.2em] font-semibold text-slate-500 mb-1.5">Total Revenue</div>
             <div className="text-lg font-bold text-emerald-400">${summary.totalRevenue.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
           </div>
-          <div className="relative overflow-hidden rounded-2xl bg-gradient-to-b from-slate-800/60 to-slate-900/40 border border-white/[0.08] p-4 shadow-xl shadow-black/30">
+          <div className="relative overflow-hidden rounded-3xl glass-card p-4 shadow-xl shadow-black/30">
             <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent" />
             <div className="text-[10px] uppercase tracking-[0.2em] font-semibold text-slate-500 mb-1.5">Total Cost</div>
             <div className="text-lg font-bold text-slate-300">${summary.totalCost.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
           </div>
-          <div className="relative overflow-hidden rounded-2xl bg-gradient-to-b from-slate-800/60 to-slate-900/40 border border-white/[0.08] p-4 shadow-xl shadow-black/30">
+          <div className="relative overflow-hidden rounded-3xl glass-card p-4 shadow-xl shadow-black/30">
             <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent" />
             <div className="text-[10px] uppercase tracking-[0.2em] font-semibold text-slate-500 mb-1.5">Margin</div>
             <div className={`text-lg font-bold ${summary.overallMargin >= 0 ? 'text-emerald-400' : 'text-pink-400'}`}>{summary.overallMargin.toFixed(1)}%</div>
           </div>
-          <div className="relative overflow-hidden rounded-2xl bg-gradient-to-b from-slate-800/60 to-slate-900/40 border border-white/[0.08] p-4 shadow-xl shadow-black/30">
+          <div className="relative overflow-hidden rounded-3xl glass-card p-4 shadow-xl shadow-black/30">
             <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent" />
             <div className="text-[10px] uppercase tracking-[0.2em] font-semibold text-slate-500 mb-1.5">Win / Loss</div>
             <div className="text-lg font-bold">
@@ -762,9 +762,9 @@ function BundlesView({ data, onRefresh }) {
       </div>
 
       {/* Box List Table */}
-      <div className="relative rounded-2xl shadow-xl shadow-black/20">
-        <div className="absolute inset-0 bg-gradient-to-b from-emerald-500/30 via-transparent to-teal-500/20 rounded-2xl pointer-events-none" />
-        <div className="relative bg-gradient-to-b from-[#0d1320] to-[#080c14] border border-white/[0.06] rounded-2xl overflow-auto" style={{ maxHeight: 'calc(100vh - 420px)' }}>
+      <div className="relative rounded-3xl shadow-xl shadow-black/20">
+        <div className="absolute inset-0 bg-gradient-to-b from-emerald-500/30 via-transparent to-teal-500/20 rounded-3xl pointer-events-none" />
+        <div className="relative glass-card rounded-3xl overflow-auto" style={{ maxHeight: 'calc(100vh - 420px)' }}>
           <div className="absolute inset-x-0 top-0 h-[1px] bg-gradient-to-r from-transparent via-white/10 to-transparent" />
           <table className="w-full text-sm">
             <thead className="bg-slate-800/95 backdrop-blur-xl border-b border-white/10 sticky top-0 z-10">
@@ -831,10 +831,10 @@ function GlassStatCard({ label, value, accent, positive }) {
   const valueColor = positive === false ? 'text-pink-400' : positive === true ? 'text-cyan-400' : 'text-white'
   
   return (
-    <div className="relative overflow-hidden rounded-2xl bg-gradient-to-b from-slate-800/60 to-slate-900/40 border border-white/[0.08] p-4 shadow-xl shadow-black/30">
+    <div className="relative overflow-hidden rounded-3xl glass-card p-4 shadow-xl shadow-black/30">
       {/* Inner highlight */}
       <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent" />
-      
+
       <div className="relative">
         <div className="text-[10px] uppercase tracking-[0.2em] font-semibold text-slate-500 mb-1.5">{label}</div>
         <div className={`text-lg font-bold tracking-tight ${valueColor}`}>{value}</div>
@@ -845,8 +845,8 @@ function GlassStatCard({ label, value, accent, positive }) {
 
 function FilterPill({ children, color, onClear }) {
   const colors = {
-    purple: 'from-purple-500/25 to-purple-600/10 text-purple-300 border-purple-500/40',
-    fuchsia: 'from-fuchsia-500/25 to-fuchsia-600/10 text-fuchsia-300 border-fuchsia-500/40',
+    purple: 'from-cyan-500/25 to-cyan-600/10 text-cyan-300 border-cyan-500/40',
+    fuchsia: 'from-cyan-500/25 to-cyan-600/10 text-cyan-300 border-cyan-500/40',
     cyan: 'from-cyan-500/25 to-cyan-600/10 text-cyan-300 border-cyan-500/40',
   }
   

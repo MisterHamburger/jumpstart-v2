@@ -132,7 +132,7 @@ export default function AdminScans() {
   return (
     <div>
       <div className="flex items-center justify-between mb-4">
-        <h2 className="text-xl font-extrabold tracking-tight text-white">Live Scanners</h2>
+        <h2 className="text-xl font-extrabold tracking-tight text-white font-heading">Live Scanners</h2>
         <span className="text-xs text-slate-500">Auto-refresh 5s</span>
       </div>
 
@@ -183,7 +183,7 @@ export default function AdminScans() {
       </div>
 
       {/* Scan feed */}
-      <div className="rounded-2xl bg-gradient-to-b from-slate-800/60 to-slate-900/40 border border-white/[0.08] overflow-hidden">
+      <div className="rounded-3xl glass-card overflow-hidden">
         {activeScans.length === 0 ? (
           <div className="text-slate-500 text-sm py-8 text-center">No scans yet</div>
         ) : (

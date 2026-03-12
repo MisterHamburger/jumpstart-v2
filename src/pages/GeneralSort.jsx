@@ -151,9 +151,9 @@ export default function GeneralSort() {
   const zoneDisplay = getZoneDisplay()
 
   return (
-    <div className="h-screen flex flex-col bg-[#0a0f1a] overflow-hidden">
+    <div className="h-screen flex flex-col bg-navy overflow-hidden">
       {/* Gradient overlay */}
-      <div className="fixed inset-0 bg-gradient-to-br from-purple-900/20 via-transparent to-cyan-900/10 pointer-events-none" />
+      <div className="fixed inset-0 bg-gradient-to-br from-cyan-900/10 via-transparent to-cyan-900/10 pointer-events-none" />
       
       {/* Header - compact */}
       <div className="relative z-10 px-3 py-2 flex items-center border-b border-white/[0.06] shrink-0">
@@ -161,23 +161,21 @@ export default function GeneralSort() {
           onClick={() => { stopScanner(); navigate('/') }}
           className="flex items-center gap-2 bg-white/[0.06] hover:bg-white/[0.1] backdrop-blur-xl px-3 py-1.5 rounded-xl border border-white/[0.08] transition-all"
         >
-          <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-          </svg>
+          <iconify-icon icon="lucide:chevron-left" class="text-white"></iconify-icon>
           <span className="text-white text-sm font-medium">Home</span>
         </button>
-        <h1 className="ml-3 text-lg font-semibold text-white">Sort</h1>
+        <h1 className="ml-3 text-lg font-semibold text-white font-heading">Sort</h1>
       </div>
 
       {/* Scanner - minimal top padding */}
       <div className={`relative z-10 flex-1 flex flex-col items-center pt-2 px-4 ${scannedItem ? 'hidden' : ''}`}>
         <div className="mb-2 text-center">
-          <h2 className="text-xl font-bold text-white mb-1 tracking-tight">Scan Barcode</h2>
+          <h2 className="text-xl font-bold text-white mb-1 tracking-tight font-heading">Scan Barcode</h2>
           <p className="text-slate-500 text-sm">Position barcode in frame</p>
         </div>
         <div 
           id="qr-reader" 
-          className="w-full max-w-md flex-1 rounded-2xl overflow-hidden border border-white/[0.08] shadow-2xl shadow-black/50"
+          className="w-full max-w-md flex-1 rounded-3xl overflow-hidden border border-white/[0.08] shadow-2xl shadow-black/50"
           style={{ maxHeight: '65vh' }}
         />
       </div>
@@ -188,7 +186,7 @@ export default function GeneralSort() {
           <div className={`absolute inset-0 ${zoneDisplay.glow} shadow-[0_0_120px_40px] opacity-30`} />
           
           <div className="relative text-center mb-8">
-            <h2 className="text-8xl font-black text-white tracking-tight drop-shadow-lg">
+            <h2 className="text-8xl font-black text-white tracking-tight drop-shadow-lg font-heading">
               {zoneDisplay.text}
             </h2>
           </div>

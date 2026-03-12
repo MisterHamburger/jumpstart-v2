@@ -87,7 +87,7 @@ export default function ItemLookup() {
   }
 
   return (
-    <div className="fixed inset-0 flex flex-col bg-[#0a0f1a]">
+    <div className="fixed inset-0 flex flex-col bg-navy">
       <div className="fixed inset-0 bg-gradient-to-br from-cyan-900/20 via-transparent to-purple-900/10 pointer-events-none" />
 
       {/* Header */}
@@ -96,9 +96,9 @@ export default function ItemLookup() {
           onClick={() => navigate('/')}
           className="bg-white/10 hover:bg-white/20 backdrop-blur-lg px-3 py-1.5 rounded-full border border-white/20 text-white font-semibold text-sm"
         >
-          ← Home
+          <iconify-icon icon="lucide:chevron-left" class="text-white"></iconify-icon> Home
         </button>
-        <h1 className="text-lg font-bold text-white">Item Lookup</h1>
+        <h1 className="text-lg font-bold text-white font-heading">Item Lookup</h1>
         <div className="w-16" />
       </div>
 
@@ -111,7 +111,7 @@ export default function ItemLookup() {
         {/* Result Card */}
         <div className="shrink-0 px-4 pb-4 pt-2">
           {result && (
-            <div className="rounded-2xl bg-gradient-to-b from-slate-800/80 to-slate-900/60 border border-white/10 p-5 backdrop-blur-xl">
+            <div className="glass-card rounded-3xl p-5">
               <div className="flex items-start justify-between mb-3">
                 <div className="flex-1 mr-3">
                   <h3 className="text-white font-bold text-lg leading-tight">{result.description || 'No description'}</h3>
@@ -142,7 +142,7 @@ export default function ItemLookup() {
           )}
 
           {notFound && (
-            <div className="rounded-2xl bg-red-500/10 border border-red-500/20 p-5 text-center">
+            <div className="rounded-3xl bg-red-500/10 border border-red-500/20 p-5 text-center">
               <p className="text-red-400 font-bold text-lg mb-1">Not Found</p>
               <p className="text-slate-400 text-sm">Barcode not in manifest. Try another item.</p>
             </div>

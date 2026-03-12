@@ -682,13 +682,13 @@ export default function SalesScanner() {
   // Excluded items interstitial
   if (showExcludedModal) {
     return (
-      <div className="h-screen flex items-center justify-center bg-[#0a0f1a] p-6">
-        <div className="fixed inset-0 bg-gradient-to-br from-pink-900/20 via-transparent to-fuchsia-900/10 pointer-events-none" />
+      <div className="h-screen flex items-center justify-center bg-navy p-6">
+        <div className="fixed inset-0 pointer-events-none" />
         <div className="relative z-10 w-full max-w-md">
-          <div className="bg-pink-500/10 border border-pink-500/30 rounded-2xl p-6 mb-6">
+          <div className="bg-pink-500/10 border border-pink-500/30 rounded-3xl p-6 mb-6">
             <div className="text-center mb-4">
               <div className="text-5xl mb-3">⚠️</div>
-              <h2 className="text-2xl font-bold text-pink-200">Items Removed</h2>
+              <h2 className="text-2xl font-bold font-heading text-pink-200">Items Removed</h2>
               <p className="text-pink-200/60 text-sm mt-1">Skip these when scanning — they failed or were cancelled</p>
             </div>
             <div className="space-y-2 mb-4">
@@ -707,7 +707,7 @@ export default function SalesScanner() {
           </div>
           <button
             onClick={() => { setShowExcludedModal(false) }}
-            className="w-full py-4 px-8 rounded-2xl font-bold text-lg bg-gradient-to-r from-cyan-600 to-teal-600 text-white shadow-lg shadow-cyan-500/30 hover:scale-[1.02] active:scale-[0.98] transition-all"
+            className="w-full py-4 px-8 rounded-3xl font-bold text-lg bg-cyan-600 text-white shadow-lg shadow-cyan-500/30 hover:scale-[1.02] active:scale-[0.98] transition-all"
           >
             Got it — Start Scanning
           </button>
@@ -722,10 +722,10 @@ export default function SalesScanner() {
       <div className="h-screen flex items-center justify-center bg-gradient-to-br from-green-600 via-emerald-500 to-teal-500 p-6">
         <div className="text-center">
           <div className="text-9xl mb-6">🎉</div>
-          <h2 className="text-4xl font-black text-white mb-2">All Done!</h2>
+          <h2 className="text-4xl font-black font-heading text-white mb-2">All Done!</h2>
           <button
             onClick={() => navigate('/sales')}
-            className="px-8 py-4 bg-white/20 backdrop-blur rounded-2xl text-white font-bold text-lg hover:bg-white/30 transition-all"
+            className="px-8 py-4 bg-white/20 backdrop-blur rounded-3xl text-white font-bold text-lg hover:bg-white/30 transition-all"
           >
             Back to Shows
           </button>
@@ -741,12 +741,12 @@ export default function SalesScanner() {
   const shadowColor = isKickstart ? 'shadow-fuchsia-500/30' : 'shadow-cyan-500/30'
 
   return (
-    <div className="fixed inset-0 flex flex-col bg-[#0a0f1a]">
-      <div className={`fixed inset-0 bg-gradient-to-br ${isKickstart ? 'from-fuchsia-900/20 via-transparent to-pink-900/10' : 'from-cyan-900/20 via-transparent to-teal-900/10'} pointer-events-none`} />
+    <div className="fixed inset-0 flex flex-col bg-navy">
+      <div className="fixed inset-0 pointer-events-none" />
 
       {/* Header - Row 1: Back + Show Name */}
       <div className="relative z-10 bg-slate-800/80 backdrop-blur-xl px-4 pt-3 pb-1 flex items-center border-b border-white/5">
-        <button onClick={handleBack} className="text-white text-2xl mr-3">←</button>
+        <button onClick={handleBack} className="text-white text-2xl mr-3"><iconify-icon icon="lucide:chevron-left" class="text-white"></iconify-icon></button>
         <p className="text-white font-bold text-base truncate flex-1 text-center">{showName}</p>
       </div>
 
@@ -763,7 +763,7 @@ export default function SalesScanner() {
         </div>
         <span className="text-white/30 text-2xl">→</span>
         <div className="text-center">
-          <p className="text-3xl font-black text-violet-400">{remainingCount}</p>
+          <p className="text-3xl font-black text-cyan-400">{remainingCount}</p>
           <p className="text-white/50 text-xs">Remaining</p>
         </div>
       </div>
@@ -773,7 +773,7 @@ export default function SalesScanner() {
         <div className="relative z-10 flex-1 flex flex-col items-center p-4 overflow-y-auto">
           {noBarcodeStep === 'size' && (
             <>
-              <h2 className="text-xl font-bold text-white mb-1 mt-2">Select Size</h2>
+              <h2 className="text-xl font-bold font-heading text-white mb-1 mt-2">Select Size</h2>
               <p className="text-slate-400 mb-4 text-sm">What size is the item?</p>
               <div className="w-full max-w-sm grid grid-cols-2 gap-3 mb-4">
                 {['XS', 'S', 'M', 'L', 'XL', 'XXL', 'One Size'].map(s => (
@@ -797,7 +797,7 @@ export default function SalesScanner() {
           )}
           {noBarcodeStep === 'category' && (
             <>
-              <h2 className="text-xl font-bold text-white mb-1 mt-2">Select Category</h2>
+              <h2 className="text-xl font-bold font-heading text-white mb-1 mt-2">Select Category</h2>
               <p className="text-slate-400 mb-4 text-sm">{noBarcodeAllItems.length} unsold {noBarcodeSize || 'All'} items</p>
               {noBarcodeLoading ? (
                 <p className="text-white/50 text-lg py-12">Loading...</p>
@@ -807,7 +807,7 @@ export default function SalesScanner() {
                     <button
                       key={cat.name}
                       onClick={() => handleNoBarcodeCategory(cat.name)}
-                      className="w-full text-left bg-white/5 border border-white/10 rounded-2xl px-4 py-4 hover:bg-white/10 active:scale-[0.98] transition-all flex items-center justify-between"
+                      className="w-full text-left bg-white/5 border border-white/10 rounded-3xl px-4 py-4 hover:bg-white/10 active:scale-[0.98] transition-all flex items-center justify-between"
                     >
                       <span className="text-white font-semibold">{cat.name}</span>
                       <span className="text-fuchsia-300 font-bold text-sm bg-fuchsia-500/20 px-3 py-1 rounded-full">{cat.count}</span>
@@ -833,7 +833,7 @@ export default function SalesScanner() {
           )}
           {noBarcodeStep === 'pickItem' && (
             <>
-              <h2 className="text-xl font-bold text-white mb-1 mt-2">{noBarcodeSize ? `Pick Item — ${noBarcodeSize}` : 'Pick Item'}{noBarcodeCategory ? ` — ${noBarcodeCategory}` : ''}</h2>
+              <h2 className="text-xl font-bold font-heading text-white mb-1 mt-2">{noBarcodeSize ? `Pick Item — ${noBarcodeSize}` : 'Pick Item'}{noBarcodeCategory ? ` — ${noBarcodeCategory}` : ''}</h2>
               <p className="text-slate-400 mb-4 text-sm">{noBarcodeItems.length} unsold item{noBarcodeItems.length !== 1 ? 's' : ''}</p>
               {noBarcodeLoading ? (
                 <p className="text-white/50 text-lg py-12">Loading...</p>
@@ -853,7 +853,7 @@ export default function SalesScanner() {
                     <button
                       key={group.ids[0]}
                       onClick={() => handlePickNoBarcodeItem(group)}
-                      className="w-full text-left bg-white/5 border border-white/10 rounded-2xl p-3 hover:bg-white/10 active:scale-[0.98] transition-all"
+                      className="w-full text-left bg-white/5 border border-white/10 rounded-3xl p-3 hover:bg-white/10 active:scale-[0.98] transition-all"
                     >
                       <div className="flex items-center gap-3">
                         <LazyPhoto intakeId={group.ids[0]} />
@@ -1008,7 +1008,7 @@ export default function SalesScanner() {
               placeholder="Search by brand, description, color..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full px-4 py-2.5 rounded-xl bg-white/10 border border-white/20 text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-fuchsia-500 text-sm"
+              className="w-full px-4 py-2.5 rounded-2xl bg-white/5 border border-white/10 text-white placeholder-white/40 focus:outline-none focus:border-cyan-500/50 focus:ring-4 focus:ring-cyan-500/10 transition-all text-sm"
             />
           </div>
 
@@ -1042,7 +1042,7 @@ export default function SalesScanner() {
                     <button
                       key={group.ids[0]}
                       onClick={() => handlePickNoBarcodeItem(group)}
-                      className="w-full text-left bg-white/5 border border-white/10 rounded-2xl p-3 hover:bg-fuchsia-500/10 hover:border-fuchsia-500/30 active:scale-[0.98] transition-all"
+                      className="w-full text-left bg-white/5 border border-white/10 rounded-3xl p-3 hover:bg-fuchsia-500/10 hover:border-fuchsia-500/30 active:scale-[0.98] transition-all"
                     >
                       <div className="flex items-center gap-3">
                         <LazyPhoto intakeId={group.ids[0]} />
@@ -1077,7 +1077,7 @@ export default function SalesScanner() {
             </button>
             <button
               onClick={() => setShowScansModal(true)}
-              className="flex-1 py-3 rounded-2xl font-bold text-sm bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white shadow-lg shadow-violet-500/30 border border-violet-400/50 active:scale-[0.97] transition-all"
+              className="flex-1 py-3 rounded-2xl font-bold text-sm bg-cyan-600 text-white shadow-lg shadow-cyan-500/30 border border-cyan-400/50 active:scale-[0.97] transition-all"
             >
               Scans
             </button>
@@ -1123,7 +1123,7 @@ export default function SalesScanner() {
             </button>
             <button
               onClick={() => setShowScansModal(true)}
-              className="flex-1 py-3 rounded-2xl font-bold text-sm bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white shadow-lg shadow-violet-500/30 border border-violet-400/50 active:scale-[0.97] transition-all"
+              className="flex-1 py-3 rounded-2xl font-bold text-sm bg-cyan-600 text-white shadow-lg shadow-cyan-500/30 border border-cyan-400/50 active:scale-[0.97] transition-all"
             >
               Scans
             </button>
@@ -1134,7 +1134,7 @@ export default function SalesScanner() {
         <div className={`flex-1 flex items-center justify-center bg-gradient-to-br ${isKickstart ? 'from-fuchsia-500/95 via-pink-500/95 to-rose-500/95' : 'from-green-500/95 via-emerald-500/95 to-teal-500/95'}`}>
           <div className="text-center">
             <div className="text-9xl mb-6">✓</div>
-            <h2 className="text-6xl font-black text-white">Saved!</h2>
+            <h2 className="text-6xl font-black font-heading text-white">Saved!</h2>
           </div>
         </div>
       ) : (
@@ -1147,7 +1147,7 @@ export default function SalesScanner() {
 
             {/* Warning Message */}
             {showWarning && (
-              <div className="bg-red-500/30 border-2 border-red-400 rounded-2xl p-4 mb-4 animate-pulse">
+              <div className="bg-red-500/30 border-2 border-red-400 rounded-3xl p-4 mb-4 animate-pulse">
                 <p className="text-white font-bold text-center text-lg">⚠️ {showWarning}</p>
               </div>
             )}
@@ -1238,12 +1238,12 @@ export default function SalesScanner() {
       {/* Scans Modal */}
       {showScansModal && (
         <div className="fixed inset-0 bg-black/90 backdrop-blur-lg z-50 flex flex-col">
-          <div className="bg-slate-800/90 px-6 py-4 flex items-center justify-between border-b border-white/10">
+          <div className="glass-card px-6 py-4 flex items-center justify-between border-b border-white/10">
             <button
               onClick={() => setShowScansModal(false)}
               className="text-white/80 hover:text-white text-3xl transition-colors"
             >
-              ←
+              <iconify-icon icon="lucide:chevron-left" class="text-white"></iconify-icon>
             </button>
             <div className="text-center">
               <h3 className="text-xl font-bold text-white">Scans</h3>
@@ -1263,7 +1263,7 @@ export default function SalesScanner() {
                 </div>
               ) : (
                 scans.map((scan, idx) => (
-                  <div key={idx} className="bg-white/10 backdrop-blur-lg rounded-2xl p-4 border border-white/10">
+                  <div key={idx} className="glass-card rounded-3xl p-4">
                     <div className="flex items-center gap-4">
                       <div className="flex-1">
                         <p className="text-white/50 text-xs mb-1">Barcode</p>
@@ -1301,12 +1301,12 @@ export default function SalesScanner() {
       {/* Remaining Modal */}
       {showRemainingModal && (
         <div className="fixed inset-0 bg-black/90 backdrop-blur-lg z-50 flex flex-col">
-          <div className="bg-slate-800/90 px-6 py-4 flex items-center justify-between border-b border-white/10">
+          <div className="glass-card px-6 py-4 flex items-center justify-between border-b border-white/10">
             <button
               onClick={() => setShowRemainingModal(false)}
               className="text-white/80 hover:text-white text-3xl transition-colors"
             >
-              ←
+              <iconify-icon icon="lucide:chevron-left" class="text-white"></iconify-icon>
             </button>
             <div
               className="text-center select-none"
@@ -1351,7 +1351,7 @@ export default function SalesScanner() {
                 remainingItems.map((item, idx) => (
                   <div
                     key={idx}
-                    className="bg-indigo-500/10 backdrop-blur-lg rounded-2xl p-4 border border-indigo-500/30 hover:border-indigo-400/50 transition-all cursor-pointer active:scale-[0.98]"
+                    className="bg-indigo-500/10 backdrop-blur-lg rounded-3xl p-4 border border-indigo-500/30 hover:border-indigo-400/50 transition-all cursor-pointer active:scale-[0.98]"
                     onClick={async () => {
                       setShowRemainingModal(false)
                       setListingNumber(String(item.listing_number))

@@ -403,7 +403,7 @@ export default function KickstartSort() {
       <div className="h-screen flex items-center justify-center bg-gradient-to-br from-cyan-600 via-teal-500 to-emerald-500">
         <div className="text-center">
           <div className="text-9xl mb-4">✓</div>
-          <h2 className="text-5xl font-black text-white mb-2">Saved!</h2>
+          <h2 className="text-5xl font-black text-white mb-2 font-heading">Saved!</h2>
           <p className="text-xl text-white/80">{quantity > 1 ? `${quantity} items` : '1 item'} added</p>
         </div>
       </div>
@@ -414,9 +414,9 @@ export default function KickstartSort() {
   const brandAbbrev = { 'Free People': 'FP', 'Urban Outfitters': 'UO', 'Anthropologie': 'Anthro' }
 
   return (
-    <div className="flex flex-col bg-[#0a0f1a]" style={{ height: '100dvh', overflow: 'hidden' }}>
+    <div className="flex flex-col bg-navy" style={{ height: '100dvh', overflow: 'hidden' }}>
       {/* Subtle gradient overlay */}
-      <div className="fixed inset-0 bg-gradient-to-br from-fuchsia-900/20 via-transparent to-pink-900/10 pointer-events-none" />
+      <div className="fixed inset-0 bg-gradient-to-br from-pink-900/20 via-transparent to-pink-900/10 pointer-events-none" />
 
       {/* Header */}
       <div className="relative z-10 px-3 py-2 flex items-center justify-between border-b border-white/10 shrink-0">
@@ -426,23 +426,23 @@ export default function KickstartSort() {
         >
           {backLabel()}
         </button>
-        <h1 className="text-lg font-bold text-white">Kickstart</h1>
-        <div className="bg-gradient-to-r from-fuchsia-500/20 to-pink-500/20 backdrop-blur-lg px-3 py-1.5 rounded-full border border-fuchsia-400/30">
-          <span className="text-fuchsia-300 font-bold text-sm">{sessionCount} today</span>
+        <h1 className="text-lg font-bold text-white font-heading">Kickstart</h1>
+        <div className="bg-gradient-to-r from-pink-500/20 to-pink-600/20 backdrop-blur-lg px-3 py-1.5 rounded-full border border-pink-400/30">
+          <span className="text-pink-300 font-bold text-sm">{sessionCount} today</span>
         </div>
       </div>
 
       {/* Compact bin+brand bar when past those steps */}
       {pastBinBrand && (
-        <div className="relative z-10 mx-3 mt-2 bg-fuchsia-500/20 border border-fuchsia-500/30 rounded-xl px-3 py-2 shrink-0 flex items-center justify-between">
+        <div className="relative z-10 mx-3 mt-2 bg-pink-500/20 border border-pink-500/30 rounded-xl px-3 py-2 shrink-0 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <span className="text-fuchsia-200 text-sm font-semibold">${getCost()}</span>
+            <span className="text-pink-200 text-sm font-semibold">${getCost()}</span>
             <span className="text-white/30">·</span>
-            <span className="text-fuchsia-200 text-sm font-semibold">{brandAbbrev[selectedBrand] || selectedBrand}</span>
+            <span className="text-pink-200 text-sm font-semibold">{brandAbbrev[selectedBrand] || selectedBrand}</span>
           </div>
           <button
             onClick={() => setStep('bin')}
-            className="text-fuchsia-400 text-xs font-semibold"
+            className="text-pink-400 text-xs font-semibold"
           >
             Change
           </button>
@@ -452,7 +452,7 @@ export default function KickstartSort() {
       {/* === STEP 1: BIN SELECTION === */}
       {step === 'bin' && (
         <div className="relative z-10 flex-1 flex flex-col items-center pt-3 px-4 overflow-y-auto">
-          <h2 className="text-lg font-bold text-white mb-0.5 tracking-tight">Select Price Bin</h2>
+          <h2 className="text-lg font-bold text-white mb-0.5 tracking-tight font-heading">Select Price Bin</h2>
           <p className="text-slate-400 mb-2 text-sm">What did we pay per item?</p>
 
           <div className="w-full max-w-sm grid grid-cols-3 gap-2 mb-3">
@@ -460,7 +460,7 @@ export default function KickstartSort() {
               <button
                 key={price}
                 onClick={() => handleBinSelect(price)}
-                className="py-3 rounded-xl bg-gradient-to-br from-fuchsia-500/80 to-pink-500/80 border-2 border-fuchsia-400/40 text-white font-black text-xl shadow-lg shadow-fuchsia-500/20 hover:scale-105 active:scale-95 transition-all"
+                className="py-3 rounded-xl bg-gradient-to-br from-pink-500/80 to-pink-600/80 border-2 border-pink-400/40 text-white font-black text-xl shadow-lg shadow-pink-500/20 hover:scale-105 active:scale-95 transition-all"
               >
                 ${price}
               </button>
@@ -471,7 +471,7 @@ export default function KickstartSort() {
           {!showCustom ? (
             <button
               onClick={handleCustomSelect}
-              className="w-full max-w-sm py-3 rounded-2xl bg-white/10 border border-white/20 text-white/70 font-semibold text-lg hover:bg-white/20 transition-all"
+              className="w-full max-w-sm py-3 rounded-3xl bg-white/10 border border-white/20 text-white/70 font-semibold text-lg hover:bg-white/20 transition-all"
             >
               Other Amount
             </button>
@@ -486,7 +486,7 @@ export default function KickstartSort() {
                     onChange={e => setCustomPrice(e.target.value)}
                     placeholder="0.00"
                     autoFocus
-                    className="w-full bg-white/10 border border-white/20 rounded-xl pl-8 pr-4 py-3 text-white text-xl font-bold placeholder-slate-500 focus:outline-none focus:border-fuchsia-400/50"
+                    className="w-full bg-white/5 border border-white/10 rounded-2xl pl-8 pr-4 py-3 text-white text-xl font-bold placeholder-slate-500 focus:outline-none focus:border-cyan-500/50 focus:ring-4 focus:ring-cyan-500/10 transition-all"
                   />
                 </div>
                 <button
@@ -494,7 +494,7 @@ export default function KickstartSort() {
                   disabled={!customPrice || parseFloat(customPrice) <= 0}
                   className={`px-6 rounded-xl font-bold text-lg transition-all ${
                     customPrice && parseFloat(customPrice) > 0
-                      ? 'bg-gradient-to-r from-fuchsia-500 to-pink-500 text-white'
+                      ? 'bg-gradient-to-r from-pink-500 to-pink-600 text-white'
                       : 'bg-white/5 text-white/30 cursor-not-allowed'
                   }`}
                 >
@@ -508,13 +508,13 @@ export default function KickstartSort() {
           <div className="w-full max-w-sm flex gap-2 mt-3">
             <button
               onClick={() => { resetFilters(); loadAllItems(); setStep('restock') }}
-              className="flex-1 py-3 rounded-2xl bg-cyan-500/20 border border-cyan-500/30 text-cyan-300 font-semibold text-base hover:bg-cyan-500/30 transition-all"
+              className="flex-1 py-3 rounded-3xl bg-cyan-500/20 border border-cyan-500/30 text-cyan-300 font-semibold text-base hover:bg-cyan-500/30 transition-all"
             >
               Restock
             </button>
             <button
               onClick={() => { resetFilters(); loadAllItems(); setStep('editRecent') }}
-              className="flex-1 py-3 rounded-2xl bg-orange-500/20 border border-orange-500/30 text-orange-300 font-semibold text-base hover:bg-orange-500/30 transition-all"
+              className="flex-1 py-3 rounded-3xl bg-orange-500/20 border border-orange-500/30 text-orange-300 font-semibold text-base hover:bg-orange-500/30 transition-all"
             >
               Edit Recent
             </button>
@@ -525,7 +525,7 @@ export default function KickstartSort() {
       {/* === STEP 2: BRAND SELECTION === */}
       {step === 'brand' && (
         <div className="relative z-10 flex-1 flex flex-col items-center justify-center px-4">
-          <h2 className="text-xl font-bold text-white mb-1 tracking-tight">Select Brand</h2>
+          <h2 className="text-xl font-bold text-white mb-1 tracking-tight font-heading">Select Brand</h2>
           <p className="text-slate-400 mb-6 text-sm">Which brand is this item?</p>
 
           <div className="w-full max-w-sm flex flex-col gap-3">
@@ -533,7 +533,7 @@ export default function KickstartSort() {
               <button
                 key={brand}
                 onClick={() => handleBrandSelect(brand)}
-                className="py-5 rounded-2xl bg-gradient-to-br from-fuchsia-500/80 to-pink-500/80 border-2 border-fuchsia-400/40 text-white font-black text-2xl shadow-xl shadow-fuchsia-500/20 hover:scale-105 active:scale-95 transition-all"
+                className="py-5 rounded-3xl bg-gradient-to-br from-pink-500/80 to-pink-600/80 border-2 border-pink-400/40 text-white font-black text-2xl shadow-xl shadow-pink-500/20 hover:scale-105 active:scale-95 transition-all"
               >
                 {brand}
               </button>
@@ -555,7 +555,7 @@ export default function KickstartSort() {
                   onClick={() => setOpenFilter(openFilter === 'size' ? null : 'size')}
                   className={`px-3 py-1.5 rounded-lg text-sm font-semibold transition-all whitespace-nowrap flex items-center gap-1 ${
                     filterSize
-                      ? 'bg-fuchsia-500 text-white'
+                      ? 'bg-pink-500 text-white'
                       : 'bg-white/10 text-white/60 border border-white/20'
                   }`}
                 >
@@ -573,7 +573,7 @@ export default function KickstartSort() {
                         key={s}
                         onClick={() => { setFilterSize(s); setOpenFilter(null) }}
                         className={`px-3 py-1.5 rounded-lg text-sm font-semibold transition-all ${
-                          filterSize === s ? 'bg-fuchsia-500 text-white' : 'bg-white/10 text-white/60 hover:bg-white/20'
+                          filterSize === s ? 'bg-pink-500 text-white' : 'bg-white/10 text-white/60 hover:bg-white/20'
                         }`}
                       >
                         {s}
@@ -589,7 +589,7 @@ export default function KickstartSort() {
                   onClick={() => setOpenFilter(openFilter === 'category' ? null : 'category')}
                   className={`px-3 py-1.5 rounded-lg text-sm font-semibold transition-all whitespace-nowrap flex items-center gap-1 ${
                     filterCategory
-                      ? 'bg-fuchsia-500 text-white'
+                      ? 'bg-pink-500 text-white'
                       : 'bg-white/10 text-white/60 border border-white/20'
                   }`}
                 >
@@ -607,7 +607,7 @@ export default function KickstartSort() {
                         key={cat.name}
                         onClick={() => { setFilterCategory(cat.name); setOpenFilter(null) }}
                         className={`px-3 py-1.5 rounded-lg text-sm font-semibold transition-all whitespace-nowrap ${
-                          filterCategory === cat.name ? 'bg-fuchsia-500 text-white' : 'bg-white/10 text-white/60 hover:bg-white/20'
+                          filterCategory === cat.name ? 'bg-pink-500 text-white' : 'bg-white/10 text-white/60 hover:bg-white/20'
                         }`}
                       >
                         {cat.name}
@@ -623,7 +623,7 @@ export default function KickstartSort() {
                   onClick={() => setOpenFilter(openFilter === 'condition' ? null : 'condition')}
                   className={`px-3 py-1.5 rounded-lg text-sm font-semibold transition-all whitespace-nowrap flex items-center gap-1 ${
                     filterCondition
-                      ? 'bg-fuchsia-500 text-white'
+                      ? 'bg-pink-500 text-white'
                       : 'bg-white/10 text-white/60 border border-white/20'
                   }`}
                 >
@@ -641,7 +641,7 @@ export default function KickstartSort() {
                         key={c}
                         onClick={() => { setFilterCondition(c); setOpenFilter(null) }}
                         className={`px-3 py-1.5 rounded-lg text-sm font-semibold transition-all whitespace-nowrap ${
-                          filterCondition === c ? 'bg-fuchsia-500 text-white' : 'bg-white/10 text-white/60 hover:bg-white/20'
+                          filterCondition === c ? 'bg-pink-500 text-white' : 'bg-white/10 text-white/60 hover:bg-white/20'
                         }`}
                       >
                         {c}
@@ -658,7 +658,7 @@ export default function KickstartSort() {
               placeholder="Search by brand, description, color..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full px-4 py-2.5 rounded-xl bg-white/10 border border-white/20 text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-fuchsia-500 text-sm"
+              className="w-full px-4 py-2.5 bg-white/5 border border-white/10 rounded-2xl text-white placeholder-white/40 focus:outline-none focus:border-cyan-500/50 focus:ring-4 focus:ring-cyan-500/10 transition-all text-sm"
             />
           </div>
 
@@ -676,7 +676,7 @@ export default function KickstartSort() {
               return items.length === 0 ? (
                 <div className="text-center py-12">
                   <p className="text-white/50 text-lg mb-2">No items found</p>
-                  <button onClick={resetFilters} className="text-fuchsia-400 text-sm underline">Clear filters</button>
+                  <button onClick={resetFilters} className="text-pink-400 text-sm underline">Clear filters</button>
                 </div>
               ) : (
                 <div className="space-y-2">
@@ -685,7 +685,7 @@ export default function KickstartSort() {
                     <button
                       key={item.id || item.ids?.[0] || i}
                       onClick={() => step === 'restock' ? handleRestockSelect(item) : handleEditSelect(item)}
-                      className="w-full text-left bg-white/5 border border-white/10 rounded-2xl p-3 hover:bg-fuchsia-500/10 hover:border-fuchsia-500/30 active:scale-[0.98] transition-all"
+                      className="w-full text-left bg-white/5 border border-white/10 rounded-3xl p-3 hover:bg-pink-500/10 hover:border-pink-500/30 active:scale-[0.98] transition-all"
                     >
                       <div className="flex items-center gap-3">
                         <LazyPhoto intakeId={item.id || item.ids?.[0]} />
@@ -694,7 +694,7 @@ export default function KickstartSort() {
                             {[item.description, item.color].filter(Boolean).join(' — ') || 'Unknown'}
                           </p>
                           {item.notes && (
-                            <p className="text-fuchsia-300/70 text-xs truncate">{item.notes}</p>
+                            <p className="text-pink-300/70 text-xs truncate">{item.notes}</p>
                           )}
                           <p className="text-slate-400 text-xs">
                             {[item.brand, item.size, item.condition].filter(Boolean).join(' · ')}
@@ -704,7 +704,7 @@ export default function KickstartSort() {
                           </p>
                         </div>
                         {item.ids && item.ids.length > 1 && (
-                          <span className="text-fuchsia-300 font-bold text-sm bg-fuchsia-500/20 px-3 py-1 rounded-full shrink-0">
+                          <span className="text-pink-300 font-bold text-sm bg-pink-500/20 px-3 py-1 rounded-full shrink-0">
                             {item.ids.length}
                           </span>
                         )}
@@ -722,10 +722,10 @@ export default function KickstartSort() {
       {step === 'restockConfirm' && restockItem && (
         <div className="relative z-10 flex-1 min-h-0 flex flex-col">
           <div className="flex-1 overflow-y-auto p-4">
-            <h2 className="text-lg font-bold text-white mb-3">Restock Item</h2>
+            <h2 className="text-lg font-bold text-white mb-3 font-heading">Restock Item</h2>
 
             {/* Photo + summary card */}
-            <div className="bg-white/5 border border-white/10 rounded-2xl p-4 mb-4">
+            <div className="bg-white/5 border border-white/10 rounded-3xl p-4 mb-4">
               <div className="flex gap-4 mb-3">
                 <LazyPhoto intakeId={restockItem.id || restockItem.ids?.[0]} />
                 <div className="min-w-0 flex-1">
@@ -733,7 +733,7 @@ export default function KickstartSort() {
                     {[restockItem.description, restockItem.color].filter(Boolean).join(' — ') || 'Unknown'}
                   </p>
                   {restockItem.notes && (
-                    <p className="text-fuchsia-300/70 text-sm">{restockItem.notes}</p>
+                    <p className="text-pink-300/70 text-sm">{restockItem.notes}</p>
                   )}
                 </div>
               </div>
@@ -766,11 +766,11 @@ export default function KickstartSort() {
                   type="number"
                   value={restockQty}
                   onChange={e => { const v = parseInt(e.target.value, 10); setRestockQty(v > 0 ? v : 1) }}
-                  className="w-20 text-center bg-white/10 border border-white/20 rounded-xl py-2 text-3xl font-black text-white focus:outline-none focus:border-fuchsia-400/50"
+                  className="w-20 text-center bg-white/5 border border-white/10 rounded-2xl py-2 text-3xl font-black text-white focus:outline-none focus:border-cyan-500/50 focus:ring-4 focus:ring-cyan-500/10 transition-all"
                 />
                 <button
                   onClick={() => setRestockQty(q => q + 1)}
-                  className="w-11 h-11 rounded-full bg-gradient-to-br from-fuchsia-500 to-pink-500 text-white text-2xl font-bold flex items-center justify-center hover:scale-105 active:scale-95 transition-all shadow-lg shadow-fuchsia-500/30"
+                  className="w-11 h-11 rounded-full bg-gradient-to-br from-pink-500 to-pink-600 text-white text-2xl font-bold flex items-center justify-center hover:scale-105 active:scale-95 transition-all shadow-lg shadow-pink-500/30"
                 >
                   +
                 </button>
@@ -788,10 +788,10 @@ export default function KickstartSort() {
             <button
               onClick={handleRestockSave}
               disabled={saving}
-              className={`w-full py-4 rounded-2xl font-bold text-xl transition-all ${
+              className={`w-full py-4 rounded-3xl font-bold text-xl transition-all ${
                 saving
                   ? 'bg-white/10 text-white/50 cursor-wait'
-                  : 'bg-gradient-to-r from-fuchsia-500 to-pink-500 text-white shadow-2xl shadow-fuchsia-500/30 hover:scale-[1.02] active:scale-[0.98]'
+                  : 'bg-gradient-to-r from-pink-500 to-pink-600 text-white shadow-2xl shadow-pink-500/30 hover:scale-[1.02] active:scale-[0.98]'
               }`}
             >
               {saving ? 'Saving...' : restockQty > 1 ? `Add ${restockQty} Items` : 'Add 1 Item'}
@@ -804,7 +804,7 @@ export default function KickstartSort() {
       {step === 'editItem' && editingItem && (
         <div className="relative z-10 flex-1 min-h-0 flex flex-col">
           <div className="flex-1 overflow-y-auto p-4">
-            <h2 className="text-lg font-bold text-white mb-3">Edit Item #{editingItem.id}</h2>
+            <h2 className="text-lg font-bold text-white mb-3 font-heading">Edit Item #{editingItem.id}</h2>
             <div className="flex flex-col items-center">
 
               {/* Cost */}
@@ -816,7 +816,7 @@ export default function KickstartSort() {
                     type="number"
                     value={editingItem.cost || ''}
                     onChange={e => setEditingItem(prev => ({ ...prev, cost: e.target.value }))}
-                    className="w-full bg-white/10 border border-white/20 rounded-xl pl-8 pr-4 py-3 text-white text-base font-semibold placeholder-slate-500 focus:outline-none focus:border-orange-400/50"
+                    className="w-full bg-white/5 border border-white/10 rounded-2xl pl-8 pr-4 py-3 text-white text-base font-semibold placeholder-slate-500 focus:outline-none focus:border-cyan-500/50 focus:ring-4 focus:ring-cyan-500/10 transition-all"
                   />
                 </div>
               </div>
@@ -827,7 +827,7 @@ export default function KickstartSort() {
                 <select
                   value={editingItem.brand || ''}
                   onChange={e => setEditingItem(prev => ({ ...prev, brand: e.target.value }))}
-                  className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-white text-base font-semibold appearance-none focus:outline-none focus:border-orange-400/50"
+                  className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3 text-white text-base font-semibold appearance-none focus:outline-none focus:border-cyan-500/50 focus:ring-4 focus:ring-cyan-500/10 transition-all"
                 >
                   <option value="" className="bg-[#1a1f2e]">Select...</option>
                   <option value="Free People" className="bg-[#1a1f2e]">Free People</option>
@@ -862,7 +862,7 @@ export default function KickstartSort() {
                 <select
                   value={editingItem.description || ''}
                   onChange={e => setEditingItem(prev => ({ ...prev, description: e.target.value }))}
-                  className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-white text-base font-semibold appearance-none focus:outline-none focus:border-orange-400/50"
+                  className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3 text-white text-base font-semibold appearance-none focus:outline-none focus:border-cyan-500/50 focus:ring-4 focus:ring-cyan-500/10 transition-all"
                 >
                   <option value="" className="bg-[#1a1f2e]">Select...</option>
                   {CATEGORIES.map(cat => <option key={cat} value={cat} className="bg-[#1a1f2e]">{cat}</option>)}
@@ -875,7 +875,7 @@ export default function KickstartSort() {
                 <select
                   value={editingItem.condition || ''}
                   onChange={e => setEditingItem(prev => ({ ...prev, condition: e.target.value }))}
-                  className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-white text-base font-semibold appearance-none focus:outline-none focus:border-orange-400/50"
+                  className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3 text-white text-base font-semibold appearance-none focus:outline-none focus:border-cyan-500/50 focus:ring-4 focus:ring-cyan-500/10 transition-all"
                 >
                   <option value="" className="bg-[#1a1f2e]">Select...</option>
                   {CONDITIONS.map(c => <option key={c} value={c} className="bg-[#1a1f2e]">{c}</option>)}
@@ -888,7 +888,7 @@ export default function KickstartSort() {
                 <select
                   value={editingItem.color || ''}
                   onChange={e => setEditingItem(prev => ({ ...prev, color: e.target.value }))}
-                  className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-white text-base font-semibold appearance-none focus:outline-none focus:border-orange-400/50"
+                  className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3 text-white text-base font-semibold appearance-none focus:outline-none focus:border-cyan-500/50 focus:ring-4 focus:ring-cyan-500/10 transition-all"
                 >
                   <option value="" className="bg-[#1a1f2e]">Select...</option>
                   {COLOR_GROUPS.map(group => (
@@ -908,7 +908,7 @@ export default function KickstartSort() {
                     type="number"
                     value={editingItem.msrp || ''}
                     onChange={e => setEditingItem(prev => ({ ...prev, msrp: e.target.value }))}
-                    className="w-full bg-white/10 border border-white/20 rounded-xl pl-8 pr-4 py-3 text-white text-base font-semibold placeholder-slate-500 focus:outline-none focus:border-orange-400/50"
+                    className="w-full bg-white/5 border border-white/10 rounded-2xl pl-8 pr-4 py-3 text-white text-base font-semibold placeholder-slate-500 focus:outline-none focus:border-cyan-500/50 focus:ring-4 focus:ring-cyan-500/10 transition-all"
                   />
                 </div>
               </div>
@@ -920,7 +920,7 @@ export default function KickstartSort() {
                   type="text"
                   value={editingItem.notes || ''}
                   onChange={e => setEditingItem(prev => ({ ...prev, notes: e.target.value }))}
-                  className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-white text-sm placeholder-slate-500 focus:outline-none focus:border-orange-400/50"
+                  className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3 text-white text-sm placeholder-slate-500 focus:outline-none focus:border-cyan-500/50 focus:ring-4 focus:ring-cyan-500/10 transition-all"
                 />
               </div>
             </div>
@@ -931,7 +931,7 @@ export default function KickstartSort() {
             <button
               onClick={handleEditSave}
               disabled={saving}
-              className={`w-full py-4 rounded-2xl font-bold text-xl transition-all ${
+              className={`w-full py-4 rounded-3xl font-bold text-xl transition-all ${
                 saving
                   ? 'bg-white/10 text-white/50 cursor-wait'
                   : 'bg-gradient-to-r from-orange-500 to-orange-600 text-white shadow-2xl shadow-orange-500/30 hover:scale-[1.02] active:scale-[0.98]'
@@ -963,7 +963,7 @@ export default function KickstartSort() {
               {!itemPhoto ? (
                 <button
                   onClick={() => itemPhotoRef.current?.click()}
-                  className="w-full flex items-center justify-center gap-2 bg-fuchsia-500/20 border-2 border-dashed border-fuchsia-400/40 rounded-xl px-4 py-6 text-fuchsia-300 font-semibold hover:bg-fuchsia-500/30 transition-all"
+                  className="w-full flex items-center justify-center gap-2 bg-pink-500/20 border-2 border-dashed border-pink-400/40 rounded-xl px-4 py-6 text-pink-300 font-semibold hover:bg-pink-500/30 transition-all"
                 >
                   <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
@@ -978,7 +978,7 @@ export default function KickstartSort() {
                   </div>
                   <button
                     onClick={() => { setItemPhoto(null); if (itemPhotoRef.current) itemPhotoRef.current.value = '' }}
-                    className="text-fuchsia-400 text-sm font-semibold"
+                    className="text-pink-400 text-sm font-semibold"
                   >
                     Retake
                   </button>
@@ -996,7 +996,7 @@ export default function KickstartSort() {
                     onClick={() => setSize(size === s ? '' : s)}
                     className={`py-2.5 rounded-xl text-sm font-bold transition-all active:scale-95 ${
                       size === s
-                        ? 'bg-fuchsia-500 text-white'
+                        ? 'bg-pink-500 text-white'
                         : 'bg-white/10 text-white/60 border border-white/10'
                     }`}
                   >
@@ -1012,7 +1012,7 @@ export default function KickstartSort() {
               <select
                 value={description}
                 onChange={e => setDescription(e.target.value)}
-                className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-white text-base font-semibold appearance-none focus:outline-none focus:border-fuchsia-400/50"
+                className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3 text-white text-base font-semibold appearance-none focus:outline-none focus:border-cyan-500/50 focus:ring-4 focus:ring-cyan-500/10 transition-all"
               >
                 <option value="" className="bg-[#1a1f2e]">Select category...</option>
                 {CATEGORIES.map(cat => (
@@ -1027,7 +1027,7 @@ export default function KickstartSort() {
               <select
                 value={condition}
                 onChange={e => setCondition(e.target.value)}
-                className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-white text-base font-semibold appearance-none focus:outline-none focus:border-fuchsia-400/50"
+                className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3 text-white text-base font-semibold appearance-none focus:outline-none focus:border-cyan-500/50 focus:ring-4 focus:ring-cyan-500/10 transition-all"
               >
                 <option value="" className="bg-[#1a1f2e]">Select condition...</option>
                 {CONDITIONS.map(c => (
@@ -1042,7 +1042,7 @@ export default function KickstartSort() {
               <select
                 value={color}
                 onChange={e => setColor(e.target.value)}
-                className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-white text-base font-semibold appearance-none focus:outline-none focus:border-fuchsia-400/50"
+                className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3 text-white text-base font-semibold appearance-none focus:outline-none focus:border-cyan-500/50 focus:ring-4 focus:ring-cyan-500/10 transition-all"
               >
                 <option value="" className="bg-[#1a1f2e]">Select color...</option>
                 {COLOR_GROUPS.map(group => (
@@ -1065,7 +1065,7 @@ export default function KickstartSort() {
                   value={msrp}
                   onChange={e => setMsrp(e.target.value)}
                   placeholder="0.00"
-                  className="w-full bg-white/10 border border-white/20 rounded-xl pl-8 pr-4 py-3 text-white text-base font-semibold placeholder-slate-500 focus:outline-none focus:border-fuchsia-400/50"
+                  className="w-full bg-white/5 border border-white/10 rounded-2xl pl-8 pr-4 py-3 text-white text-base font-semibold placeholder-slate-500 focus:outline-none focus:border-cyan-500/50 focus:ring-4 focus:ring-cyan-500/10 transition-all"
                 />
               </div>
             </div>
@@ -1078,7 +1078,7 @@ export default function KickstartSort() {
                 value={notes}
                 onChange={e => setNotes(e.target.value)}
                 placeholder="e.g. Teddy Peacoat, Cargo Joggers..."
-                className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-white text-sm placeholder-slate-500 focus:outline-none focus:border-fuchsia-400/50"
+                className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3 text-white text-sm placeholder-slate-500 focus:outline-none focus:border-cyan-500/50 focus:ring-4 focus:ring-cyan-500/10 transition-all"
               />
             </div>
 
@@ -1094,11 +1094,11 @@ export default function KickstartSort() {
                 type="number"
                 value={quantity}
                 onChange={e => { const v = parseInt(e.target.value, 10); setQuantity(v > 0 ? v : 1) }}
-                className="w-20 text-center bg-white/10 border border-white/20 rounded-xl py-2 text-3xl font-black text-white focus:outline-none focus:border-fuchsia-400/50"
+                className="w-20 text-center bg-white/5 border border-white/10 rounded-2xl py-2 text-3xl font-black text-white focus:outline-none focus:border-cyan-500/50 focus:ring-4 focus:ring-cyan-500/10 transition-all"
               />
               <button
                 onClick={() => setQuantity(q => q + 1)}
-                className="w-11 h-11 rounded-full bg-gradient-to-br from-fuchsia-500 to-pink-500 text-white text-2xl font-bold flex items-center justify-center hover:scale-105 active:scale-95 transition-all shadow-lg shadow-fuchsia-500/30"
+                className="w-11 h-11 rounded-full bg-gradient-to-br from-pink-500 to-pink-600 text-white text-2xl font-bold flex items-center justify-center hover:scale-105 active:scale-95 transition-all shadow-lg shadow-pink-500/30"
               >
                 +
               </button>
@@ -1117,10 +1117,10 @@ export default function KickstartSort() {
             <button
               onClick={handleSave}
               disabled={saving || !itemPhoto || !description || !condition || !color || !size || !msrp}
-              className={`w-full py-4 rounded-2xl font-bold text-xl transition-all ${
+              className={`w-full py-4 rounded-3xl font-bold text-xl transition-all ${
                 saving || !itemPhoto || !description || !condition || !color || !size || !msrp
                   ? 'bg-white/10 text-white/50 cursor-not-allowed'
-                  : 'bg-gradient-to-r from-fuchsia-500 to-pink-500 text-white shadow-2xl shadow-fuchsia-500/30 hover:scale-[1.02] active:scale-[0.98]'
+                  : 'bg-gradient-to-r from-pink-500 to-pink-600 text-white shadow-2xl shadow-pink-500/30 hover:scale-[1.02] active:scale-[0.98]'
               }`}
             >
               {saving ? 'Saving...' : quantity > 1 ? `Save ${quantity} Items` : 'Save Item'}

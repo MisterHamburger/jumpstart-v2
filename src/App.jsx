@@ -12,7 +12,7 @@ import ItemLookup from './pages/ItemLookup'
 
 export default function App() {
   return (
-    <div className="min-h-screen bg-slate-900 text-white">
+    <div className="min-h-screen bg-navy text-white font-body">
       <Routes>
         <Route path="/" element={<Home />} />
         <Route path="/sorting" element={<SortingSelect />} />

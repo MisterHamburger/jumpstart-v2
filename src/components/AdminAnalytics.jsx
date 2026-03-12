@@ -299,8 +299,8 @@ export default function AdminAnalytics() {
           <button key={t.id} onClick={() => setView(t.id)}
             className={`px-4 py-2 rounded-xl text-sm font-semibold transition-all
               ${view === t.id
-                ? 'bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white shadow-lg shadow-purple-500/25'
-                : 'text-slate-400 hover:bg-white/[0.06]'}`}>
+                ? 'bg-cyan-600 text-white shadow-lg shadow-cyan-600/30 glow-cyan'
+                : 'text-slate-400 hover:bg-white/[0.06] border border-transparent'}`}>
             {t.label}
           </button>
         ))}
@@ -326,7 +326,7 @@ function CategoryView({ aggregate }) {
     <div>
       <h3 className="text-lg font-bold text-white mb-3">Category Scorecard</h3>
       <p className="text-slate-500 text-xs mb-4">Categories with 10+ items, sorted by total profit</p>
-      <div className="bg-slate-800/60 backdrop-blur-xl border border-white/[0.08] rounded-2xl overflow-hidden">
+      <div className="glass-card rounded-3xl overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
@@ -380,7 +380,7 @@ function ZoneView({ aggregate }) {
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
         {data.filter(d => d.key !== 'Unknown').map(d => (
-          <div key={d.key} className="bg-slate-800/60 backdrop-blur-xl border border-white/[0.08] rounded-2xl p-5">
+          <div key={d.key} className="glass-card rounded-3xl p-6">
             <div className="text-sm text-slate-400 mb-1">{d.key}</div>
             <div className="text-2xl font-bold text-white mb-3">{fmt(d.profit)}</div>
             <div className="space-y-2 text-sm">
@@ -436,7 +436,7 @@ function MSRPView({ items, aggregate }) {
       <h3 className="text-lg font-bold text-white mb-3">MSRP Tier Analysis</h3>
       <p className="text-slate-500 text-xs mb-4">How profitability changes with retail price tier</p>
 
-      <div className="bg-slate-800/60 backdrop-blur-xl border border-white/[0.08] rounded-2xl overflow-hidden">
+      <div className="glass-card rounded-3xl overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
@@ -534,7 +534,7 @@ function BundleView({ items, aggregate }) {
 
       <h4 className="text-md font-bold text-white mb-3">High-Loss Segments</h4>
       <p className="text-slate-500 text-xs mb-3">Category + MSRP combos where 40%+ of items lose money (10+ items min)</p>
-      <div className="bg-slate-800/60 backdrop-blur-xl border border-white/[0.08] rounded-2xl overflow-hidden mb-6">
+      <div className="glass-card rounded-3xl overflow-hidden mb-6">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
@@ -573,7 +573,7 @@ function BundleView({ items, aggregate }) {
 
       <h4 className="text-md font-bold text-white mb-3">Categories by % Profitable</h4>
       <p className="text-slate-500 text-xs mb-3">Categories sorted by how often items sell at a profit (5+ items min)</p>
-      <div className="bg-slate-800/60 backdrop-blur-xl border border-white/[0.08] rounded-2xl overflow-hidden">
+      <div className="glass-card rounded-3xl overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
@@ -664,22 +664,22 @@ function AgingView({ data, loading }) {
 
       {/* KPI Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-        <div className="bg-slate-800/60 border border-white/[0.08] rounded-2xl p-4">
+        <div className="glass-card rounded-3xl p-5">
           <div className="text-xs text-slate-400 mb-1">Unsold Items</div>
           <div className="text-2xl font-bold text-amber-400">{unsoldItems.length.toLocaleString()}</div>
           <div className="text-xs text-slate-500 mt-1">of {totalManifest.toLocaleString()} total</div>
         </div>
-        <div className="bg-slate-800/60 border border-white/[0.08] rounded-2xl p-4">
+        <div className="glass-card rounded-3xl p-5">
           <div className="text-xs text-slate-400 mb-1">Capital Tied Up</div>
           <div className="text-2xl font-bold text-red-400">{fmt(totalUnsoldCost)}</div>
           <div className="text-xs text-slate-500 mt-1">at cost</div>
         </div>
-        <div className="bg-slate-800/60 border border-white/[0.08] rounded-2xl p-4">
+        <div className="glass-card rounded-3xl p-5">
           <div className="text-xs text-slate-400 mb-1">Sell-Through Rate</div>
           <div className="text-2xl font-bold text-cyan-400">{pct(totalManifest > 0 ? (totalSold / totalManifest) * 100 : 0)}</div>
           <div className="text-xs text-slate-500 mt-1">{totalSold.toLocaleString()} sold</div>
         </div>
-        <div className="bg-slate-800/60 border border-white/[0.08] rounded-2xl p-4">
+        <div className="glass-card rounded-3xl p-5">
           <div className="text-xs text-slate-400 mb-1">Avg Unsold Cost</div>
           <div className="text-2xl font-bold text-white">{fmt(avgCost)}</div>
           <div className="text-xs text-slate-500 mt-1">per item</div>
@@ -693,7 +693,7 @@ function AgingView({ data, loading }) {
           <button key={g} onClick={() => setGroupBy(g)}
             className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all
               ${groupBy === g
-                ? 'bg-violet-600/30 text-violet-300 border border-violet-500/30'
+                ? 'bg-cyan-500/15 text-cyan-300 border border-cyan-500/30'
                 : 'text-slate-400 hover:bg-white/[0.06] border border-transparent'}`}>
             {g === 'age' ? 'Age' : g === 'category' ? 'Category' : g === 'zone' ? 'Zone' : 'Load'}
           </button>
@@ -701,7 +701,7 @@ function AgingView({ data, loading }) {
       </div>
 
       {/* Aging Table */}
-      <div className="bg-slate-800/60 backdrop-blur-xl border border-white/[0.08] rounded-2xl overflow-hidden">
+      <div className="glass-card rounded-3xl overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
@@ -754,22 +754,22 @@ function LoadROIView({ data, loading }) {
 
       {/* Summary Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-        <div className="bg-slate-800/60 border border-white/[0.08] rounded-2xl p-4">
+        <div className="glass-card rounded-3xl p-5">
           <div className="text-xs text-slate-400 mb-1">Total Invested</div>
           <div className="text-2xl font-bold text-white">{fmt(totalInvested)}</div>
           <div className="text-xs text-slate-500 mt-1">{data.length} loads</div>
         </div>
-        <div className="bg-slate-800/60 border border-white/[0.08] rounded-2xl p-4">
+        <div className="glass-card rounded-3xl p-5">
           <div className="text-xs text-slate-400 mb-1">Total Profit</div>
           <div className={`text-2xl font-bold ${totalProfit >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{fmt(totalProfit)}</div>
           <div className="text-xs text-slate-500 mt-1">{fmt(totalRevenue)} revenue</div>
         </div>
-        <div className="bg-slate-800/60 border border-white/[0.08] rounded-2xl p-4">
+        <div className="glass-card rounded-3xl p-5">
           <div className="text-xs text-slate-400 mb-1">Overall ROI</div>
           <div className={`text-2xl font-bold ${overallROI >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{pct(overallROI)}</div>
           <div className="text-xs text-slate-500 mt-1">profit / cost</div>
         </div>
-        <div className="bg-slate-800/60 border border-white/[0.08] rounded-2xl p-4">
+        <div className="glass-card rounded-3xl p-5">
           <div className="text-xs text-slate-400 mb-1">Sell-Through</div>
           <div className="text-2xl font-bold text-cyan-400">{pct(totalItems > 0 ? (totalSold / totalItems) * 100 : 0)}</div>
           <div className="text-xs text-slate-500 mt-1">{totalSold.toLocaleString()} of {totalItems.toLocaleString()}</div>
@@ -777,7 +777,7 @@ function LoadROIView({ data, loading }) {
       </div>
 
       {/* Load Table */}
-      <div className="bg-slate-800/60 backdrop-blur-xl border border-white/[0.08] rounded-2xl overflow-hidden">
+      <div className="glass-card rounded-3xl overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
@@ -866,20 +866,20 @@ function ShowView({ items }) {
 
       {/* Summary Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-        <div className="bg-slate-800/60 border border-white/[0.08] rounded-2xl p-4">
+        <div className="glass-card rounded-3xl p-5">
           <div className="text-xs text-slate-400 mb-1">Total Shows</div>
           <div className="text-2xl font-bold text-white">{showRows.length}</div>
           <div className="text-xs text-slate-500 mt-1">Jumpstart only</div>
         </div>
-        <div className="bg-slate-800/60 border border-white/[0.08] rounded-2xl p-4">
+        <div className="glass-card rounded-3xl p-5">
           <div className="text-xs text-slate-400 mb-1">Avg Items/Show</div>
           <div className="text-2xl font-bold text-white">{Math.round(avgItems)}</div>
         </div>
-        <div className="bg-slate-800/60 border border-white/[0.08] rounded-2xl p-4">
+        <div className="glass-card rounded-3xl p-5">
           <div className="text-xs text-slate-400 mb-1">Avg Profit/Show</div>
           <div className={`text-2xl font-bold ${avgShowProfit >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{fmt(avgShowProfit)}</div>
         </div>
-        <div className="bg-slate-800/60 border border-white/[0.08] rounded-2xl p-4">
+        <div className="glass-card rounded-3xl p-5">
           <div className="text-xs text-slate-400 mb-1">Best Show</div>
           <div className="text-lg font-bold text-emerald-400">{fmt(bestShow?.profit || 0)}</div>
           <div className="text-xs text-slate-500 mt-1 truncate">{bestShow?.name || '—'}</div>
@@ -887,7 +887,7 @@ function ShowView({ items }) {
       </div>
 
       {/* Show Table */}
-      <div className="bg-slate-800/60 backdrop-blur-xl border border-white/[0.08] rounded-2xl overflow-hidden">
+      <div className="glass-card rounded-3xl overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>

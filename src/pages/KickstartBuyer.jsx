@@ -154,11 +154,11 @@ export default function KickstartBuyer() {
       <div className="h-screen flex items-center justify-center bg-gradient-to-br from-emerald-600 via-teal-500 to-cyan-500">
         <div className="text-center px-6">
           <div className="text-8xl mb-4">✓</div>
-          <h2 className="text-4xl font-black text-white mb-2">{tagCount} items scanned</h2>
+          <h2 className="text-4xl font-black text-white mb-2 font-heading">{tagCount} items scanned</h2>
           <p className="text-xl text-white/80 mb-8">Ship it!</p>
           <button
             onClick={handleNewTrip}
-            className="bg-white/20 backdrop-blur-lg px-8 py-3 rounded-2xl border border-white/30 text-white font-bold text-lg hover:bg-white/30 transition-all"
+            className="border-2 border-pink-500 text-pink-500 hover:bg-pink-500/10 backdrop-blur-lg px-8 py-3 rounded-2xl font-bold text-lg transition-all"
           >
             New Trip
           </button>
@@ -170,9 +170,9 @@ export default function KickstartBuyer() {
   // Submitting screen
   if (step === 'submitting') {
     return (
-      <div className="h-screen flex items-center justify-center bg-[#0a0f1a]">
+      <div className="h-screen flex items-center justify-center bg-navy">
         <div className="text-center">
-          <div className="w-16 h-16 border-4 border-fuchsia-500/30 border-t-fuchsia-500 rounded-full animate-spin mx-auto mb-4" />
+          <div className="w-16 h-16 border-4 border-cyan-500/30 border-t-cyan-500 rounded-full animate-spin mx-auto mb-4" />
           <p className="text-white text-lg">Submitting...</p>
         </div>
       </div>
@@ -180,20 +180,20 @@ export default function KickstartBuyer() {
   }
 
   return (
-    <div className="h-screen flex flex-col bg-[#0a0f1a] overflow-hidden">
-      <div className="fixed inset-0 bg-gradient-to-br from-fuchsia-900/20 via-transparent to-pink-900/10 pointer-events-none" />
+    <div className="h-screen flex flex-col bg-navy overflow-hidden">
+      <div className="fixed inset-0 bg-gradient-to-br from-cyan-900/20 via-transparent to-pink-900/10 pointer-events-none" />
 
       {/* Header */}
       <div className="relative z-10 px-3 py-2 flex items-center justify-between border-b border-white/10 shrink-0">
         <div className="text-lg font-bold text-white">Kickstart Buyer</div>
         {selectedBuyer && (
-          <div className="bg-fuchsia-500/20 px-3 py-1 rounded-full border border-fuchsia-400/30">
-            <span className="text-fuchsia-300 font-bold text-sm">{selectedBuyer.name}</span>
+          <div className="bg-cyan-500/20 px-3 py-1 rounded-full border border-cyan-400/30">
+            <span className="text-cyan-300 font-bold text-sm">{selectedBuyer.name}</span>
           </div>
         )}
         {step === 'tags' && (
-          <div className="bg-gradient-to-r from-fuchsia-500/20 to-pink-500/20 px-3 py-1 rounded-full border border-fuchsia-400/30">
-            <span className="text-fuchsia-300 font-bold text-sm">{tagCount} tags</span>
+          <div className="bg-cyan-500/20 px-3 py-1 rounded-full border border-cyan-400/30">
+            <span className="text-cyan-300 font-bold text-sm">{tagCount} tags</span>
           </div>
         )}
       </div>
@@ -201,14 +201,14 @@ export default function KickstartBuyer() {
       {/* === STEP 1: Pick Name === */}
       {step === 'name' && (
         <div className="relative z-10 flex-1 flex flex-col items-center pt-8 px-4">
-          <h2 className="text-2xl font-bold text-white mb-2">Who's shopping?</h2>
+          <h2 className="text-2xl font-bold text-white mb-2 font-heading">Who's shopping?</h2>
           <p className="text-slate-400 mb-6">Tap your name</p>
           <div className="w-full max-w-sm space-y-3">
             {buyers.map(buyer => (
               <button
                 key={buyer.id}
                 onClick={() => handlePickBuyer(buyer)}
-                className="w-full py-5 rounded-2xl bg-gradient-to-br from-fuchsia-500/80 to-pink-500/80 border-2 border-fuchsia-400/40 text-white font-black text-2xl shadow-xl shadow-fuchsia-500/20 hover:scale-105 active:scale-95 transition-all"
+                className="w-full py-5 rounded-3xl bg-cyan-600 hover:bg-cyan-500 text-white font-black text-2xl shadow-xl shadow-cyan-500/20 hover:scale-105 active:scale-95 transition-all"
               >
                 {buyer.name}
               </button>
@@ -221,7 +221,7 @@ export default function KickstartBuyer() {
       {step === 'receipt' && (
         <div className="relative z-10 flex-1 flex flex-col items-center justify-center px-4">
           <div className="text-center mb-6">
-            <h2 className="text-2xl font-bold text-white mb-2">Photo the Receipt</h2>
+            <h2 className="text-2xl font-bold text-white mb-2 font-heading">Photo the Receipt</h2>
             <p className="text-slate-400">We'll read it to match prices to tags</p>
           </div>
 
@@ -237,14 +237,12 @@ export default function KickstartBuyer() {
           <button
             onClick={() => receiptInputRef.current?.click()}
             disabled={saving}
-            className="w-24 h-24 rounded-full bg-gradient-to-br from-fuchsia-500 to-pink-500 shadow-2xl shadow-fuchsia-500/40 flex items-center justify-center hover:scale-105 active:scale-95 transition-all"
+            className="w-24 h-24 rounded-full bg-cyan-600 hover:bg-cyan-500 shadow-2xl shadow-cyan-500/40 flex items-center justify-center hover:scale-105 active:scale-95 transition-all"
           >
             {saving ? (
               <div className="w-8 h-8 border-3 border-white/30 border-t-white rounded-full animate-spin" />
             ) : (
-              <svg className="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-              </svg>
+              <iconify-icon icon="mdi:receipt-text" width="40" height="40" style={{ color: 'white' }} />
             )}
           </button>
           <p className="text-slate-500 text-sm mt-3">Tap to photograph receipt</p>
@@ -261,7 +259,7 @@ export default function KickstartBuyer() {
       {/* === STEP 2b: Cost Per Item (no receipt) === */}
       {step === 'cost' && (
         <div className="relative z-10 flex-1 flex flex-col items-center pt-6 px-4">
-          <h2 className="text-2xl font-bold text-white mb-1">Cost Per Item</h2>
+          <h2 className="text-2xl font-bold text-white mb-1 font-heading">Cost Per Item</h2>
           <p className="text-slate-400 mb-5 text-sm">What did we pay per item?</p>
 
           <div className="w-full max-w-sm grid grid-cols-2 gap-3 mb-3">
@@ -269,7 +267,7 @@ export default function KickstartBuyer() {
               <button
                 key={price}
                 onClick={() => handleBinSelect(price)}
-                className="py-5 rounded-2xl bg-gradient-to-br from-fuchsia-500/80 to-pink-500/80 border-2 border-fuchsia-400/40 text-white font-black text-3xl shadow-xl shadow-fuchsia-500/20 hover:scale-105 active:scale-95 transition-all"
+                className="py-5 rounded-3xl bg-cyan-600 hover:bg-cyan-500 text-white font-black text-3xl shadow-xl shadow-cyan-500/20 hover:scale-105 active:scale-95 transition-all"
               >
                 ${price}
               </button>
@@ -286,7 +284,7 @@ export default function KickstartBuyer() {
                   value={customPrice}
                   onChange={e => setCustomPrice(e.target.value)}
                   placeholder="Other amount"
-                  className="w-full bg-white/10 border border-white/20 rounded-xl pl-8 pr-4 py-3 text-white text-xl font-bold placeholder-slate-500 focus:outline-none focus:border-fuchsia-400/50"
+                  className="w-full bg-white/5 border border-white/10 rounded-2xl pl-8 pr-4 py-3 text-white text-xl font-bold placeholder-slate-500 focus:outline-none focus:border-cyan-500/50 focus:ring-4 focus:ring-cyan-500/10 transition-all"
                 />
               </div>
               <button
@@ -294,7 +292,7 @@ export default function KickstartBuyer() {
                 disabled={!customPrice || parseFloat(customPrice) <= 0}
                 className={`px-6 rounded-xl font-bold text-lg transition-all ${
                   customPrice && parseFloat(customPrice) > 0
-                    ? 'bg-gradient-to-r from-fuchsia-500 to-pink-500 text-white'
+                    ? 'bg-cyan-600 hover:bg-cyan-500 text-white'
                     : 'bg-white/5 text-white/30 cursor-not-allowed'
                 }`}
               >
@@ -309,14 +307,14 @@ export default function KickstartBuyer() {
       {step === 'tags' && (
         <div className="relative z-10 flex-1 flex flex-col items-center justify-center px-4">
           <div className="text-center mb-4">
-            <h2 className="text-2xl font-bold text-white mb-1">Scan Tags</h2>
+            <h2 className="text-2xl font-bold text-white mb-1 font-heading">Scan Tags</h2>
             <p className="text-slate-400">Photo each hang tag — rapid fire!</p>
           </div>
 
           {/* Counter */}
-          <div className="mb-6 bg-fuchsia-500/20 rounded-2xl px-8 py-4 border border-fuchsia-400/30">
-            <div className="text-5xl font-black text-fuchsia-300 text-center">{tagCount}</div>
-            <div className="text-xs text-fuchsia-400/70 text-center uppercase tracking-wider mt-1">tags scanned</div>
+          <div className="mb-6 glass-card rounded-3xl px-8 py-4">
+            <div className="text-5xl font-black text-cyan-300 text-center">{tagCount}</div>
+            <div className="text-xs text-cyan-400/70 text-center uppercase tracking-wider mt-1">tags scanned</div>
           </div>
 
           <input
@@ -331,15 +329,12 @@ export default function KickstartBuyer() {
           <button
             onClick={() => tagInputRef.current?.click()}
             disabled={saving}
-            className="w-28 h-28 rounded-full bg-gradient-to-br from-fuchsia-500 to-pink-500 shadow-2xl shadow-fuchsia-500/40 flex items-center justify-center hover:scale-105 active:scale-95 transition-all mb-4"
+            className="w-28 h-28 rounded-full bg-cyan-600 hover:bg-cyan-500 shadow-2xl shadow-cyan-500/40 flex items-center justify-center hover:scale-105 active:scale-95 transition-all mb-4"
           >
             {saving ? (
               <div className="w-10 h-10 border-4 border-white/30 border-t-white rounded-full animate-spin" />
             ) : (
-              <svg className="w-12 h-12 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
-              </svg>
+              <iconify-icon icon="mdi:camera" width="48" height="48" style={{ color: 'white' }} />
             )}
           </button>
           <p className="text-slate-500 text-sm">Tap to snap next tag</p>
@@ -348,7 +343,7 @@ export default function KickstartBuyer() {
           {tagCount > 0 && (
             <button
               onClick={handleSubmit}
-              className="mt-8 w-full max-w-xs py-4 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-500 text-white font-bold text-xl shadow-2xl shadow-emerald-500/30 hover:scale-[1.02] active:scale-[0.98] transition-all"
+              className="mt-8 w-full max-w-xs py-4 rounded-3xl bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xl shadow-2xl shadow-cyan-500/30 hover:scale-[1.02] active:scale-[0.98] transition-all"
             >
               Done — Submit {tagCount} Tags
             </button>

@@ -8,18 +8,18 @@ export default function AdminInputs() {
 
   return (
     <div className="space-y-6">
-      <h2 className="text-2xl font-extrabold tracking-tight text-white">Inputs</h2>
+      <h2 className="text-2xl font-extrabold tracking-tight text-white font-heading">Inputs</h2>
       
       {/* Tab pills - below title */}
-      <div className="relative p-[1px] rounded-2xl bg-gradient-to-r from-cyan-500/40 via-purple-500/40 to-pink-500/40 shadow-lg w-fit">
-        <div className="flex gap-1 bg-[#080c14] rounded-2xl p-1.5">
+      <div className="relative p-[1px] rounded-3xl bg-gradient-to-r from-cyan-500/40 via-cyan-500/20 to-cyan-500/40 shadow-lg w-fit">
+        <div className="flex gap-1 bg-[#080c14] rounded-3xl p-1.5">
           {['shows', 'manifests', 'expenses'].map(s => (
             <button 
               key={s} 
               onClick={() => setActiveSection(s)}
               className={`px-4 py-2 rounded-xl text-sm font-semibold transition-all duration-200 ${
                 activeSection === s 
-                  ? 'bg-gradient-to-r from-cyan-600 via-purple-600 to-cyan-600 text-white shadow-lg shadow-purple-500/20' 
+                  ? 'bg-cyan-600 text-white shadow-lg shadow-cyan-600/30'
                   : 'text-slate-400 hover:text-white hover:bg-white/5'
               }`}
             >
@@ -62,7 +62,7 @@ function DropZone({ onFile, accept = '.csv', label = 'Drop CSV here or click to 
       onDragLeave={() => setDragging(false)}
       onDrop={handleDrop}
       onClick={handleClick}
-      className={`relative overflow-hidden border-2 border-dashed rounded-2xl p-8 text-center cursor-pointer transition-all duration-300
+      className={`relative overflow-hidden border-2 border-dashed rounded-3xl p-8 text-center cursor-pointer transition-all duration-300
         ${dragging 
           ? 'border-cyan-400 bg-cyan-500/10 shadow-lg shadow-cyan-500/20' 
           : 'border-white/[0.15] hover:border-cyan-500/50 hover:bg-white/[0.02]'}`}
@@ -222,10 +222,10 @@ function ManifestUpload() {
   return (
     <div className="space-y-6">
       {/* Existing Loads */}
-      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-b from-slate-800/60 to-slate-900/40 border border-white/[0.08] p-5 shadow-xl shadow-black/30">
+      <div className="relative overflow-hidden rounded-3xl glass-card p-5 shadow-xl shadow-black/30">
         <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent" />
         <div className="flex justify-between items-center mb-4">
-          <h3 className="font-bold text-lg">Loads</h3>
+          <h3 className="font-bold text-lg font-heading">Loads</h3>
           <button 
             onClick={() => setShowNewLoad(!showNewLoad)}
             className="text-sm text-cyan-400 hover:text-cyan-300 transition-colors"
@@ -236,20 +236,20 @@ function ManifestUpload() {
         
         {/* New Load Form */}
         {showNewLoad && (
-          <form onSubmit={createLoad} className="mb-4 p-4 rounded-xl bg-slate-800/50 border border-white/[0.04] space-y-3">
+          <form onSubmit={createLoad} className="mb-4 p-4 rounded-2xl bg-white/5 border border-white/10 space-y-3">
             <div className="grid grid-cols-2 gap-3">
               <input 
                 type="date" 
                 value={newLoad.date} 
                 onChange={e => setNewLoad({...newLoad, date: e.target.value})} 
-                className="bg-slate-700/50 border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-white focus:border-cyan-500/50 focus:outline-none" 
+                className="bg-white/5 border border-white/10 rounded-2xl px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-500/50 focus:ring-4 focus:ring-cyan-500/10 transition-all" 
                 required 
               />
               <input 
                 placeholder="Brand (e.g., J.Crew, Madewell)" 
                 value={newLoad.vendor} 
                 onChange={e => setNewLoad({...newLoad, vendor: e.target.value})} 
-                className="bg-slate-700/50 border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-white placeholder-slate-500 focus:border-cyan-500/50 focus:outline-none" 
+                className="bg-white/5 border border-white/10 rounded-2xl px-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500/50 focus:ring-4 focus:ring-cyan-500/10 transition-all" 
                 required 
               />
               <input 
@@ -258,13 +258,13 @@ function ManifestUpload() {
                 step="0.01" 
                 value={newLoad.total_cost} 
                 onChange={e => setNewLoad({...newLoad, total_cost: e.target.value})} 
-                className="bg-slate-700/50 border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-white placeholder-slate-500 focus:border-cyan-500/50 focus:outline-none" 
+                className="bg-white/5 border border-white/10 rounded-2xl px-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500/50 focus:ring-4 focus:ring-cyan-500/10 transition-all" 
               />
               <input 
                 placeholder="Notes" 
                 value={newLoad.notes} 
                 onChange={e => setNewLoad({...newLoad, notes: e.target.value})} 
-                className="bg-slate-700/50 border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-white placeholder-slate-500 focus:border-cyan-500/50 focus:outline-none" 
+                className="bg-white/5 border border-white/10 rounded-2xl px-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500/50 focus:ring-4 focus:ring-cyan-500/10 transition-all" 
               />
             </div>
             <button type="submit" className="bg-cyan-600 hover:bg-cyan-500 px-4 py-2 rounded-lg text-sm font-medium transition-colors">
@@ -320,9 +320,9 @@ function ManifestUpload() {
       </div>
 
       {/* Upload Manifest */}
-      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-b from-slate-800/60 to-slate-900/40 border border-white/[0.08] p-5 shadow-xl shadow-black/30">
+      <div className="relative overflow-hidden rounded-3xl glass-card p-5 shadow-xl shadow-black/30">
         <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent" />
-        <h3 className="font-bold text-lg mb-4">Upload Manifest</h3>
+        <h3 className="font-bold text-lg font-heading mb-4">Upload Manifest</h3>
         
         {loadId ? (
           <div className="space-y-3">
@@ -569,16 +569,16 @@ function ShowUpload() {
   return (
     <div className="space-y-6">
       {/* Upload Section */}
-      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-b from-slate-800/60 to-slate-900/40 border border-white/[0.08] p-5 shadow-xl shadow-black/30">
+      <div className="relative overflow-hidden rounded-3xl glass-card p-5 shadow-xl shadow-black/30">
         <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent" />
         
-        <h3 className="font-bold text-lg mb-4">Upload Whatnot Show CSV</h3>
+        <h3 className="font-bold text-lg font-heading mb-4">Upload Whatnot Show CSV</h3>
         
         <div className="flex gap-4 mb-4">
           <div>
             <label className="text-[10px] uppercase tracking-wider text-slate-500 block mb-1.5">Channel</label>
             <select value={channel} onChange={e => setChannel(e.target.value)} 
-              className="bg-slate-800/50 border border-white/[0.08] rounded-xl px-4 py-2.5 text-sm focus:border-cyan-500/50 focus:outline-none transition-colors">
+              className="bg-white/5 border border-white/10 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-cyan-500/50 focus:ring-4 focus:ring-cyan-500/10 transition-all">
               <option value="Jumpstart">Jumpstart</option>
               <option value="Kickstart">Kickstart</option>
             </select>
@@ -586,7 +586,7 @@ function ShowUpload() {
           <div>
             <label className="text-[10px] uppercase tracking-wider text-slate-500 block mb-1.5">Streamer</label>
             <select value={streamer} onChange={e => setStreamer(e.target.value)} 
-              className="bg-slate-800/50 border border-white/[0.08] rounded-xl px-4 py-2.5 text-sm focus:border-cyan-500/50 focus:outline-none transition-colors">
+              className="bg-white/5 border border-white/10 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-cyan-500/50 focus:ring-4 focus:ring-cyan-500/10 transition-all">
               <option value="Bri">Bri</option>
               <option value="Laura">Laura</option>
               <option value="Hannah">Hannah</option>
@@ -599,7 +599,7 @@ function ShowUpload() {
 
         {/* Auto-detection confirmation - simplified */}
         {detected && (
-          <div className={`mt-4 rounded-2xl p-4 ${detected.alreadyExists ? 'bg-red-900/20 border border-red-500/30' : 'bg-slate-800/50 border border-white/[0.08]'}`}>
+          <div className={`mt-4 rounded-3xl p-4 ${detected.alreadyExists ? 'bg-red-900/20 border border-red-500/30' : 'bg-white/5 border border-white/10'}`}>
             <div className="text-sm font-semibold mb-3">
               {detected.alreadyExists ? '⚠️ Show already exists' : '📋 Show info:'}
             </div>
@@ -654,10 +654,10 @@ function ShowUpload() {
       </div>
 
       {/* Existing Shows List */}
-      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-b from-slate-800/60 to-slate-900/40 border border-white/[0.08] p-5 shadow-xl shadow-black/30">
+      <div className="relative overflow-hidden rounded-3xl glass-card p-5 shadow-xl shadow-black/30">
         <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent" />
         
-        <h3 className="font-bold text-lg mb-4">Uploaded Shows <span className="text-slate-500 font-normal">({existingShows.length})</span></h3>
+        <h3 className="font-bold text-lg font-heading mb-4">Uploaded Shows <span className="text-slate-500 font-normal">({existingShows.length})</span></h3>
         
         {existingShows.length === 0 ? (
           <p className="text-sm text-slate-500">No shows uploaded yet.</p>
@@ -679,7 +679,7 @@ function ShowUpload() {
                       <span className="text-slate-500">·</span>
                       <span>{display.channel}</span>
                       <span className="text-slate-500">·</span>
-                      <span className="text-purple-400">{display.streamer}</span>
+                      <span className="text-cyan-400">{display.streamer}</span>
                       {isComplete && <span className="text-[10px] font-bold uppercase tracking-wider bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded-full">Complete</span>}
                     </div>
                     <div className="text-xs text-slate-500 mt-0.5">
@@ -803,7 +803,7 @@ function ScanMonitor() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h3 className="text-lg font-bold">Live Scanner Status</h3>
+        <h3 className="text-lg font-bold font-heading">Live Scanner Status</h3>
         <span className="text-xs text-slate-500">Auto-refreshes every 5s</span>
       </div>
 
@@ -855,7 +855,7 @@ function ScanMonitor() {
 
 function ScannerFeed({ title, subtitle, scans, timeAgo, isActive, isRecent, color }) {
   const colors = {
-    purple: { border: 'border-purple-500/50', glow: 'shadow-purple-500/20' },
+    purple: { border: 'border-cyan-500/50', glow: 'shadow-cyan-600/30' },
     teal: { border: 'border-teal-500/50', glow: 'shadow-teal-500/20' },
     cyan: { border: 'border-cyan-500/50', glow: 'shadow-cyan-500/20' },
     pink: { border: 'border-pink-500/50', glow: 'shadow-pink-500/20' }
@@ -863,7 +863,7 @@ function ScannerFeed({ title, subtitle, scans, timeAgo, isActive, isRecent, colo
   const c = colors[color]
 
   return (
-    <div className={`relative overflow-hidden rounded-2xl bg-gradient-to-b from-slate-800/60 to-slate-900/40 border ${isActive ? c.border : 'border-white/[0.08]'} p-4 shadow-xl shadow-black/30 ${isActive ? c.glow : ''}`}>
+    <div className={`relative overflow-hidden rounded-3xl glass-card ${isActive ? c.border : ''} p-4 ${isActive ? c.glow : ''}`}>
       <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent" />
       
       {/* Header with status dot */}
@@ -965,9 +965,9 @@ function ExpenseUpload() {
   }
 
   return (
-    <div className="relative overflow-hidden rounded-2xl bg-gradient-to-b from-slate-800/60 to-slate-900/40 border border-white/[0.08] p-5 shadow-xl shadow-black/30">
+    <div className="relative overflow-hidden rounded-3xl glass-card p-5 shadow-xl shadow-black/30">
       <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent" />
-      <h3 className="font-bold text-lg mb-2">Upload Expenses CSV</h3>
+      <h3 className="font-bold text-lg font-heading mb-2">Upload Expenses CSV</h3>
       <p className="text-sm text-slate-400 mb-4">Upload Copilot transactions CSV. Only OPEX and PAYROLL rows are imported. Everything else is ignored. Duplicates are automatically skipped.</p>
       <DropZone onFile={handleFile} label="Drop expenses CSV here" />
       {status && <p className="text-sm text-slate-300 mt-3">{status}</p>}

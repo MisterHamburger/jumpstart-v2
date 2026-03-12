@@ -203,9 +203,8 @@ export default function AdminInventory() {
       </div>
 
       {/* Progress Bar */}
-      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-b from-slate-800/60 to-slate-900/40 border border-white/[0.08] p-5 shadow-xl shadow-black/30">
-        <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent" />
-        <div className="flex justify-between items-center mb-3">
+      <div className="glass-card rounded-3xl p-6">
+          <div className="flex justify-between items-center mb-3">
           <span className="text-sm font-medium text-slate-300">Inventory Status</span>
           <span className="text-sm text-cyan-400 font-semibold">{soldPct}% sold</span>
         </div>
@@ -222,9 +221,8 @@ export default function AdminInventory() {
       </div>
 
       {/* Inventory by Load */}
-      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-b from-slate-800/60 to-slate-900/40 border border-white/[0.08] p-5 shadow-xl shadow-black/30">
-        <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent" />
-        <h3 className="font-bold text-lg mb-4">Inventory by Load</h3>
+      <div className="glass-card rounded-3xl p-6">
+          <h3 className="font-bold text-lg mb-4">Inventory by Load</h3>
         <div className="grid grid-cols-2 gap-4">
           {stats.loads.map(load => {
             const totalItems = Number(load.item_count)
@@ -249,9 +247,8 @@ export default function AdminInventory() {
       </div>
 
       {/* By Zone */}
-      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-b from-slate-800/60 to-slate-900/40 border border-white/[0.08] p-5 shadow-xl shadow-black/30">
-        <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent" />
-        <h3 className="font-bold text-lg mb-4">By Zone</h3>
+      <div className="glass-card rounded-3xl p-6">
+          <h3 className="font-bold text-lg mb-4">By Zone</h3>
         <div className="grid grid-cols-5 gap-4">
           <ZoneCard label="Zone 1" count={stats.zones.z1} color="purple" />
           <ZoneCard label="Zone 1 Pants" count={stats.zones.z1p} color="amber" />
@@ -262,9 +259,8 @@ export default function AdminInventory() {
       </div>
 
       {/* Item List */}
-      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-b from-slate-800/60 to-slate-900/40 border border-white/[0.08] p-5 shadow-xl shadow-black/30">
-        <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent" />
-        <h3 className="font-bold text-lg mb-4">Item List</h3>
+      <div className="glass-card rounded-3xl p-6">
+          <h3 className="font-bold text-lg mb-4">Item List</h3>
         
         {/* Filters */}
         <div className="flex gap-3 mb-4">
@@ -272,12 +268,12 @@ export default function AdminInventory() {
             placeholder="Search barcode, description, category..."
             value={search} 
             onChange={e => setSearch(e.target.value)}
-            className="flex-1 bg-slate-800/50 border border-white/[0.08] rounded-xl px-4 py-3 text-sm text-white placeholder-slate-500 focus:border-cyan-500/50 focus:outline-none transition-colors" 
+            className="flex-1 bg-white/5 border border-white/10 rounded-2xl px-5 py-4 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-cyan-500/50 focus:ring-4 focus:ring-cyan-500/10 transition-all" 
           />
           <select 
             value={zoneFilter} 
             onChange={e => setZoneFilter(e.target.value)}
-            className="bg-slate-800/50 border border-white/[0.08] rounded-xl px-4 py-3 text-sm text-white focus:border-cyan-500/50 focus:outline-none transition-colors"
+            className="bg-white/5 border border-white/10 rounded-2xl px-5 py-4 text-sm text-white appearance-none focus:outline-none focus:border-cyan-500/50 focus:ring-4 focus:ring-cyan-500/10 transition-all"
           >
             <option value="all">All Zones</option>
             <option value="1">Zone 1</option>
@@ -337,8 +333,7 @@ export default function AdminInventory() {
 
 function StatCard({ label, value, sub, accent }) {
   return (
-    <div className="relative overflow-hidden rounded-2xl bg-gradient-to-b from-slate-800/60 to-slate-900/40 border border-white/[0.08] p-4 shadow-xl shadow-black/30">
-      <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent" />
+    <div className="glass-card rounded-3xl p-5">
       <div className="text-[10px] uppercase tracking-[0.15em] font-semibold text-slate-500 mb-1">{label}</div>
       <div className={`text-2xl font-bold ${accent === 'cyan' ? 'text-cyan-400' : accent === 'purple' ? 'text-purple-400' : 'text-white'}`}>
         {value}

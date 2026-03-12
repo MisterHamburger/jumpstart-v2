@@ -120,10 +120,10 @@ export default function AdminDashboard() {
         <div className="flex gap-2">
           {['all', 'Jumpstart', 'Kickstart'].map(c => (
             <button key={c} onClick={() => setChannel(c)}
-              className={`px-4 py-2 rounded-xl text-sm font-semibold transition-all
+              className={`px-4 py-2 rounded-2xl text-sm font-bold transition-all
                 ${channel === c
-                  ? 'bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white shadow-lg shadow-purple-500/25'
-                  : 'text-slate-400 hover:bg-white/[0.06]'}`}>
+                  ? 'bg-cyan-600 text-white shadow-lg shadow-cyan-600/30 glow-cyan'
+                  : 'text-slate-400 hover:bg-white/[0.06] border border-transparent'}`}>
               {c === 'all' ? 'Summary' : c}
             </button>
           ))}
@@ -134,16 +134,16 @@ export default function AdminDashboard() {
       <div className="flex flex-wrap items-center gap-3 mb-6">
         <span className="text-sm text-slate-400">Date range:</span>
         <select value={dateRange} onChange={e => setDateRange(e.target.value)}
-          className="bg-slate-800 border border-white/[0.1] text-white text-sm rounded-lg px-3 py-1.5 focus:outline-none focus:border-violet-500">
+          className="bg-white/5 border border-white/10 text-white text-sm rounded-2xl px-4 py-2 focus:outline-none focus:border-cyan-500/50 focus:ring-4 focus:ring-cyan-500/10 transition-all">
           {DATE_RANGES.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
         </select>
         {dateRange === 'custom' && (
           <div className="flex items-center gap-2">
             <input type="date" value={customStart} onChange={e => setCustomStart(e.target.value)}
-              className="bg-slate-800 border border-white/[0.1] text-white text-sm rounded-lg px-3 py-1.5 focus:outline-none focus:border-violet-500" />
+              className="bg-white/5 border border-white/10 text-white text-sm rounded-2xl px-4 py-2 focus:outline-none focus:border-cyan-500/50 focus:ring-4 focus:ring-cyan-500/10 transition-all" />
             <span className="text-slate-500 text-sm">to</span>
             <input type="date" value={customEnd} onChange={e => setCustomEnd(e.target.value)}
-              className="bg-slate-800 border border-white/[0.1] text-white text-sm rounded-lg px-3 py-1.5 focus:outline-none focus:border-violet-500" />
+              className="bg-white/5 border border-white/10 text-white text-sm rounded-2xl px-4 py-2 focus:outline-none focus:border-cyan-500/50 focus:ring-4 focus:ring-cyan-500/10 transition-all" />
           </div>
         )}
       </div>
@@ -155,7 +155,7 @@ export default function AdminDashboard() {
       ) : (
         <>
           {/* KPI Cards */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
             <GradientKPI label="Avg Sale Price" value={fmt(avgSalePrice)} sub={`${stats.items.toLocaleString()} items sold`} />
             <GradientKPI label="Profit / Unit" value={fmt(profitPerUnit)} negative={profitPerUnit < 0} />
             <GradientKPI label="Gross Profit" value={fmt(stats.grossProfit)} sub={`${margin.toFixed(1)}% margin`}
@@ -170,8 +170,8 @@ export default function AdminDashboard() {
           </div>
 
           {/* P&L Summary Table */}
-          <div className="bg-slate-800/60 backdrop-blur-xl border border-white/[0.08] rounded-2xl p-5 mt-4">
-            <h3 className="font-bold text-lg mb-4">P&L Summary</h3>
+          <div className="glass-card rounded-3xl p-6 mt-4">
+            <h3 className="font-bold font-heading text-lg mb-4">P&L Summary</h3>
             <div className="space-y-0">
               <PLRow label="Revenue (net of Whatnot fees)" value={stats.netRevenue} bold />
               {isSummary && (
@@ -221,9 +221,9 @@ function fmt(n) {
 
 function GradientKPI({ label, value, sub, negative }) {
   return (
-    <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-violet-600/30 via-purple-600/20 to-fuchsia-600/10 border border-white/[0.08] p-4">
-      <div className="text-xs text-slate-400 mb-1">{label}</div>
-      <div className={`text-xl font-bold ${negative ? 'text-red-400' : 'text-white'}`}>{value}</div>
+    <div className="glass-card rounded-3xl p-5">
+      <div className="text-xs text-slate-400 mb-1 font-medium">{label}</div>
+      <div className={`text-xl font-bold font-heading ${negative ? 'text-red-400' : 'text-white'}`}>{value}</div>
       {sub && <div className="text-xs text-slate-500 mt-1">{sub}</div>}
     </div>
   )
@@ -231,7 +231,7 @@ function GradientKPI({ label, value, sub, negative }) {
 
 function PLRow({ label, value, bold, accent, indent }) {
   const v = Number(value) || 0
-  const color = accent ? (v >= 0 ? 'text-green-400' : 'text-red-400') : v < 0 ? 'text-red-400' : 'text-slate-200'
+  const color = accent ? (v >= 0 ? 'text-emerald-400' : 'text-red-400') : v < 0 ? 'text-red-400' : 'text-slate-200'
   return (
     <div className={`flex justify-between items-center py-2.5 ${bold ? '' : 'border-b border-white/[0.04]'}`}>
       <span className={`${bold ? 'font-semibold text-white' : 'text-slate-300'} ${indent ? 'pl-4 text-sm text-slate-400' : ''}`}>{label}</span>

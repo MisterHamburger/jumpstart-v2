@@ -994,13 +994,13 @@ export default function BundleSort() {
   // === SCANNER VIEW ===
   if (activeBox) {
     return (
-      <div className="min-h-screen flex flex-col bg-gradient-to-br from-violet-950 via-slate-900 to-fuchsia-950">
+      <div className="min-h-screen flex flex-col bg-navy">
         {/* Header */}
         <div className="p-3 flex items-center justify-between backdrop-blur-xl bg-white/5 border-b border-white/10">
-          <button onClick={closeScanner} className="bg-white/10 hover:bg-white/20 backdrop-blur-lg w-10 h-10 rounded-full border border-white/20 text-white font-bold text-lg flex items-center justify-center">
-            ←
+          <button onClick={closeScanner} className="bg-white/10 hover:bg-white/20 backdrop-blur-lg w-10 h-10 rounded-full border border-white/20 flex items-center justify-center">
+            <iconify-icon icon="lucide:chevron-left" class="text-white"></iconify-icon>
           </button>
-          <h1 className="text-lg font-bold text-white">
+          <h1 className="text-lg font-bold text-white font-heading">
             {isKickstart && <span className="text-fuchsia-400 text-sm mr-1">KS</span>}
             Box {activeBox}
           </h1>
@@ -1021,7 +1021,7 @@ export default function BundleSort() {
           <div className="flex-1 overflow-y-auto p-4">
             <div className="flex items-center justify-between mb-4">
               <p className="text-white font-bold text-lg">{activeBoxItems.length} items scanned</p>
-              <button onClick={() => setShowItemList(false)} className={`px-4 py-2 rounded-full text-white font-semibold text-sm shadow-lg ${isKickstart ? 'bg-gradient-to-r from-fuchsia-500 to-pink-600 shadow-fuchsia-500/30' : 'bg-gradient-to-r from-cyan-500 to-blue-600 shadow-cyan-500/30'}`}>
+              <button onClick={() => setShowItemList(false)} className={`px-4 py-2 rounded-full text-white font-semibold text-sm shadow-lg ${isKickstart ? 'bg-cyan-600 hover:bg-cyan-500 shadow-cyan-500/30' : 'bg-cyan-600 hover:bg-cyan-500 shadow-cyan-500/30'}`}>
                 Back to Scanner
               </button>
             </div>
@@ -1052,14 +1052,14 @@ export default function BundleSort() {
           <div className="flex-1 flex flex-col items-center p-4 overflow-y-auto">
             {noBarcodeStep === 'size' && (
               <>
-                <h2 className="text-xl font-bold text-white mb-1 mt-2">Select Size</h2>
+                <h2 className="text-xl font-bold text-white mb-1 mt-2 font-heading">Select Size</h2>
                 <p className="text-slate-400 mb-4 text-sm">What size is the item?</p>
                 <div className="w-full max-w-sm grid grid-cols-2 gap-3 mb-4">
                   {['XS', 'S', 'M', 'L', 'XL', 'XXL', 'One Size'].map(s => (
                     <button
                       key={s}
                       onClick={() => fetchNoBarcodeItems(s)}
-                      className="py-5 rounded-2xl bg-gradient-to-br from-fuchsia-500/80 to-pink-500/80 border-2 border-fuchsia-400/40 text-white font-black text-2xl shadow-xl shadow-fuchsia-500/20 hover:scale-105 active:scale-95 transition-all"
+                      className="py-5 rounded-2xl bg-cyan-600 hover:bg-cyan-500 border-2 border-cyan-400/40 text-white font-black text-2xl shadow-xl shadow-cyan-500/20 hover:scale-105 active:scale-95 transition-all"
                     >
                       {s}
                     </button>
@@ -1076,7 +1076,7 @@ export default function BundleSort() {
             )}
             {noBarcodeStep === 'category' && (
               <>
-                <h2 className="text-xl font-bold text-white mb-1 mt-2">Select Category</h2>
+                <h2 className="text-xl font-bold text-white mb-1 mt-2 font-heading">Select Category</h2>
                 <p className="text-slate-400 mb-4 text-sm">{noBarcodeAllItems.length} available {noBarcodeSize || 'All'} items</p>
                 {noBarcodeLoading ? (
                   <p className="text-white/50 text-lg py-12">Loading...</p>
@@ -1112,7 +1112,7 @@ export default function BundleSort() {
             )}
             {noBarcodeStep === 'pickItem' && (
               <>
-                <h2 className="text-xl font-bold text-white mb-1 mt-2">{noBarcodeSize ? `Pick Item — ${noBarcodeSize}` : 'Pick Item'}{noBarcodeCategory ? ` — ${noBarcodeCategory}` : ''}</h2>
+                <h2 className="text-xl font-bold text-white mb-1 mt-2 font-heading">{noBarcodeSize ? `Pick Item — ${noBarcodeSize}` : 'Pick Item'}{noBarcodeCategory ? ` — ${noBarcodeCategory}` : ''}</h2>
                 <p className="text-slate-400 mb-2 text-sm">{noBarcodeItems.length} item group{noBarcodeItems.length !== 1 ? 's' : ''}</p>
                 <button
                   onClick={() => setNoBarcodeFlaws(f => !f)}
@@ -1187,7 +1187,7 @@ export default function BundleSort() {
               const maxQty = Math.min(noBarcodeSelectedGroup.ids.length, remaining)
               return (
                 <>
-                  <h2 className="text-xl font-bold text-white mb-1 mt-2">How Many?</h2>
+                  <h2 className="text-xl font-bold text-white mb-1 mt-2 font-heading">How Many?</h2>
                   <p className="text-slate-400 mb-4 text-sm">{noBarcodeSelectedGroup.ids.length} available</p>
 
                   <div className="w-full max-w-sm flex flex-col items-center gap-4 mb-6">
@@ -1234,7 +1234,7 @@ export default function BundleSort() {
 
                     <button
                       onClick={() => handlePickNoBarcodeItem(noBarcodeSelectedGroup, noBarcodeQty)}
-                      className="w-full py-4 rounded-2xl font-bold text-lg bg-gradient-to-r from-fuchsia-500 to-pink-600 text-white shadow-lg shadow-fuchsia-500/30 border border-fuchsia-400/50 active:scale-[0.97] transition-all"
+                      className="w-full py-4 rounded-2xl font-bold text-lg bg-cyan-600 hover:bg-cyan-500 text-white shadow-lg shadow-cyan-500/30 border border-cyan-400/50 active:scale-[0.97] transition-all"
                     >
                       Add {noBarcodeQty} Item{noBarcodeQty !== 1 ? 's' : ''}
                     </button>
@@ -1257,9 +1257,9 @@ export default function BundleSort() {
             {/* Camera always running */}
             <div className="flex-1 flex flex-col items-center justify-center p-4 relative">
               <div className={`text-center mb-3 ${lastScan ? 'invisible' : ''}`}>
-                <h2 className="text-2xl font-bold text-white mb-1">Scan Barcode</h2>
+                <h2 className="text-2xl font-bold text-white mb-1 font-heading">Scan Barcode</h2>
               </div>
-              <div id="nb-qr-reader" className="w-full max-w-lg rounded-3xl overflow-hidden shadow-2xl shadow-purple-500/20 border-2 border-purple-400/30" style={{ maxHeight: '50vh' }}></div>
+              <div id="nb-qr-reader" className="w-full max-w-lg rounded-3xl overflow-hidden shadow-2xl shadow-cyan-500/20 border-2 border-cyan-400/30" style={{ maxHeight: '50vh' }}></div>
               {cameraError && <p className="text-red-400 mt-3 text-sm">{cameraError}</p>}
 
               {/* Scan result overlay */}
@@ -1273,18 +1273,18 @@ export default function BundleSort() {
                   <div className="text-center mb-10">
                     {lastScan.notFound ? (
                       <>
-                        <h2 className="text-4xl font-black text-white mb-4">NOT FOUND</h2>
+                        <h2 className="text-4xl font-black text-white mb-4 font-heading">NOT FOUND</h2>
                         <p className="text-xl text-white/90 font-semibold">No matching item in intake</p>
                         <p className="text-lg text-white/70 mt-2 font-mono">{lastScan.barcode}</p>
                       </>
                     ) : lastScan.error ? (
                       <>
-                        <h2 className="text-4xl font-black text-white mb-4">ERROR</h2>
+                        <h2 className="text-4xl font-black text-white mb-4 font-heading">ERROR</h2>
                         <p className="text-xl text-white/90 font-semibold">Try again</p>
                       </>
                     ) : (
                       <>
-                        <h2 className="text-6xl font-black text-white mb-4 tracking-tight">
+                        <h2 className="text-6xl font-black text-white mb-4 tracking-tight font-heading">
                           {lastScan.added ? 'ADDED ✓' : 'SCANNED ✓'}
                         </h2>
                         <p className="text-2xl text-white/90 font-semibold">Place in Box {activeBox}</p>
@@ -1363,14 +1363,14 @@ export default function BundleSort() {
     const margin = totalRevenue > 0 ? (profit / totalRevenue) * 100 : null
 
     return (
-      <div className="min-h-screen flex flex-col bg-[#0a0f1a]">
+      <div className="min-h-screen flex flex-col bg-navy">
         <div className={`fixed inset-0 bg-gradient-to-br ${isKickstart ? 'from-fuchsia-900/20 via-transparent to-pink-900/10' : 'from-pink-900/20 via-transparent to-fuchsia-900/10'} pointer-events-none`} />
         {/* Header */}
         <div className="p-3 flex items-center justify-between backdrop-blur-xl bg-white/5 border-b border-white/10">
-          <button onClick={() => { setViewingBox(null); fetchBoxes() }} className="bg-white/10 hover:bg-white/20 backdrop-blur-lg w-10 h-10 rounded-full border border-white/20 text-white font-bold text-lg flex items-center justify-center">
-            ←
+          <button onClick={() => { setViewingBox(null); fetchBoxes() }} className="bg-white/10 hover:bg-white/20 backdrop-blur-lg w-10 h-10 rounded-full border border-white/20 flex items-center justify-center">
+            <iconify-icon icon="lucide:chevron-left" class="text-white"></iconify-icon>
           </button>
-          <h1 className="text-lg font-bold text-white">
+          <h1 className="text-lg font-bold text-white font-heading">
             {isKickstart && <span className="text-fuchsia-400 text-sm mr-1">KS</span>}
             Box {viewingBox.boxNumber}
           </h1>
@@ -1433,7 +1433,7 @@ export default function BundleSort() {
 
           {/* Cost editor */}
           {editingCost && (
-            <div className="bg-slate-800/80 rounded-xl p-3 mb-2 border border-fuchsia-500/30">
+            <div className="glass-card rounded-xl p-3 mb-2 border border-fuchsia-500/30">
               <p className="text-xs text-slate-400 mb-2">Edit total cost</p>
               <div className="flex gap-2">
                 <div className="relative flex-1">
@@ -1444,7 +1444,7 @@ export default function BundleSort() {
                     value={tempEditCost}
                     onChange={e => setTempEditCost(e.target.value)}
                     onKeyDown={e => e.key === 'Enter' && saveCostOverride(tempEditCost)}
-                    className="w-full bg-white/10 border border-white/20 rounded-lg pl-7 pr-3 py-2.5 text-white text-base font-semibold"
+                    className="w-full bg-white/5 border border-white/10 rounded-2xl pl-7 pr-3 py-2.5 text-white text-base font-semibold focus:outline-none focus:border-cyan-500/50 focus:ring-4 focus:ring-cyan-500/10 transition-all"
                     placeholder="0.00"
                   />
                 </div>
@@ -1459,7 +1459,7 @@ export default function BundleSort() {
 
           {/* Price editor */}
           {editingPrice && (
-            <div className="bg-slate-800/80 rounded-xl p-3 mb-2 border border-emerald-500/30">
+            <div className="glass-card rounded-xl p-3 mb-2 border border-emerald-500/30">
               <p className="text-xs text-slate-400 mb-2">Set price directly</p>
               <div className="flex gap-2 mb-3">
                 <div className="relative flex-1">
@@ -1470,7 +1470,7 @@ export default function BundleSort() {
                     value={tempEditPrice}
                     onChange={e => setTempEditPrice(e.target.value)}
                     onKeyDown={e => e.key === 'Enter' && saveDirectPrice(tempEditPrice)}
-                    className="w-full bg-white/10 border border-white/20 rounded-lg pl-7 pr-3 py-2.5 text-white text-base font-semibold"
+                    className="w-full bg-white/5 border border-white/10 rounded-2xl pl-7 pr-3 py-2.5 text-white text-base font-semibold focus:outline-none focus:border-cyan-500/50 focus:ring-4 focus:ring-cyan-500/10 transition-all"
                     placeholder="0.00"
                   />
                 </div>
@@ -1538,7 +1538,7 @@ export default function BundleSort() {
           {/* Action buttons */}
           <div className="flex gap-2">
             {!isComplete && (
-              <button onClick={() => startScanningBox(viewingBox)} className={`flex-1 py-3 rounded-xl text-white font-bold text-sm shadow-lg active:scale-[0.98] transition-all ${isKickstart ? 'bg-gradient-to-r from-fuchsia-500 to-pink-600 shadow-fuchsia-500/25' : 'bg-gradient-to-r from-cyan-500 to-blue-600 shadow-cyan-500/25'}`}>
+              <button onClick={() => startScanningBox(viewingBox)} className={`flex-1 py-3 rounded-xl text-white font-bold text-sm shadow-lg active:scale-[0.98] transition-all ${isKickstart ? 'bg-cyan-600 hover:bg-cyan-500 shadow-cyan-500/25' : 'bg-cyan-600 hover:bg-cyan-500 shadow-cyan-500/25'}`}>
                 Scan Items
               </button>
             )}
@@ -1553,7 +1553,7 @@ export default function BundleSort() {
               </button>
             )}
             {isComplete && (
-              <button onClick={generatePDF} disabled={generatingPdf} className={`flex-1 bg-gradient-to-r from-fuchsia-500 to-purple-600 py-3 rounded-xl text-white font-bold text-sm shadow-lg shadow-fuchsia-500/25 transition-all ${generatingPdf ? 'opacity-60' : 'active:scale-[0.98]'}`}>
+              <button onClick={generatePDF} disabled={generatingPdf} className={`flex-1 bg-cyan-600 hover:bg-cyan-500 py-3 rounded-xl text-white font-bold text-sm shadow-lg shadow-cyan-500/25 transition-all ${generatingPdf ? 'opacity-60' : 'active:scale-[0.98]'}`}>
                 {generatingPdf ? 'Generating...' : 'Generate PDF'}
               </button>
             )}
@@ -1657,7 +1657,7 @@ export default function BundleSort() {
           const modalTotalRevenue = customerPrice + modalShipCharged
           return (
           <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-            <div className="bg-slate-800 rounded-2xl p-6 w-full max-w-sm border border-white/10">
+            <div className="glass-card rounded-3xl p-6 w-full max-w-sm border border-white/10">
               <h3 className="text-xl font-bold text-white mb-2">Mark as Sold</h3>
               <p className="text-slate-400 text-sm mb-4">Confirm sale of Box {viewingBox.boxNumber}</p>
 
@@ -1689,7 +1689,7 @@ export default function BundleSort() {
                       type="number" inputMode="decimal" step="0.01" min="0"
                       value={shippingCharged} onChange={e => setShippingCharged(e.target.value)}
                       placeholder="0.00"
-                      className="w-full bg-slate-700/50 border border-white/10 rounded-xl py-2.5 pl-7 pr-3 text-white text-sm focus:outline-none focus:border-emerald-500"
+                      className="w-full bg-white/5 border border-white/10 rounded-2xl py-2.5 pl-7 pr-3 text-white text-sm focus:outline-none focus:border-cyan-500/50 focus:ring-4 focus:ring-cyan-500/10 transition-all"
                     />
                   </div>
                 </div>
@@ -1701,7 +1701,7 @@ export default function BundleSort() {
                       type="number" inputMode="decimal" step="0.01" min="0"
                       value={shippingCost} onChange={e => setShippingCost(e.target.value)}
                       placeholder="0.00"
-                      className="w-full bg-slate-700/50 border border-white/10 rounded-xl py-2.5 pl-7 pr-3 text-white text-sm focus:outline-none focus:border-emerald-500"
+                      className="w-full bg-white/5 border border-white/10 rounded-2xl py-2.5 pl-7 pr-3 text-white text-sm focus:outline-none focus:border-cyan-500/50 focus:ring-4 focus:ring-cyan-500/10 transition-all"
                     />
                   </div>
                 </div>
@@ -1740,16 +1740,16 @@ export default function BundleSort() {
 
   // === BOX LIST ===
   return (
-    <div className="min-h-screen flex flex-col bg-[#0a0f1a] overflow-x-hidden max-w-full">
+    <div className="min-h-screen flex flex-col bg-navy overflow-x-hidden max-w-full">
       <div className={`fixed inset-0 bg-gradient-to-br ${isKickstart ? 'from-fuchsia-900/20 via-transparent to-pink-900/10' : 'from-pink-900/20 via-transparent to-fuchsia-900/10'} pointer-events-none`} />
       {/* Header */}
       <div className="p-3 backdrop-blur-xl bg-white/5 border-b border-white/10">
         <div className="flex items-center justify-between">
-          <button onClick={() => navigate('/')} className="bg-white/10 hover:bg-white/20 backdrop-blur-lg px-4 py-2 rounded-full border border-white/20 text-white font-semibold text-sm shrink-0">
-            ← Home
+          <button onClick={() => navigate('/')} className="bg-white/10 hover:bg-white/20 backdrop-blur-lg px-4 py-2 rounded-full border border-white/20 text-white font-semibold text-sm shrink-0 flex items-center gap-1">
+            <iconify-icon icon="lucide:chevron-left" class="text-white"></iconify-icon> Home
           </button>
-          <h1 className="text-lg font-bold text-white shrink-0">Bundle Sort</h1>
-          <button onClick={createNewBox} className={`px-4 py-2 rounded-full text-white font-semibold text-sm shadow-lg shrink-0 ${isKickstart ? 'bg-gradient-to-r from-fuchsia-500 to-pink-600 hover:from-fuchsia-400 hover:to-pink-500 shadow-fuchsia-500/30' : 'bg-gradient-to-r from-fuchsia-500 to-purple-600 hover:from-fuchsia-400 hover:to-purple-500 shadow-fuchsia-500/30'}`}>
+          <h1 className="text-lg font-bold text-white shrink-0 font-heading">Bundle Sort</h1>
+          <button onClick={createNewBox} className={`px-4 py-2 rounded-full text-white font-semibold text-sm shadow-lg shrink-0 ${isKickstart ? 'bg-cyan-600 hover:bg-cyan-500 shadow-cyan-500/30' : 'bg-cyan-600 hover:bg-cyan-500 shadow-cyan-500/30'}`}>
             ＋ New
           </button>
         </div>
@@ -1762,8 +1762,8 @@ export default function BundleSort() {
               className={`flex-1 py-2 rounded-lg text-sm font-semibold transition-all ${
                 channel === ch
                   ? (ch === 'Kickstart'
-                    ? 'bg-gradient-to-r from-fuchsia-500 to-pink-600 text-white shadow-lg shadow-fuchsia-500/30'
-                    : 'bg-gradient-to-r from-cyan-500 to-blue-600 text-white shadow-lg shadow-cyan-500/30')
+                    ? 'bg-cyan-600 text-white shadow-lg shadow-cyan-500/30'
+                    : 'bg-cyan-600 text-white shadow-lg shadow-cyan-500/30')
                   : 'text-slate-400 hover:text-white hover:bg-white/5'
               }`}
             >
@@ -1776,14 +1776,14 @@ export default function BundleSort() {
       <div className="flex-1 overflow-y-auto overflow-x-hidden p-4 space-y-3">
         {loading && (
           <div className="text-center py-12">
-            <div className={`w-12 h-12 border-4 ${isKickstart ? 'border-fuchsia-400/30 border-t-fuchsia-400' : 'border-purple-400/30 border-t-purple-400'} rounded-full animate-spin mb-4 mx-auto`}></div>
+            <div className={`w-12 h-12 border-4 ${isKickstart ? 'border-cyan-400/30 border-t-cyan-400' : 'border-cyan-400/30 border-t-cyan-400'} rounded-full animate-spin mb-4 mx-auto`}></div>
             <p className="text-slate-400">Loading boxes...</p>
           </div>
         )}
         {!loading && boxes.length === 0 && (
           <div className="text-center py-16">
             <p className="text-slate-300 text-lg mb-6">No {channel} boxes yet</p>
-            <button onClick={createNewBox} className={`px-8 py-3 rounded-full text-white font-bold text-lg shadow-xl ${isKickstart ? 'bg-gradient-to-r from-fuchsia-500 to-pink-600 shadow-fuchsia-500/30' : 'bg-gradient-to-r from-fuchsia-500 to-purple-600 shadow-fuchsia-500/30'}`}>
+            <button onClick={createNewBox} className={`px-8 py-3 rounded-full text-white font-bold text-lg shadow-xl ${isKickstart ? 'bg-cyan-600 hover:bg-cyan-500 shadow-cyan-500/30' : 'bg-cyan-600 hover:bg-cyan-500 shadow-cyan-500/30'}`}>
               ＋ Create Box 1
             </button>
           </div>
@@ -1801,7 +1801,7 @@ export default function BundleSort() {
                              box.status === 'complete' ? 'Complete' : box.status === 'in-progress' ? 'In Progress' : 'Empty'
 
           return (
-            <div key={box.boxNumber} className={`rounded-2xl bg-gradient-to-r ${statusColor} backdrop-blur-lg border ${borderColor} overflow-hidden max-w-full`}>
+            <div key={box.boxNumber} className={`rounded-3xl bg-gradient-to-r ${statusColor} backdrop-blur-lg border ${borderColor} overflow-hidden max-w-full`}>
               <div className="p-4 cursor-pointer active:bg-white/5" onClick={() => openBox(box)}>
                 <div className="flex items-center justify-between mb-2">
                   <div className="flex-1 min-w-0">
@@ -1827,12 +1827,12 @@ export default function BundleSort() {
                       type="text"
                       value={noteText}
                       onChange={e => setNoteText(e.target.value)}
-                      className="flex-1 min-w-0 bg-white/10 border border-white/20 rounded-xl px-3 py-2 text-white text-base placeholder-slate-500 focus:outline-none focus:border-purple-400/50"
+                      className="flex-1 min-w-0 bg-white/5 border border-white/10 rounded-2xl px-3 py-2 text-white text-base placeholder-slate-500 focus:outline-none focus:border-cyan-500/50 focus:ring-4 focus:ring-cyan-500/10 transition-all"
                       style={{ fontSize: '16px' }}
                       placeholder="Type a note..."
                       autoFocus
                     />
-                    <button onClick={() => saveNote(box.boxNumber)} className={`px-3 py-2 rounded-xl text-white text-xs font-semibold shrink-0 ${isKickstart ? 'bg-gradient-to-r from-fuchsia-500 to-pink-600' : 'bg-gradient-to-r from-cyan-500 to-blue-600'}`}>
+                    <button onClick={() => saveNote(box.boxNumber)} className={`px-3 py-2 rounded-xl text-white text-xs font-semibold shrink-0 ${isKickstart ? 'bg-cyan-600 hover:bg-cyan-500' : 'bg-cyan-600 hover:bg-cyan-500'}`}>
                       Save
                     </button>
                     <button onClick={() => setEditingNote(null)} className="bg-white/10 w-7 h-7 rounded-full text-white text-xs shrink-0 flex items-center justify-center">
