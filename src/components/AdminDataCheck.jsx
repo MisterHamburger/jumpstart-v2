@@ -318,6 +318,92 @@ export default function AdminDataCheck() {
       check('All Items Have Dates', (noDate || 0) === 0,
         (noDate || 0) === 0 ? 'Every profitability item has a show_date' : `${noDate} items missing show_date`)
 
+      // ═══════════════════════════════════════════
+      // SECTION 15: ANALYTICS — INVENTORY ACCOUNTING
+      // Unsold + Sold = Total manifest items
+      // ═══════════════════════════════════════════
+      {
+        const PAGE = 1000
+        // Count total manifest items
+        const { count: totalManifest } = await supabase.from('jumpstart_manifest')
+          .select('id', { count: 'exact', head: true })
+        // Count total sold scans
+        let totalSoldScans = 0, soldOffset = 0
+        while (true) {
+          const { data: soldPage } = await supabase.from('jumpstart_sold_scans')
+            .select('barcode').range(soldOffset, soldOffset + PAGE - 1)
+          if (!soldPage || soldPage.length === 0) break
+          totalSoldScans += soldPage.length
+          if (soldPage.length < PAGE) break
+          soldOffset += PAGE
+        }
+        const unsold = (totalManifest || 0) - totalSoldScans
+        const sum = totalSoldScans + unsold
+        const ok = sum === (totalManifest || 0)
+        check('Inventory Accounting (sold + unsold = total)', ok,
+          `Manifest: ${totalManifest} | Sold scans: ${totalSoldScans} | Unsold: ${unsold} | Sum: ${sum}`)
+      }
+
+      // ═══════════════════════════════════════════
+      // SECTION 16: ANALYTICS — SOLD COUNT MATCHES DASHBOARD
+      // Compare sold scans count to dashboard item count
+      // ═══════════════════════════════════════════
+      {
+        // Dashboard items sold = from profitability view (JS non-bundle + JS bundle)
+        const { count: profJsCount } = await supabase.from('profitability')
+          .select('scan_id', { count: 'exact', head: true })
+          .eq('channel', 'Jumpstart')
+        const dashItems = data.jumpstart.items
+        const ok = profJsCount === dashItems
+        check('Analytics Sold = Dashboard Items (JS)', ok,
+          `Profitability view: ${profJsCount} | Dashboard RPC: ${dashItems}${ok ? '' : ' — MISMATCH'}`)
+      }
+
+      // ═══════════════════════════════════════════
+      // SECTION 17: ANALYTICS — PROFIT CONSISTENCY
+      // Sum of profit in profitability view = Dashboard gross profit
+      // ═══════════════════════════════════════════
+      {
+        const PAGE = 1000
+        let totalProfit = 0, offset = 0
+        while (true) {
+          const { data: rows } = await supabase.from('profitability')
+            .select('profit')
+            .eq('channel', 'Jumpstart')
+            .range(offset, offset + PAGE - 1)
+          if (!rows || rows.length === 0) break
+          for (const r of rows) totalProfit += Number(r.profit) || 0
+          if (rows.length < PAGE) break
+          offset += PAGE
+        }
+        totalProfit = round2(totalProfit)
+        const dashGP = round2(data.jumpstart.grossProfit)
+        const diff = Math.abs(totalProfit - dashGP)
+        // Allow up to 0.1% drift from per-row rounding accumulation
+        const threshold = Math.max(1.00, Math.abs(dashGP) * 0.001)
+        const ok = diff < threshold
+        check('Analytics Profit = Dashboard GP (JS)', ok,
+          `Profitability sum: ${fmt(totalProfit)} | Dashboard GP: ${fmt(dashGP)} | Diff: ${fmt(diff)} (threshold: ${fmt(threshold)})${ok ? '' : ' — MISMATCH'}`)
+      }
+
+      // ═══════════════════════════════════════════
+      // SECTION 18: ANALYTICS — LOAD ITEM COUNTS
+      // Sum of items across loads = total manifest items
+      // ═══════════════════════════════════════════
+      {
+        const { data: loadSummary } = await supabase.from('load_summary').select('item_count')
+        const { count: totalManifest } = await supabase.from('jumpstart_manifest')
+          .select('id', { count: 'exact', head: true })
+        if (loadSummary) {
+          const loadSum = loadSummary.reduce((s, l) => s + (Number(l.item_count) || 0), 0)
+          const ok = loadSum === (totalManifest || 0)
+          check('Load Items Sum = Manifest Total', ok,
+            `Load summary sum: ${loadSum} | Manifest count: ${totalManifest}${ok ? '' : ' — MISMATCH'}`)
+        } else {
+          check('Load Items Sum = Manifest Total', false, 'Could not load load_summary view')
+        }
+      }
+
     } catch (err) {
       results.push({ label: 'Unexpected Error', pass: false, detail: err.message })
     }
@@ -363,7 +449,7 @@ export default function AdminDataCheck() {
             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
           </svg>
-          Running {results ? results.length : 0} of 14 checks...
+          Running {results ? results.length : 0} of 18 checks...
         </div>
       )}
 
