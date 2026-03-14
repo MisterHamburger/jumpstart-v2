@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
+import ChatTab from './ChatTab'
 
 // Normalize zone values: "1", "Zone 1", "Zone 1 Pants" → "Zone 1", etc.
 function normalizeZone(z) {
@@ -282,6 +283,7 @@ export default function AdminAnalytics() {
     { id: 'aging', label: 'Inventory Aging' },
     { id: 'loadroi', label: 'Load ROI' },
     { id: 'shows', label: 'Show Performance' },
+    { id: 'chat', label: 'Chat' },
   ]
 
   return (
@@ -313,6 +315,7 @@ export default function AdminAnalytics() {
       {view === 'aging' && <AgingView data={agingData} loading={agingLoading} />}
       {view === 'loadroi' && <LoadROIView data={loadROIData} loading={loadROILoading} />}
       {view === 'shows' && <ShowView items={items} />}
+      {view === 'chat' && <ChatTab />}
     </div>
   )
 }
