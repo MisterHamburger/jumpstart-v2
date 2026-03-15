@@ -24,7 +24,7 @@ function LazyPhoto({ intakeId }) {
         supabase.from('kickstart_intake').select('item_photo_data, photo_data').eq('id', intakeId).single()
           .then(({ data }) => {
             const photo = data?.item_photo_data || data?.photo_data
-            if (photo) setSrc(`data:image/jpeg;base64,${photo}`)
+            if (photo) setSrc(photo.startsWith('data:') ? photo : `data:image/jpeg;base64,${photo}`)
           })
       }
     }, { rootMargin: '200px' })
@@ -1107,23 +1107,31 @@ export default function SalesScanner() {
             </div>
           )}
 
-          {/* Bottom buttons: No Barcode + Remaining + Scans */}
+          {/* Bottom buttons: No Barcode + RDM + Remaining + Scans */}
           <div className="relative z-10 px-4 pt-3 flex gap-2 backdrop-blur-xl shrink-0" style={{ paddingBottom: 'calc(12px + env(safe-area-inset-bottom, 12px))' }}>
             <button
               onClick={handleNoBarcode}
-              className="flex-1 py-3 rounded-2xl font-bold text-sm bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow-lg shadow-amber-500/30 border border-amber-400/50 active:scale-[0.97] transition-all"
+              className="flex-1 py-3 rounded-2xl font-bold text-xs bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow-lg shadow-amber-500/30 border border-amber-400/50 active:scale-[0.97] transition-all"
             >
               {isKickstart ? 'Find Item' : 'No Barcode'}
             </button>
+            {!isKickstart && (
+              <button
+                onClick={async () => { await stopScanner(); setScannedBarcode('RDM'); }}
+                className="flex-1 py-3 rounded-2xl font-bold text-xs bg-gradient-to-r from-purple-500 to-violet-500 text-white shadow-lg shadow-purple-500/30 border border-purple-400/50 active:scale-[0.97] transition-all"
+              >
+                RDM
+              </button>
+            )}
             <button
               onClick={() => { loadRemainingItems(); setShowRemainingModal(true); }}
-              className="flex-1 py-3 rounded-2xl font-bold text-sm bg-gradient-to-r from-indigo-500 to-blue-500 text-white shadow-lg shadow-indigo-500/30 border border-indigo-400/50 active:scale-[0.97] transition-all"
+              className="flex-1 py-3 rounded-2xl font-bold text-xs bg-gradient-to-r from-indigo-500 to-blue-500 text-white shadow-lg shadow-indigo-500/30 border border-indigo-400/50 active:scale-[0.97] transition-all"
             >
               Remaining
             </button>
             <button
               onClick={() => setShowScansModal(true)}
-              className="flex-1 py-3 rounded-2xl font-bold text-sm bg-cyan-600 text-white shadow-lg shadow-cyan-500/30 border border-cyan-400/50 active:scale-[0.97] transition-all"
+              className="flex-1 py-3 rounded-2xl font-bold text-xs bg-cyan-600 text-white shadow-lg shadow-cyan-500/30 border border-cyan-400/50 active:scale-[0.97] transition-all"
             >
               Scans
             </button>

@@ -101,7 +101,7 @@ function getField(row, ...names) {
 function ManifestUpload() {
   const [loads, setLoads] = useState([])
   const [loadId, setLoadId] = useState('')
-  const [newLoad, setNewLoad] = useState({ date: '', vendor: '', total_cost: '', notes: '' })
+  const [newLoad, setNewLoad] = useState({ date: '', vendor: '', total_cost: '', quantity: '', notes: '' })
   const [showNewLoad, setShowNewLoad] = useState(false)
   const [status, setStatus] = useState('')
   const [progress, setProgress] = useState(null)
@@ -137,6 +137,7 @@ function ManifestUpload() {
       date: newLoad.date,
       vendor: newLoad.vendor,
       total_cost: parseFloat(newLoad.total_cost) || null,
+      quantity: parseInt(newLoad.quantity) || null,
       notes: newLoad.notes
     })
     
@@ -146,7 +147,7 @@ function ManifestUpload() {
     }
     
     setStatus(`✅ Created ${loadIdNew}`)
-    setNewLoad({ date: '', vendor: '', total_cost: '', notes: '' })
+    setNewLoad({ date: '', vendor: '', total_cost: '', quantity: '', notes: '' })
     setShowNewLoad(false)
     setLoadId(loadIdNew)
     refreshLoads()
@@ -252,19 +253,26 @@ function ManifestUpload() {
                 className="bg-white/5 border border-white/10 rounded-2xl px-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500/50 focus:ring-4 focus:ring-cyan-500/10 transition-all" 
                 required 
               />
-              <input 
-                placeholder="Total Cost" 
-                type="number" 
-                step="0.01" 
-                value={newLoad.total_cost} 
-                onChange={e => setNewLoad({...newLoad, total_cost: e.target.value})} 
-                className="bg-white/5 border border-white/10 rounded-2xl px-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500/50 focus:ring-4 focus:ring-cyan-500/10 transition-all" 
+              <input
+                placeholder="Total Cost"
+                type="number"
+                step="0.01"
+                value={newLoad.total_cost}
+                onChange={e => setNewLoad({...newLoad, total_cost: e.target.value})}
+                className="bg-white/5 border border-white/10 rounded-2xl px-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500/50 focus:ring-4 focus:ring-cyan-500/10 transition-all"
               />
-              <input 
-                placeholder="Notes" 
-                value={newLoad.notes} 
-                onChange={e => setNewLoad({...newLoad, notes: e.target.value})} 
-                className="bg-white/5 border border-white/10 rounded-2xl px-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500/50 focus:ring-4 focus:ring-cyan-500/10 transition-all" 
+              <input
+                placeholder="Units Delivered"
+                type="number"
+                value={newLoad.quantity}
+                onChange={e => setNewLoad({...newLoad, quantity: e.target.value})}
+                className="bg-white/5 border border-white/10 rounded-2xl px-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500/50 focus:ring-4 focus:ring-cyan-500/10 transition-all"
+              />
+              <input
+                placeholder="Notes"
+                value={newLoad.notes}
+                onChange={e => setNewLoad({...newLoad, notes: e.target.value})}
+                className="bg-white/5 border border-white/10 rounded-2xl px-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500/50 focus:ring-4 focus:ring-cyan-500/10 transition-all"
               />
             </div>
             <button type="submit" className="bg-cyan-600 hover:bg-cyan-500 px-4 py-2 rounded-lg text-sm font-medium transition-colors">
@@ -302,8 +310,8 @@ function ManifestUpload() {
                   </div>
                   <div className="flex items-start gap-3">
                     <div className="text-right">
-                      <div className="text-lg font-bold text-slate-300">{l.item_count.toLocaleString()} items</div>
-                      <div className="text-xs text-slate-500">${Number(l.total_cost_actual).toLocaleString(undefined, {minimumFractionDigits: 2})}</div>
+                      <div className="text-lg font-bold text-slate-300">{(l.item_count || l.quantity || 0).toLocaleString()} items</div>
+                      <div className="text-xs text-slate-500">${Number(l.total_cost || l.total_cost_actual || 0).toLocaleString(undefined, {minimumFractionDigits: 2})}</div>
                     </div>
                     <button
                       onClick={(e) => { e.stopPropagation(); deleteLoad(l) }}

@@ -37,6 +37,7 @@ kickstart_show_wac AS (
 )
 
 -- JUMPSTART: Whatnot live sales
+-- RDM (Returned & Damaged) items have barcode='RDM' and fixed $5.00 COGS
 SELECT
   s.id AS scan_id,
   s.barcode,
@@ -45,19 +46,19 @@ SELECT
   sh.date AS show_date,
   sh.time_of_day,
   sh.channel,
-  m.description,
-  m.category,
-  m.msrp,
-  m.cost,
-  m.cost_freight,
-  m.zone::text AS zone,
+  CASE WHEN s.barcode = 'RDM' THEN 'RDM Item' ELSE m.description END AS description,
+  CASE WHEN s.barcode = 'RDM' THEN 'RDM' ELSE m.category END AS category,
+  CASE WHEN s.barcode = 'RDM' THEN NULL ELSE m.msrp END AS msrp,
+  CASE WHEN s.barcode = 'RDM' THEN 5.00 ELSE m.cost END AS cost,
+  CASE WHEN s.barcode = 'RDM' THEN 5.00 ELSE m.cost_freight END AS cost_freight,
+  CASE WHEN s.barcode = 'RDM' THEN NULL ELSE m.zone::text END AS zone,
   si.product_name,
   si.buyer_paid,
   si.coupon_code,
   si.coupon_amount,
   si.original_hammer,
   si.status AS item_status,
-  CASE WHEN m.barcode IS NULL THEN true ELSE false END AS is_bad_barcode,
+  CASE WHEN s.barcode = 'RDM' THEN false WHEN m.barcode IS NULL THEN true ELSE false END AS is_bad_barcode,
   false AS is_bundle,
   false AS is_wac_cost,
   ROUND(si.buyer_paid * 0.072, 2) AS commission,
@@ -65,13 +66,15 @@ SELECT
   ROUND(si.buyer_paid * 0.072 + si.buyer_paid * 0.029 + 0.30, 2) AS total_fees,
   ROUND(si.buyer_paid - (si.buyer_paid * 0.072 + si.buyer_paid * 0.029 + 0.30), 2) AS net_payout,
   ROUND(
-    si.buyer_paid - (si.buyer_paid * 0.072 + si.buyer_paid * 0.029 + 0.30) - COALESCE(m.cost_freight, 0),
+    si.buyer_paid - (si.buyer_paid * 0.072 + si.buyer_paid * 0.029 + 0.30)
+    - CASE WHEN s.barcode = 'RDM' THEN 5.00 ELSE COALESCE(m.cost_freight, 0) END,
     2
   ) AS profit,
   CASE
     WHEN si.buyer_paid > 0 THEN
       ROUND(
-        ((si.buyer_paid - (si.buyer_paid * 0.072 + si.buyer_paid * 0.029 + 0.30) - COALESCE(m.cost_freight, 0))
+        ((si.buyer_paid - (si.buyer_paid * 0.072 + si.buyer_paid * 0.029 + 0.30)
+          - CASE WHEN s.barcode = 'RDM' THEN 5.00 ELSE COALESCE(m.cost_freight, 0) END)
          / si.buyer_paid) * 100,
         1
       )
@@ -84,7 +87,7 @@ LEFT JOIN (
   SELECT DISTINCT ON (barcode) *
   FROM jumpstart_manifest
   ORDER BY barcode, id
-) m ON s.barcode = m.barcode
+) m ON s.barcode != 'RDM' AND s.barcode = m.barcode
 WHERE si.status = 'valid'
 
 UNION ALL

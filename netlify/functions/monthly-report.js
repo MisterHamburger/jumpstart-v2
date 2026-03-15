@@ -1,9 +1,6 @@
-// Scheduled Netlify function — runs 1st of each month at 9am ET
-// Can also be triggered manually via: curl https://jumpstartscanner.netlify.app/.netlify/functions/monthly-report
-
-export const config = {
-  schedule: "0 13 1 * *" // 1pm UTC = 9am ET on the 1st
-}
+// Monthly report function
+// Trigger manually: curl https://jumpstartscanner.netlify.app/.netlify/functions/monthly-report
+// Scheduled via monthly-report-scheduled.js
 
 export default async (req) => {
   const SUPABASE_URL = process.env.SUPABASE_URL
@@ -173,7 +170,7 @@ export default async (req) => {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        from: 'Jumpstart Reports <reports@jumpstartscanner.netlify.app>',
+        from: 'Jumpstart Reports <onboarding@resend.dev>',
         to: recipients,
         subject: `Jumpstart Monthly Report — ${monthName}`,
         html,

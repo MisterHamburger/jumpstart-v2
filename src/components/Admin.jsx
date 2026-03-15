@@ -4,6 +4,7 @@ import AdminInputs from '../components/AdminInputs'
 import AdminInventory from '../components/AdminInventory'
 import AdminProfitability from '../components/AdminProfitability'
 import AdminScans from '../components/AdminScans'
+import AdminDataCheck from '../components/AdminDataCheck'
 
 const TABS = [
   { id: 'dashboard', path: '/admin', label: 'Dashboard', icon: '📊' },
@@ -11,6 +12,7 @@ const TABS = [
   { id: 'inventory', path: '/admin/inventory', label: 'Inventory', icon: '📦' },
   { id: 'profitability', path: '/admin/profitability', label: 'Profitability', icon: '💰' },
   { id: 'scans', path: '/admin/scans', label: 'Scans', icon: '📡' },
+  { id: 'datacheck', path: '/admin/data-check', label: 'Data Check', icon: '🔍' },
 ]
 
 export default function Admin() {
@@ -63,6 +65,7 @@ export default function Admin() {
         {activeTab === 'inventory' && <AdminInventory />}
         {activeTab === 'profitability' && <AdminProfitability />}
         {activeTab === 'scans' && <AdminScans />}
+        {activeTab === 'datacheck' && <AdminDataCheck />}
       </main>
     </div>
   )
