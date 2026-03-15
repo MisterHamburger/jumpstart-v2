@@ -47,7 +47,7 @@ export default async (req) => {
 
     const systemPrompt = `You are a business analyst assistant for Jumpstart, a livestream auction resale business that buys liquidation loads (J.Crew, Madewell, Free People, Urban Outfitters, Anthropologie) and sells them through live auctions on Whatnot.
 
-You have access to comprehensive business data: every sold item with description, category, price, cost, and profit; show-level P&L; load/inventory data; expenses; kickstart (Free People/UO/Anthro) intake; and unsold inventory.
+You have access to ALL business data: every sold item with description/category/price/cost/profit, show-level P&L, load purchases with sell-through rates, inventory aging (how long unsold items have been sitting by age bucket/load/category), sort zone assignments, expenses, kickstart (Free People/UO/Anthro) intake and sales, and bundle box data.
 
 Whatnot fee structure: 7.2% commission + 2.9% processing + $0.30 per item.
 
@@ -56,9 +56,11 @@ When answering questions:
 - Use dollar formatting for money values
 - Reference specific items, shows, or loads by name when relevant
 - You have FULL item-level data — you CAN answer questions about specific items, best sellers, worst sellers, etc.
-- ALWAYS include a chart when the data lends itself to visualization (comparisons, trends over time, rankings, breakdowns). Be generous with charts — they make data easier to understand.
-- For charts: use "bar" for comparisons/rankings, "line" for trends over time
-- Keep chart_data to 15 items max for readability. Shorten long labels (e.g. "W OUTERWEAR JACKET" → "Outerwear Jacket")
+
+Charts — only include when the user asks for one OR the answer compares 4+ items where a visual genuinely adds clarity (e.g. "show me profit by category", "how have shows trended"). Do NOT include a chart for simple questions like "what was our best show?" or "how much profit did we make?" — just answer in prose.
+- When you DO chart: use "bar" for comparisons/rankings, "line" for trends over time
+- Keep chart_data to 15 items max. Shorten long labels (e.g. "W OUTERWEAR JACKET" → "Outerwear Jacket")
+- If the user says "graph", "chart", "visualize", or "show me" — that's a chart request
 
 Always respond in this JSON format:
 {
@@ -183,8 +185,8 @@ async function fetchBusinessData(supabaseUrl, supabaseKey) {
   // Safe JSON fetch — returns [] if response is not an array (e.g. table missing or error)
   const safeJson = (promise) => promise.then(r => r.json()).then(d => Array.isArray(d) ? d : []).catch(() => [])
 
-  // Pull ALL data in parallel — item-level profitability, shows, loads, expenses, kickstart, manifest, sold scans
-  const [profitData, shows, loads, expenses, kickstart, manifestData, soldScans, bundleScans] = await Promise.all([
+  // Pull ALL data in parallel — every table in the system
+  const [profitData, shows, loads, expenses, kickstart, manifestData, soldScans, bundleScans, sortLog, kickstartSoldScans] = await Promise.all([
     fetchAllPages(`${supabaseUrl}/rest/v1/profitability?select=show_name,show_date,buyer_paid,cost_freight,profit,margin,category,description,msrp,zone,is_bundle,barcode&channel=eq.Jumpstart`, headers),
     safeJson(fetch(`${supabaseUrl}/rest/v1/shows?select=id,name,date,channel,total_items,status&order=date.desc&limit=50`, { headers })),
     safeJson(fetch(`${supabaseUrl}/rest/v1/loads?select=id,date,vendor,notes,total_cost,quantity&order=date.desc`, { headers })),
@@ -193,6 +195,8 @@ async function fetchBusinessData(supabaseUrl, supabaseKey) {
     fetchAllPages(`${supabaseUrl}/rest/v1/jumpstart_manifest?select=barcode,description,category,cost_freight,msrp,vendor,load_id`, headers, 10),
     fetchAllPages(`${supabaseUrl}/rest/v1/jumpstart_sold_scans?select=barcode,show_id,listing_number`, headers, 10),
     safeJson(fetch(`${supabaseUrl}/rest/v1/jumpstart_bundle_scans?select=barcode,box_number,scanned_at&order=scanned_at.desc&limit=2000`, { headers })),
+    safeJson(fetch(`${supabaseUrl}/rest/v1/jumpstart_sort_log?select=barcode,zone,timestamp&order=timestamp.desc&limit=5000`, { headers })),
+    fetchAllPages(`${supabaseUrl}/rest/v1/kickstart_sold_scans?select=barcode,show_id,listing_number,intake_id,scanned_at`, headers, 5),
   ])
 
   // ── SHOW-LEVEL P&L ──
@@ -288,13 +292,27 @@ async function fetchBusinessData(supabaseUrl, supabaseKey) {
   const zoneBreakdown = Object.entries(zoneAgg)
     .map(([zone, d]) => ({ zone, items: d.items, revenue: +d.revenue.toFixed(2), profit: +d.profit.toFixed(2) }))
 
-  // ── UNSOLD INVENTORY ──
+  // ── UNSOLD INVENTORY + AGING ──
   const soldBarcodes = {}
   for (const scan of (soldScans || [])) {
     soldBarcodes[scan.barcode] = (soldBarcodes[scan.barcode] || 0) + 1
   }
+
+  // Build load date + name lookup
+  const loadDates = {}, loadNames = {}
+  for (const l of (loads || [])) {
+    loadDates[l.id] = l.date ? new Date(l.date) : null
+    loadNames[l.id] = l.vendor || l.notes || l.id
+  }
+
   const soldUsed = {}
   let unsoldCount = 0, unsoldCost = 0, unsoldMsrp = 0
+  const today = new Date()
+  const agingBuckets = { '0-7 days': 0, '8-14 days': 0, '15-21 days': 0, '22-28 days': 0, '29+ days': 0 }
+  const agingByLoad = {}
+  const agingByCategory = {}
+  let totalDaysAll = 0, agingItemsWithDate = 0
+
   for (const item of (manifestData || [])) {
     const bc = item.barcode
     const used = soldUsed[bc] || 0
@@ -303,16 +321,54 @@ async function fetchBusinessData(supabaseUrl, supabaseKey) {
       soldUsed[bc] = used + 1
     } else {
       unsoldCount++
-      unsoldCost += Number(item.cost_freight) || 0
-      unsoldMsrp += Number(item.msrp) || 0
+      const cost = Number(item.cost_freight) || 0
+      const msrp = Number(item.msrp) || 0
+      unsoldCost += cost
+      unsoldMsrp += msrp
+
+      // Aging calculation
+      const loadDate = loadDates[item.load_id]
+      if (loadDate) {
+        const daysOld = Math.floor((today - loadDate) / (1000 * 60 * 60 * 24))
+        totalDaysAll += daysOld
+        agingItemsWithDate++
+
+        if (daysOld <= 7) agingBuckets['0-7 days']++
+        else if (daysOld <= 14) agingBuckets['8-14 days']++
+        else if (daysOld <= 21) agingBuckets['15-21 days']++
+        else if (daysOld <= 28) agingBuckets['22-28 days']++
+        else agingBuckets['29+ days']++
+
+        // By load
+        const ln = loadNames[item.load_id] || 'Unknown'
+        if (!agingByLoad[ln]) agingByLoad[ln] = { items: 0, cost: 0, days_old: daysOld }
+        agingByLoad[ln].items++
+        agingByLoad[ln].cost += cost
+      }
+
+      // By category
+      const cat = item.category || 'Unknown'
+      if (!agingByCategory[cat]) agingByCategory[cat] = { items: 0, cost: 0 }
+      agingByCategory[cat].items++
+      agingByCategory[cat].cost += cost
     }
   }
 
   // ── LOAD SUMMARY ──
   const loadManifestCount = {}
+  const loadSoldCount = {}
   for (const item of (manifestData || [])) {
     const lid = item.load_id || 'Unknown'
     loadManifestCount[lid] = (loadManifestCount[lid] || 0) + 1
+  }
+  // Count sold per load via barcode->load mapping
+  const barcodeToLoad = {}
+  for (const item of (manifestData || [])) {
+    if (!barcodeToLoad[item.barcode]) barcodeToLoad[item.barcode] = item.load_id
+  }
+  for (const scan of (soldScans || [])) {
+    const lid = barcodeToLoad[scan.barcode]
+    if (lid) loadSoldCount[lid] = (loadSoldCount[lid] || 0) + 1
   }
 
   // ── EXPENSES ──
@@ -331,6 +387,19 @@ async function fetchBusinessData(supabaseUrl, supabaseKey) {
     ksBrands[b].items++
     ksBrands[b].cost += Number(k.cost) || 0
     ksBrands[b].msrp += Number(k.msrp) || 0
+  }
+
+  // ── KICKSTART SALES ──
+  const ksUniqueListings = new Set()
+  for (const scan of (kickstartSoldScans || [])) {
+    ksUniqueListings.add(`${scan.show_id}_${scan.listing_number}`)
+  }
+
+  // ── SORT LOG ──
+  const sortZoneCounts = {}
+  for (const s of (sortLog || [])) {
+    const z = s.zone || 'Unknown'
+    sortZoneCounts[z] = (sortZoneCounts[z] || 0) + 1
   }
 
   // ── BUNDLES ──
@@ -355,6 +424,8 @@ async function fetchBusinessData(supabaseUrl, supabaseKey) {
       unsold_msrp: +unsoldMsrp.toFixed(2),
       sell_through_rate: (manifestData || []).length > 0 ? +(((manifestData.length - unsoldCount) / manifestData.length) * 100).toFixed(1) : 0,
       total_expenses: +totalExpenses.toFixed(2),
+      total_sorted: (sortLog || []).length,
+      kickstart_items_sold: ksUniqueListings.size,
     },
     shows_by_date: showSummaries,
     top5_shows_by_profit: [...showSummaries].sort((a, b) => b.profit - a.profit).slice(0, 5),
@@ -365,10 +436,24 @@ async function fetchBusinessData(supabaseUrl, supabaseKey) {
     items_worst25_by_profit: worstItemsByProfit,
     category_breakdown: categoryBreakdown,
     zone_breakdown: zoneBreakdown,
+    inventory_aging: {
+      avg_days_unsold: agingItemsWithDate > 0 ? Math.round(totalDaysAll / agingItemsWithDate) : null,
+      by_age_bucket: Object.entries(agingBuckets).map(([bucket, count]) => ({ bucket, items: count })),
+      by_load: Object.entries(agingByLoad)
+        .map(([load, d]) => ({ load, items: d.items, cost: +d.cost.toFixed(2), days_old: d.days_old }))
+        .sort((a, b) => b.items - a.items).slice(0, 15),
+      by_category: Object.entries(agingByCategory)
+        .map(([cat, d]) => ({ category: cat, unsold_items: d.items, unsold_cost: +d.cost.toFixed(2) }))
+        .sort((a, b) => b.unsold_items - a.unsold_items).slice(0, 15),
+    },
     loads: (loads || []).map(l => ({
       id: l.id, vendor: l.vendor, date: l.date, total_cost: l.total_cost, quantity: l.quantity,
       manifest_items: loadManifestCount[l.id] || 0,
+      items_sold: loadSoldCount[l.id] || 0,
+      items_remaining: (loadManifestCount[l.id] || 0) - (loadSoldCount[l.id] || 0),
+      sell_through: loadManifestCount[l.id] > 0 ? +(((loadSoldCount[l.id] || 0) / loadManifestCount[l.id]) * 100).toFixed(1) : 0,
     })),
+    sort_zone_counts: Object.entries(sortZoneCounts).map(([zone, count]) => ({ zone, items_sorted: count })),
     expenses_by_category: Object.entries(expensesByCategory).map(([cat, amt]) => ({ category: cat, total: +amt.toFixed(2) })),
     recent_expenses: (expenses || []).slice(0, 20).map(e => ({ description: e.description, amount: e.amount, category: e.category, date: e.date })),
     kickstart_by_brand: Object.entries(ksBrands).map(([brand, d]) => ({

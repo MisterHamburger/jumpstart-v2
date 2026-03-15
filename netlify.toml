@@ -2,6 +2,13 @@
   publish = "dist"
   command = "npm run build"
 
+[functions]
+  external_node_modules = []
+  node_bundler = "esbuild"
+
+[functions."identify-item"]
+  included_files = []
+
 [[redirects]]
   from = "/*"
   to = "/index.html"

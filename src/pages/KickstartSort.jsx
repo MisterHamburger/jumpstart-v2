@@ -58,12 +58,12 @@ function LazyPhoto({ intakeId }) {
   )
 }
 
-const PRICE_BINS = [5, 10, 15, 20, 25, 29, 30, 35, 40]
+const PRICE_BINS = [3.41, 10, 15, 20, 25, 29, 30, 35, 40]
 const CATEGORIES = [
   'Accessories - Bags', 'Accessories - Belts', 'Accessories - Jewelry',
   'Accessories - Other', 'Accessories - Socks', 'Dresses', 'Hoodies',
   'Jumpsuits', 'Leggings', 'Long Sleeve Tops', 'Outerwear/Jackets',
-  'Pants', 'Rompers', 'Shorts', 'Short Sleeve Tops', 'Skirts',
+  'Pants', 'Rompers', 'Sets', 'Shorts', 'Short Sleeve Tops', 'Skirts',
   'Sleeveless Tops'
 ]
 const COLOR_GROUPS = [
@@ -93,6 +93,13 @@ export default function KickstartSort() {
   const [notes, setNotes] = useState('')
   const [msrp, setMsrp] = useState('')
   const itemPhotoRef = useRef(null)
+
+  // AI garment identification state
+  const [identifying, setIdentifying] = useState(false)
+  const [identifyResult, setIdentifyResult] = useState(null)
+  const [identifyError, setIdentifyError] = useState(null)
+  const identifyPhotoRef = useRef(null)
+  const identifyLibraryRef = useRef(null)
 
   // Restock + Edit shared state
   const [allItems, setAllItems] = useState([])
@@ -309,6 +316,78 @@ export default function KickstartSort() {
     }
   }
 
+  // --- AI Garment Identification ---
+  const handleIdentifyCapture = async (e) => {
+    const file = e.target.files[0]
+    if (!file) return
+
+    setIdentifying(true)
+    setIdentifyResult(null)
+    setIdentifyError(null)
+
+    try {
+      const dataUrl = await compressPhoto(file, { maxWidth: 800, quality: 0.5 })
+      setItemPhoto(dataUrl) // Use identify photo as the item photo
+      const base64 = toBase64(dataUrl)
+
+      // Step 1: Upload image to Supabase storage directly from client (faster than routing through function)
+      const tempFileName = `identify-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.jpg`
+      const imageBytes = Uint8Array.from(atob(base64), c => c.charCodeAt(0))
+
+      const { error: uploadErr } = await supabase.storage
+        .from('temp-identify')
+        .upload(tempFileName, imageBytes, { contentType: 'image/jpeg', upsert: true })
+
+      if (uploadErr) throw new Error('Failed to upload image')
+
+      const { data: { publicUrl } } = supabase.storage
+        .from('temp-identify')
+        .getPublicUrl(tempFileName)
+
+      // Step 2: Call identify function with URL (no image payload — fast)
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => controller.abort(), 25000)
+
+      const response = await fetch('/.netlify/functions/identify-item', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ imageUrl: publicUrl, brand: selectedBrand }),
+        signal: controller.signal,
+      })
+      clearTimeout(timeoutId)
+
+      // Fire-and-forget cleanup of temp image
+      supabase.storage.from('temp-identify').remove([tempFileName]).catch(() => {})
+
+      if (!response.ok) {
+        const err = await response.json()
+        throw new Error(err.error || 'Identification failed')
+      }
+
+      const result = await response.json()
+      setIdentifyResult(result)
+
+      // Auto-fill fields
+      if (result.product_name) setNotes(result.product_name)
+      if (result.msrp && result.msrp > 0) setMsrp(String(result.msrp))
+      if (result.category && CATEGORIES.includes(result.category)) setDescription(result.category)
+      if (result.color) {
+        const allColors = COLOR_GROUPS.flatMap(g => g.colors)
+        if (allColors.includes(result.color)) setColor(result.color)
+      }
+    } catch (err) {
+      if (err.name === 'AbortError') {
+        setIdentifyError('Timed out — try again or enter manually')
+      } else {
+        setIdentifyError(err.message || 'Identification failed')
+      }
+    } finally {
+      setIdentifying(false)
+      if (identifyPhotoRef.current) identifyPhotoRef.current.value = ''
+      if (identifyLibraryRef.current) identifyLibraryRef.current.value = ''
+    }
+  }
+
   // --- Save ---
   const handleSave = async () => {
     setSaving(true)
@@ -357,7 +436,10 @@ export default function KickstartSort() {
     setNotes('')
     setMsrp('')
     setItemPhoto(null)
+    setIdentifyResult(null)
+    setIdentifyError(null)
     if (itemPhotoRef.current) itemPhotoRef.current.value = ''
+    if (identifyPhotoRef.current) identifyPhotoRef.current.value = ''
   }
 
   // --- Back navigation ---
@@ -374,7 +456,11 @@ export default function KickstartSort() {
         setNotes('')
         setMsrp('')
         setItemPhoto(null)
+        setIdentifyResult(null)
+        setIdentifyError(null)
         if (itemPhotoRef.current) itemPhotoRef.current.value = ''
+        if (identifyPhotoRef.current) identifyPhotoRef.current.value = ''
+      if (identifyLibraryRef.current) identifyLibraryRef.current.value = ''
         setStep('brand')
         break
       case 'restock': setStep('bin'); break
@@ -949,39 +1035,129 @@ export default function KickstartSort() {
           <div className="flex-1 overflow-y-auto p-4">
             <div className="flex flex-col items-center">
 
-            {/* Item photo — required */}
-            <div className="w-full max-w-sm mb-3">
-              <label className="text-slate-400 text-xs uppercase tracking-wider mb-1 block">Item Photo *</label>
+            {/* AI Garment Identification — optional */}
+            <div className="w-full max-w-sm mb-4">
               <input
-                ref={itemPhotoRef}
+                ref={identifyPhotoRef}
                 type="file"
                 accept="image/*"
                 capture="environment"
-                onChange={handleItemPhotoCapture}
+                onChange={handleIdentifyCapture}
                 className="hidden"
               />
-              {!itemPhoto ? (
-                <button
-                  onClick={() => itemPhotoRef.current?.click()}
-                  className="w-full flex items-center justify-center gap-2 bg-pink-500/20 border-2 border-dashed border-pink-400/40 rounded-xl px-4 py-6 text-pink-300 font-semibold hover:bg-pink-500/30 transition-all"
-                >
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
-                  </svg>
-                  Take Item Photo
-                </button>
-              ) : (
-                <div className="flex items-center gap-3">
-                  <div className="w-16 h-16 rounded-xl overflow-hidden border border-white/20 shrink-0">
-                    <img src={itemPhoto} alt="Item" className="w-full h-full object-cover" />
-                  </div>
+              <input
+                ref={identifyLibraryRef}
+                type="file"
+                accept="image/*"
+                onChange={handleIdentifyCapture}
+                className="hidden"
+              />
+
+              {!identifying && !identifyResult && !identifyError && !itemPhoto && (
+                <div className="flex gap-2 w-full">
                   <button
-                    onClick={() => { setItemPhoto(null); if (itemPhotoRef.current) itemPhotoRef.current.value = '' }}
-                    className="text-pink-400 text-sm font-semibold"
+                    onClick={() => identifyPhotoRef.current?.click()}
+                    className="flex-1 flex items-center justify-center gap-2 bg-pink-500/20 border-2 border-dashed border-pink-400/40 rounded-xl px-3 py-5 text-pink-300 font-semibold hover:bg-pink-500/30 transition-all active:scale-95"
                   >
-                    Retake
+                    <svg className="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+                    </svg>
+                    Take Photo
                   </button>
+                  <button
+                    onClick={() => identifyLibraryRef.current?.click()}
+                    className="flex items-center justify-center gap-2 bg-pink-500/10 border-2 border-dashed border-pink-400/20 rounded-xl px-4 py-5 text-pink-300/70 font-semibold hover:bg-pink-500/20 transition-all active:scale-95"
+                  >
+                    <svg className="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                    </svg>
+                    Library
+                  </button>
+                </div>
+              )}
+
+              {identifying && (
+                <div className="w-full flex items-center gap-3 bg-cyan-500/10 border border-cyan-400/20 rounded-xl px-4 py-3">
+                  {itemPhoto && (
+                    <div className="w-14 h-14 rounded-lg overflow-hidden border border-white/20 shrink-0">
+                      <img src={itemPhoto} alt="Item" className="w-full h-full object-cover" />
+                    </div>
+                  )}
+                  <div className="flex items-center gap-2">
+                    <div className="w-4 h-4 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin" />
+                    <span className="text-cyan-300 font-semibold text-sm">Identifying...</span>
+                  </div>
+                </div>
+              )}
+
+              {identifyResult && (
+                <div className={`w-full rounded-xl px-3 py-3 border ${
+                  identifyResult.confidence === 'high'
+                    ? 'bg-emerald-500/10 border-emerald-400/30'
+                    : identifyResult.confidence === 'none' || !identifyResult.product_name
+                      ? 'bg-red-500/10 border-red-400/30'
+                      : 'bg-amber-500/10 border-amber-400/30'
+                }`}>
+                  {/* Row 1: Photo thumbnail + confidence/MSRP + retake */}
+                  <div className="flex items-center gap-3 mb-2">
+                    {itemPhoto && (
+                      <div className="w-11 h-11 rounded-lg overflow-hidden border border-white/20 shrink-0">
+                        <img src={itemPhoto} alt="Item" className="w-full h-full object-cover" />
+                      </div>
+                    )}
+                    <div className="flex-1 min-w-0">
+                      {identifyResult.product_name ? (
+                        <p className="text-slate-400 text-xs">
+                          {identifyResult.confidence === 'high' ? '✓ High confidence' :
+                           identifyResult.confidence === 'medium' ? '~ Medium — verify' : '? Low — verify'}
+                          {identifyResult.msrp > 0 && ` · MSRP $${identifyResult.msrp}`}
+                        </p>
+                      ) : (
+                        <p className="text-red-300 text-sm font-semibold">Couldn't identify</p>
+                      )}
+                    </div>
+                    <button
+                      onClick={() => { setIdentifyResult(null); setIdentifyError(null); setItemPhoto(null) }}
+                      className="text-white/40 hover:text-white/70 text-xs font-semibold shrink-0 px-2 py-1"
+                    >
+                      Retake
+                    </button>
+                  </div>
+                  {/* Row 2: Full-width editable product name */}
+                  {identifyResult.product_name ? (
+                    <input
+                      type="text"
+                      value={notes}
+                      onChange={e => setNotes(e.target.value)}
+                      className="w-full bg-white/5 text-white font-semibold text-sm rounded-lg px-3 py-2 border border-white/10 focus:border-cyan-400/50 focus:outline-none transition-colors"
+                      placeholder="Product name..."
+                    />
+                  ) : (
+                    <p className="text-slate-500 text-xs">Enter details manually below</p>
+                  )}
+                </div>
+              )}
+
+              {identifyError && (
+                <div className={`w-full rounded-xl px-4 py-3 border bg-red-500/10 border-red-400/30`}>
+                  <div className="flex items-start gap-3">
+                    {itemPhoto && (
+                      <div className="w-14 h-14 rounded-lg overflow-hidden border border-white/20 shrink-0">
+                        <img src={itemPhoto} alt="Item" className="w-full h-full object-cover" />
+                      </div>
+                    )}
+                    <div className="min-w-0 flex-1">
+                      <p className="text-red-300 text-sm">{identifyError}</p>
+                      <p className="text-slate-500 text-[11px] mt-1">Photo saved — enter details manually</p>
+                    </div>
+                    <button
+                      onClick={() => { setIdentifyError(null); setItemPhoto(null) }}
+                      className="text-white/40 hover:text-white/70 text-xs font-semibold shrink-0 px-2 py-1"
+                    >
+                      Retake
+                    </button>
+                  </div>
                 </div>
               )}
             </div>

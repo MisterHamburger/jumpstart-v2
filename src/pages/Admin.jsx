@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import AdminDashboard from '../components/AdminDashboard'
 import AdminInputs from '../components/AdminInputs'
@@ -6,6 +7,9 @@ import AdminProfitability from '../components/AdminProfitability'
 import AdminScans from '../components/AdminScans'
 import AdminDataCheck from '../components/AdminDataCheck'
 import AdminAnalytics from '../components/AdminAnalytics'
+
+const ADMIN_PW_KEY = 'jumpstart_admin_auth'
+const ADMIN_PW = 'MichaelGaryScott'
 
 const TABS = [
   { id: 'dashboard', path: '/admin', label: 'Dashboard', icon: 'lucide:layout-dashboard' },
@@ -20,9 +24,56 @@ const TABS = [
 export default function Admin() {
   const navigate = useNavigate()
   const location = useLocation()
+  const [authed, setAuthed] = useState(() => localStorage.getItem(ADMIN_PW_KEY) === 'true')
+  const [pw, setPw] = useState('')
+  const [error, setError] = useState(false)
 
   const activeTab = TABS.find(t => t.path !== '/admin' && location.pathname.startsWith(t.path))?.id
     || (location.pathname === '/admin' || location.pathname === '/admin/' ? 'dashboard' : 'dashboard')
+
+  function handleLogin(e) {
+    e.preventDefault()
+    if (pw === ADMIN_PW) {
+      localStorage.setItem(ADMIN_PW_KEY, 'true')
+      setAuthed(true)
+      setError(false)
+    } else {
+      setError(true)
+    }
+  }
+
+  if (!authed) {
+    return (
+      <div className="min-h-screen flex items-center justify-center relative">
+        <div className="bg-blob-cyan blob-hide-mobile" />
+        <div className="bg-blob-magenta blob-hide-mobile" />
+        <form onSubmit={handleLogin} className="glass-card rounded-3xl p-8 w-full max-w-sm relative z-10">
+          <div className="flex items-center justify-center mb-6">
+            <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-cyan-500 to-pink-500 flex items-center justify-center">
+              <iconify-icon icon="lucide:lock" width="24" class="text-white"></iconify-icon>
+            </div>
+          </div>
+          <h2 className="text-xl font-bold text-white text-center mb-1 font-heading">Admin Access</h2>
+          <p className="text-slate-500 text-sm text-center mb-6">Enter password to continue</p>
+          <input
+            type="password"
+            value={pw}
+            onChange={e => { setPw(e.target.value); setError(false) }}
+            placeholder="Password"
+            autoFocus
+            className="w-full bg-white/[0.06] border border-white/[0.08] rounded-xl px-4 py-3 text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500/50 mb-3"
+          />
+          {error && <p className="text-red-400 text-sm mb-3 text-center">Wrong password</p>}
+          <button
+            type="submit"
+            className="w-full py-3 rounded-xl bg-cyan-600 text-white font-semibold hover:bg-cyan-500 transition-all shadow-lg shadow-cyan-600/20"
+          >
+            Enter
+          </button>
+        </form>
+      </div>
+    )
+  }
 
   return (
     <div className="min-h-screen flex relative">
