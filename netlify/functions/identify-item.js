@@ -71,7 +71,18 @@ export default async (req) => {
 
       if (bestMatch) {
         productName = bestMatch.title || ''
-        productName = productName.replace(/\s*[\|–—]\s*(Free People|Urban Outfitters|Anthropologie|Nordstrom|Poshmark|Mercari|eBay|Depop|ThredUp|Lyst|Zappos|REVOLVE|Bloomingdale).*$/i, '').trim()
+        // Strip website names after | or – or — separators
+        productName = productName.replace(/\s*[\|–—]\s*(Free People|Urban Outfitters|Anthropologie|Nordstrom|Poshmark|Mercari|eBay|Depop|ThredUp|Lyst|Zappos|REVOLVE|Bloomingdale|Editorialist|ASOS|Macy|Shopbop|Farfetch|NET-A-PORTER|Neiman|Saks|Verishop|Garmentory|Nuuly).*$/i, '').trim()
+        // Strip any remaining text after | – — separators (catch-all for unknown sites)
+        productName = productName.replace(/\s*[\|–—]\s*[A-Z].*$/i, '').trim()
+        // Strip discount/promo text (e.g. "- 69% Off", "- Up to 50% Off", "- Sale")
+        productName = productName.replace(/\s*-\s*\d+%\s*off.*$/i, '').trim()
+        productName = productName.replace(/\s*-\s*(up to\s+)?\d+%.*$/i, '').trim()
+        productName = productName.replace(/\s*-\s*(sale|on sale|clearance|final sale|last chance).*$/i, '').trim()
+        // Strip trailing price text (e.g. "from $49.99", "starting at $29")
+        productName = productName.replace(/\s*(from|starting at)\s*\$[\d.]+.*$/i, '').trim()
+        // Strip "Combo" suffix that some sites add
+        productName = productName.replace(/\s+Combo\s*$/i, '').trim()
 
         msrp = extractPrice(bestMatch)
 

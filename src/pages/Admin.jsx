@@ -26,6 +26,7 @@ export default function Admin() {
   const location = useLocation()
   const [authed, setAuthed] = useState(() => localStorage.getItem(ADMIN_PW_KEY) === 'true')
   const [pw, setPw] = useState('')
+  const [showPw, setShowPw] = useState(false)
   const [error, setError] = useState(false)
 
   const activeTab = TABS.find(t => t.path !== '/admin' && location.pathname.startsWith(t.path))?.id
@@ -55,14 +56,23 @@ export default function Admin() {
           </div>
           <h2 className="text-xl font-bold text-white text-center mb-1 font-heading">Admin Access</h2>
           <p className="text-slate-500 text-sm text-center mb-6">Enter password to continue</p>
-          <input
-            type="password"
-            value={pw}
-            onChange={e => { setPw(e.target.value); setError(false) }}
-            placeholder="Password"
-            autoFocus
-            className="w-full bg-white/[0.06] border border-white/[0.08] rounded-xl px-4 py-3 text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500/50 mb-3"
-          />
+          <div className="relative mb-3">
+            <input
+              type={showPw ? 'text' : 'password'}
+              value={pw}
+              onChange={e => { setPw(e.target.value); setError(false) }}
+              placeholder="Password"
+              autoFocus
+              className="w-full bg-white/[0.06] border border-white/[0.08] rounded-xl px-4 py-3 pr-11 text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500/50"
+            />
+            <button
+              type="button"
+              onClick={() => setShowPw(v => !v)}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 transition-colors"
+            >
+              <iconify-icon icon={showPw ? 'lucide:eye-off' : 'lucide:eye'} width="18"></iconify-icon>
+            </button>
+          </div>
           {error && <p className="text-red-400 text-sm mb-3 text-center">Wrong password</p>}
           <button
             type="submit"

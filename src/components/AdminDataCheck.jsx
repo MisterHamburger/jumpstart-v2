@@ -320,7 +320,7 @@ export default function AdminDataCheck() {
 
       // ═══════════════════════════════════════════
       // SECTION 15: ANALYTICS — INVENTORY ACCOUNTING
-      // Unsold + Sold = Total manifest items
+      // Unsold + Sold (scans + bundles) = Total manifest items
       // ═══════════════════════════════════════════
       {
         const PAGE = 1000
@@ -337,11 +337,25 @@ export default function AdminDataCheck() {
           if (soldPage.length < PAGE) break
           soldOffset += PAGE
         }
-        const unsold = (totalManifest || 0) - totalSoldScans
-        const sum = totalSoldScans + unsold
+        // Count sold bundle items
+        const { data: soldBBs } = await supabase.from('jumpstart_bundle_boxes')
+          .select('box_number').not('sold_at', 'is', null)
+        const soldBoxNums = new Set((soldBBs || []).map(b => b.box_number))
+        let totalBundleSold = 0, bundleOffset = 0
+        while (true) {
+          const { data: bundlePage } = await supabase.from('jumpstart_bundle_scans')
+            .select('box_number').range(bundleOffset, bundleOffset + PAGE - 1)
+          if (!bundlePage || bundlePage.length === 0) break
+          totalBundleSold += bundlePage.filter(r => soldBoxNums.has(r.box_number)).length
+          if (bundlePage.length < PAGE) break
+          bundleOffset += PAGE
+        }
+        const totalSold = totalSoldScans + totalBundleSold
+        const unsold = (totalManifest || 0) - totalSold
+        const sum = totalSold + unsold
         const ok = sum === (totalManifest || 0)
-        check('Inventory Accounting (sold + unsold = total)', ok,
-          `Manifest: ${totalManifest} | Sold scans: ${totalSoldScans} | Unsold: ${unsold} | Sum: ${sum}`)
+        check('Inventory Accounting (scans + bundles + unsold = total)', ok,
+          `Manifest: ${totalManifest} | Sold scans: ${totalSoldScans} | Bundle sold: ${totalBundleSold} | Unsold: ${unsold} | Sum: ${sum}`)
       }
 
       // ═══════════════════════════════════════════
@@ -404,6 +418,60 @@ export default function AdminDataCheck() {
         }
       }
 
+      // ═══════════════════════════════════════════
+      // SECTION 19: CROSS-PAGE — AGING SOLD vs PROFITABILITY SOLD
+      // Aging tab's sold count (scans + bundles) should be close to profitability view count
+      // ═══════════════════════════════════════════
+      {
+        const PAGE = 1000
+        // Count sold scans
+        const { count: soldScansCount } = await supabase.from('jumpstart_sold_scans')
+          .select('id', { count: 'exact', head: true })
+        // Count sold bundle items
+        const { data: soldBBs2 } = await supabase.from('jumpstart_bundle_boxes')
+          .select('box_number').not('sold_at', 'is', null)
+        const soldBoxSet = new Set((soldBBs2 || []).map(b => b.box_number))
+        let bundleSold = 0, bOff = 0
+        while (true) {
+          const { data: bp } = await supabase.from('jumpstart_bundle_scans')
+            .select('box_number').range(bOff, bOff + PAGE - 1)
+          if (!bp || bp.length === 0) break
+          bundleSold += bp.filter(r => soldBoxSet.has(r.box_number)).length
+          if (bp.length < PAGE) break
+          bOff += PAGE
+        }
+        const agingSold = (soldScansCount || 0) + bundleSold
+        // Profitability sold count (Jumpstart, all items including bundles)
+        const { count: profSold } = await supabase.from('profitability')
+          .select('scan_id', { count: 'exact', head: true })
+          .eq('channel', 'Jumpstart')
+        const diff = Math.abs(agingSold - (profSold || 0))
+        const threshold = Math.max(50, Math.round((profSold || 1) * 0.05))
+        const ok = diff <= threshold
+        check('Cross-Page: Aging Sold vs Profitability Sold (JS)', ok,
+          `Aging (scans+bundles): ${agingSold} | Profitability: ${profSold} | Diff: ${diff} (threshold: ${threshold})${ok ? '' : ' — INVESTIGATE'}`)
+      }
+
+      // ═══════════════════════════════════════════
+      // SECTION 20: CROSS-PAGE — ANALYTICS + BUNDLES = DASHBOARD ITEMS
+      // Non-bundle profitability items + bundle items = total dashboard items
+      // ═══════════════════════════════════════════
+      {
+        const { count: nonBundleCount } = await supabase.from('profitability')
+          .select('scan_id', { count: 'exact', head: true })
+          .eq('channel', 'Jumpstart')
+          .eq('is_bundle', false)
+        const { count: bundleCount } = await supabase.from('profitability')
+          .select('scan_id', { count: 'exact', head: true })
+          .eq('channel', 'Jumpstart')
+          .eq('is_bundle', true)
+        const combined = (nonBundleCount || 0) + (bundleCount || 0)
+        const dashItems = data.jumpstart.items
+        const ok = combined === dashItems
+        check('Cross-Page: Analytics + Bundles = Dashboard Items (JS)', ok,
+          `Non-bundle: ${nonBundleCount} + Bundle: ${bundleCount} = ${combined} | Dashboard: ${dashItems}${ok ? '' : ' — MISMATCH'}`)
+      }
+
     } catch (err) {
       results.push({ label: 'Unexpected Error', pass: false, detail: err.message })
     }
@@ -449,7 +517,7 @@ export default function AdminDataCheck() {
             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
           </svg>
-          Running {results ? results.length : 0} of 18 checks...
+          Running {results ? results.length : 0} of 20 checks...
         </div>
       )}
 

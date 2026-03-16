@@ -98,6 +98,12 @@ export default function BundleSort() {
   const [noBarcodeQty, setNoBarcodeQty] = useState(1)
   const [noBarcodeSelectedGroup, setNoBarcodeSelectedGroup] = useState(null)
   const [noBarcodeFlaws, setNoBarcodeFlaws] = useState(false)
+  // New Box modal state
+  const [showNewBoxModal, setShowNewBoxModal] = useState(false)
+  const [newBoxTargetQty, setNewBoxTargetQty] = useState(40)
+  const [newBoxUnlimited, setNewBoxUnlimited] = useState(false)
+  // Active box target quantity (null = unlimited, N = fixed)
+  const [activeBoxTarget, setActiveBoxTarget] = useState(40)
   const html5QrcodeRef = useRef(null)
   const processingRef = useRef(false)
   const scanCountRef = useRef(0)
@@ -146,6 +152,7 @@ export default function BundleSort() {
           markupPercentage: b.markup_percentage || 25,
           priceOverride: b.price_override || null,
           costOverride: b.cost_override || null,
+          targetQuantity: b.target_quantity,
           itemCount: (scansByBox[b.box_number] || []).length,
           items: (scansByBox[b.box_number] || []).map(s => ({
             intakeId: s.intake_id,
@@ -185,6 +192,7 @@ export default function BundleSort() {
           pricePercentage: b.price_percentage || 10,
           priceOverride: b.price_override || null,
           costOverride: b.cost_override || null,
+          targetQuantity: b.target_quantity,
           itemCount: (scansByBox[b.box_number] || []).length,
           items: (scansByBox[b.box_number] || []).map(s => ({
             barcode: s.barcode,
@@ -261,6 +269,7 @@ export default function BundleSort() {
   const startScanningBox = (box) => {
     setViewingBox(null)
     setActiveBox(box.boxNumber)
+    setActiveBoxTarget(box.targetQuantity != null ? box.targetQuantity : null)
     const count = box.itemCount || 0
     setScanCount(count)
     scanCountRef.current = count
@@ -272,6 +281,7 @@ export default function BundleSort() {
   const closeScanner = async () => {
     await stopScanner()
     setActiveBox(null)
+    setActiveBoxTarget(40)
     setLastScan(null)
     setShowItemList(false)
     setNoBarcodeStep(null)
@@ -400,12 +410,12 @@ export default function BundleSort() {
           description: [intake.brand, intake.description, intake.color].filter(Boolean).join(' — ')
         })
 
-        if (newCount >= 40) {
+        if (activeBoxTarget != null && newCount >= activeBoxTarget) {
           await supabase.from('kickstart_bundle_boxes')
             .update({ status: 'complete' })
             .eq('box_number', activeBox)
           await stopScanner()
-          setTimeout(() => { alert('Box complete! 40 items reached.'); closeScanner() }, 500)
+          setTimeout(() => { alert(`Box complete! ${activeBoxTarget} items reached.`); closeScanner() }, 500)
         }
       } catch (e) {
         console.error('Scan error:', e)
@@ -426,12 +436,12 @@ export default function BundleSort() {
         setScanCount(newCount)
         setLastScan({ barcode: decodedText })
 
-        if (newCount >= 40) {
+        if (activeBoxTarget != null && newCount >= activeBoxTarget) {
           await supabase.from('jumpstart_bundle_boxes')
             .update({ status: 'complete' })
             .eq('box_number', activeBox)
           await stopScanner()
-          setTimeout(() => { alert('Box complete! 40 items reached.'); closeScanner() }, 500)
+          setTimeout(() => { alert(`Box complete! ${activeBoxTarget} items reached.`); closeScanner() }, 500)
           return
         }
       } catch (e) {
@@ -555,12 +565,12 @@ export default function BundleSort() {
       setNoBarcodeSelectedGroup(null)
       setNoBarcodeFlaws(false)
 
-      if (newCount >= 40) {
+      if (activeBoxTarget != null && newCount >= activeBoxTarget) {
         await supabase.from('kickstart_bundle_boxes')
           .update({ status: 'complete' })
           .eq('box_number', activeBox)
         await stopScanner()
-        setTimeout(() => { alert('Box complete! 40 items reached.'); closeScanner() }, 500)
+        setTimeout(() => { alert(`Box complete! ${activeBoxTarget} items reached.`); closeScanner() }, 500)
       }
     } catch (e) {
       console.error('Error adding item:', e)
@@ -584,23 +594,33 @@ export default function BundleSort() {
     }
   }
 
-  const createNewBox = async () => {
+  const createNewBox = () => {
+    setNewBoxTargetQty(40)
+    setNewBoxUnlimited(false)
+    setShowNewBoxModal(true)
+  }
+
+  const confirmCreateBox = async () => {
     const maxBox = boxes.reduce((max, b) => Math.max(max, b.boxNumber), 0)
     const newBoxNum = maxBox + 1
     const table = isKickstart ? 'kickstart_bundle_boxes' : 'jumpstart_bundle_boxes'
+    const targetQty = newBoxUnlimited ? null : newBoxTargetQty
     const newBox = {
       boxNumber: newBoxNum,
       status: 'empty',
       note: '',
       itemCount: 0,
       items: [],
+      targetQuantity: targetQty,
       ...(isKickstart ? { markupPercentage: 25 } : { pricePercentage: 10 })
     }
     setBoxes(prev => [newBox, ...prev])
+    setShowNewBoxModal(false)
     await supabase.from(table).insert({
       box_number: newBoxNum,
       status: 'empty',
       note: '',
+      target_quantity: targetQty,
       ...(isKickstart ? { markup_percentage: 25 } : {})
     })
     fetchBoxes()
@@ -989,7 +1009,10 @@ export default function BundleSort() {
     await fetchActiveBoxItems()
   }
 
-  const progressPercent = (count) => Math.min(100, Math.round((count / 40) * 100))
+  const progressPercent = (count, target) => {
+    if (target == null || target <= 0) return count > 0 ? 100 : 0
+    return Math.min(100, Math.round((count / target) * 100))
+  }
 
   // === SCANNER VIEW ===
   if (activeBox) {
@@ -1006,14 +1029,14 @@ export default function BundleSort() {
           </h1>
           <div className="flex items-center gap-2">
             <button onClick={toggleItemList} className="bg-gradient-to-r from-cyan-500/20 to-blue-500/20 backdrop-blur-lg px-3 py-1.5 rounded-full border border-cyan-400/30 active:bg-cyan-500/30">
-              <span className="text-cyan-300 font-bold text-sm">{scanCount}/40</span>
+              <span className="text-cyan-300 font-bold text-sm">{activeBoxTarget != null ? `${scanCount}/${activeBoxTarget}` : `${scanCount} items`}</span>
             </button>
           </div>
         </div>
 
         {/* Progress bar */}
         <div className="h-1 bg-white/5">
-          <div className={`h-full transition-all duration-500 ${isKickstart ? 'bg-gradient-to-r from-fuchsia-400 via-pink-500 to-rose-500' : 'bg-gradient-to-r from-cyan-400 via-blue-500 to-purple-500'}`} style={{ width: `${progressPercent(scanCount)}%` }}></div>
+          <div className={`h-full transition-all duration-500 ${isKickstart ? 'bg-gradient-to-r from-fuchsia-400 via-pink-500 to-rose-500' : 'bg-gradient-to-r from-cyan-400 via-blue-500 to-purple-500'}`} style={{ width: `${progressPercent(scanCount, activeBoxTarget)}%` }}></div>
         </div>
 
         {/* Item list overlay */}
@@ -1071,6 +1094,14 @@ export default function BundleSort() {
                 >
                   All Items
                 </button>
+                {activeBoxTarget === null && scanCount > 0 && (
+                  <button
+                    onClick={() => completeBox(activeBox)}
+                    className="w-full max-w-sm py-4 mt-3 rounded-2xl font-bold text-lg bg-gradient-to-r from-emerald-500 to-green-600 text-white shadow-lg shadow-emerald-500/30 border border-emerald-400/50 active:scale-[0.97] transition-all"
+                  >
+                    Done Scanning ({scanCount} items)
+                  </button>
+                )}
                 <button onClick={isKickstart ? closeScanner : cancelNoBarcode} className="text-white/40 text-sm underline mt-3">Cancel</button>
               </>
             )}
@@ -1183,7 +1214,7 @@ export default function BundleSort() {
               </>
             )}
             {noBarcodeStep === 'quantity' && noBarcodeSelectedGroup && (() => {
-              const remaining = 40 - scanCount
+              const remaining = activeBoxTarget != null ? Math.max(1, activeBoxTarget - scanCount) : noBarcodeSelectedGroup.ids.length
               const maxQty = Math.min(noBarcodeSelectedGroup.ids.length, remaining)
               return (
                 <>
@@ -1301,15 +1332,25 @@ export default function BundleSort() {
               )}
             </div>
 
-            {/* No Barcode button (Kickstart only) */}
-            {isKickstart && !lastScan && (
-              <div className="px-4 pb-4">
-                <button
-                  onClick={handleNoBarcode}
-                  className="w-full py-4 rounded-2xl font-bold text-lg bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow-lg shadow-amber-500/30 border border-amber-400/50 active:scale-[0.97] transition-all"
-                >
-                  No Barcode
-                </button>
+            {/* Bottom buttons */}
+            {!lastScan && (
+              <div className="px-4 pb-4 space-y-2">
+                {isKickstart && (
+                  <button
+                    onClick={handleNoBarcode}
+                    className="w-full py-4 rounded-2xl font-bold text-lg bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow-lg shadow-amber-500/30 border border-amber-400/50 active:scale-[0.97] transition-all"
+                  >
+                    No Barcode
+                  </button>
+                )}
+                {activeBoxTarget === null && (
+                  <button
+                    onClick={() => completeBox(activeBox)}
+                    className="w-full py-4 rounded-2xl font-bold text-lg bg-gradient-to-r from-emerald-500 to-green-600 text-white shadow-lg shadow-emerald-500/30 border border-emerald-400/50 active:scale-[0.97] transition-all"
+                  >
+                    Done Scanning ({scanCount} items)
+                  </button>
+                )}
               </div>
             )}
           </>
@@ -1321,7 +1362,7 @@ export default function BundleSort() {
   // === VIEWING BOX ===
   if (viewingBox) {
     const isComplete = viewingBox.status === 'complete'
-    const pct = progressPercent(viewingBox.itemCount)
+    const pct = progressPercent(viewingBox.itemCount, viewingBox.targetQuantity)
     const manifestItems = viewingBox.manifestItems || []
 
     // Per-item effective cost and price helpers
@@ -1789,7 +1830,7 @@ export default function BundleSort() {
           </div>
         )}
         {boxes.map(box => {
-          const pct = progressPercent(box.itemCount)
+          const pct = progressPercent(box.itemCount, box.targetQuantity)
           const isSold = box.salePrice != null
           const statusColor = isSold ? 'from-emerald-500/20 to-green-500/20' :
                               box.status === 'complete' ? (isKickstart ? 'from-fuchsia-500/20 to-pink-500/20' : 'from-fuchsia-500/20 to-purple-500/20') :
@@ -1806,7 +1847,7 @@ export default function BundleSort() {
                 <div className="flex items-center justify-between mb-2">
                   <div className="flex-1 min-w-0">
                     <h3 className="text-white font-bold text-lg">Box {box.boxNumber}</h3>
-                    <p className="text-slate-400 text-sm">{box.itemCount}/40 items • <span className={isSold ? 'text-emerald-400' : ''}>{statusText}</span></p>
+                    <p className="text-slate-400 text-sm">{box.targetQuantity != null ? `${box.itemCount}/${box.targetQuantity}` : `${box.itemCount}`} items{box.targetQuantity == null ? ' · ∞' : ''} • <span className={isSold ? 'text-emerald-400' : ''}>{statusText}</span></p>
                   </div>
                   <button onClick={(e) => deleteBox(e, box)} className="text-slate-500 hover:text-red-400 active:text-red-400 w-10 h-10 rounded-full bg-white/5 hover:bg-red-500/10 flex items-center justify-center text-lg font-bold transition-colors shrink-0">
                     ✕
@@ -1852,6 +1893,97 @@ export default function BundleSort() {
           )
         })}
       </div>
+
+      {/* New Box Modal */}
+      {showNewBoxModal && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="glass-card rounded-3xl p-6 w-full max-w-sm border border-white/10">
+            <h3 className="text-xl font-bold text-white mb-4 font-heading">New Box</h3>
+
+            {/* Mode toggle */}
+            <div className="flex gap-1 bg-white/5 rounded-xl p-1 mb-5">
+              <button
+                onClick={() => setNewBoxUnlimited(false)}
+                className={`flex-1 py-2.5 rounded-lg text-sm font-semibold transition-all ${
+                  !newBoxUnlimited ? 'bg-cyan-600 text-white shadow-lg' : 'text-slate-400'
+                }`}
+              >
+                Fixed Qty
+              </button>
+              <button
+                onClick={() => setNewBoxUnlimited(true)}
+                className={`flex-1 py-2.5 rounded-lg text-sm font-semibold transition-all ${
+                  newBoxUnlimited ? 'bg-cyan-600 text-white shadow-lg' : 'text-slate-400'
+                }`}
+              >
+                Unlimited
+              </button>
+            </div>
+
+            {/* Quantity picker (only for fixed mode) */}
+            {!newBoxUnlimited ? (
+              <div className="flex flex-col items-center mb-6">
+                <p className="text-slate-400 text-sm mb-3">Items per box</p>
+                <div className="flex items-center gap-4">
+                  <button
+                    onClick={() => setNewBoxTargetQty(q => Math.max(1, q - 5))}
+                    className="w-12 h-12 rounded-2xl bg-white/10 border border-white/20 text-white font-bold text-xl flex items-center justify-center active:scale-90 transition-all"
+                  >
+                    −
+                  </button>
+                  <input
+                    type="number"
+                    value={newBoxTargetQty}
+                    onChange={e => setNewBoxTargetQty(Math.max(1, parseInt(e.target.value) || 1))}
+                    className="w-20 text-center bg-white/5 border border-white/10 rounded-2xl py-3 text-white text-3xl font-bold focus:outline-none focus:border-cyan-500/50"
+                    style={{ fontSize: '16px' }}
+                  />
+                  <button
+                    onClick={() => setNewBoxTargetQty(q => q + 5)}
+                    className="w-12 h-12 rounded-2xl bg-white/10 border border-white/20 text-white font-bold text-xl flex items-center justify-center active:scale-90 transition-all"
+                  >
+                    +
+                  </button>
+                </div>
+                <div className="flex gap-2 mt-3">
+                  {[20, 30, 40, 50].map(n => (
+                    <button
+                      key={n}
+                      onClick={() => setNewBoxTargetQty(n)}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                        newBoxTargetQty === n ? 'bg-cyan-600 text-white' : 'bg-white/10 text-slate-400'
+                      }`}
+                    >
+                      {n}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div className="text-center mb-6 py-4">
+                <p className="text-cyan-400 text-4xl mb-2">∞</p>
+                <p className="text-slate-400 text-sm">Scan until you're done</p>
+                <p className="text-slate-500 text-xs mt-1">Use "Done Scanning" to complete</p>
+              </div>
+            )}
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowNewBoxModal(false)}
+                className="flex-1 bg-white/10 py-3 rounded-xl text-white font-semibold border border-white/10"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmCreateBox}
+                className="flex-1 bg-cyan-600 hover:bg-cyan-500 py-3 rounded-xl text-white font-bold shadow-lg shadow-cyan-500/25 active:scale-[0.97] transition-all"
+              >
+                Create Box
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
