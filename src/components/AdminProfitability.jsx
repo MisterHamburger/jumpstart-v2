@@ -159,7 +159,7 @@ export default function AdminProfitability() {
         const totalMsrp = items.reduce((sum, i) => sum + (i.msrp || 0), 0)
         const totalCost = items.reduce((sum, i) => sum + (i.true_cost || i.cost || 0), 0)
         const markup = box.markup_percentage || 25
-        const salePrice = box.sale_price != null ? box.sale_price : totalCost * (1 + markup / 100)
+        const salePrice = totalCost * (1 + markup / 100)
         const shippingCharged = box.shipping_charged || 0
         const shippingCost = box.shipping_cost || 0
         const shippingProfit = shippingCharged - shippingCost
