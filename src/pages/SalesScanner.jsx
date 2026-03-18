@@ -100,6 +100,7 @@ export default function SalesScanner() {
   // New unified picker state
   const [showItemPicker, setShowItemPicker] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
+  const [savingRdm, setSavingRdm] = useState(false)
   const html5QrcodeRef = useRef(null)
   const scannerStartingRef = useRef(false)
   const initialScannedRef = useRef(null)
@@ -140,7 +141,6 @@ export default function SalesScanner() {
         setShowItemPicker(true)
         loadAllUnsoldItems()
       } else {
-        // For Jumpstart, use barcode scanner
         startScanner()
       }
     }
@@ -326,8 +326,49 @@ export default function SalesScanner() {
       ? decodedText.length >= 8 && /^\d+$/.test(decodedText)
       : decodedText.startsWith('099')
     if (!isValidBarcode) return
+
     setScannedBarcode(normalizeBarcode(decodedText))
     await stopScanner()
+  }
+
+  // Bulk-save all remaining unscanned valid show_items as RDM, then mark show complete
+  const handleSaveAllRemainingAsRdm = async () => {
+    if (savingRdm) return
+    try {
+      const { data: allItems } = await supabase
+        .from('show_items')
+        .select('listing_number')
+        .eq('show_id', showId)
+        .eq('status', 'valid')
+      const { data: scannedData } = await supabase
+        .from('jumpstart_sold_scans')
+        .select('listing_number')
+        .eq('show_id', showId)
+      const scannedSet = new Set((scannedData || []).map(s => String(s.listing_number)))
+      const toInsert = (allItems || [])
+        .filter(item => !scannedSet.has(String(item.listing_number)))
+        .map(item => ({
+          show_id: showId,
+          barcode: 'RDM',
+          listing_number: item.listing_number,
+          scanned_by: 'phone'
+        }))
+      const count = toInsert.length
+      if (!confirm(`Save ${count} remaining item${count !== 1 ? 's' : ''} as RDM and mark show complete?`)) return
+      setSavingRdm(true)
+      if (toInsert.length > 0) {
+        await supabase.from('jumpstart_sold_scans').insert(toInsert)
+      }
+      await supabase.from('shows')
+        .update({ status: 'completed', scanned_count: scannedCount + toInsert.length })
+        .eq('id', showId)
+      setShowRemainingModal(false)
+      setShowCompletion(true)
+    } catch (err) {
+      console.error('Error saving remaining as RDM:', err)
+      alert('Error saving — try again')
+    }
+    setSavingRdm(false)
   }
 
   // No Barcode handler
@@ -1377,6 +1418,17 @@ export default function SalesScanner() {
               )}
             </div>
           </div>
+          {!isKickstart && remainingItems.length > 0 && (
+            <div className="px-6 pb-6 pt-3 border-t border-white/[0.06]">
+              <button
+                onClick={handleSaveAllRemainingAsRdm}
+                disabled={savingRdm}
+                className="w-full py-4 rounded-2xl font-bold text-base bg-cyan-600 text-white shadow-lg shadow-cyan-600/30 glow-cyan active:scale-[0.98] hover:bg-cyan-500 transition-all disabled:opacity-50"
+              >
+                {savingRdm ? 'Saving...' : `Save ${remainingItems.length} Remaining as RDM`}
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>
