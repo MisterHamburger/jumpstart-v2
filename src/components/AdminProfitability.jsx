@@ -159,7 +159,7 @@ export default function AdminProfitability() {
         const totalMsrp = items.reduce((sum, i) => sum + (i.msrp || 0), 0)
         const totalCost = items.reduce((sum, i) => sum + (i.true_cost || i.cost || 0), 0)
         const markup = box.markup_percentage || 25
-        const salePrice = totalCost * (1 + markup / 100)
+        const salePrice = box.sale_price != null ? box.sale_price : totalCost * (1 + markup / 100)
         const shippingCharged = box.shipping_charged || 0
         const shippingCost = box.shipping_cost || 0
         const shippingProfit = shippingCharged - shippingCost
@@ -221,7 +221,21 @@ export default function AdminProfitability() {
 
   useEffect(() => {
     if (activeTab === 'bundles') return
+    let cancelled = false
+    async function loadItems() {
+      setLoading(true)
+      const opt = SORT_OPTIONS.find(o => o.value === sortKey)
+      let query = supabase.from('profitability').select('*').order(opt.field, { ascending: opt.dir }).range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1)
+      query = applyFilters(query)
+      const { data } = await query
+      if (cancelled) return
+      // Filter out bad bundle barcodes client-side (orphaned scans with no manifest match)
+      const filtered = (data || []).filter(item => !(item.is_bundle && item.is_bad_barcode))
+      setItems(filtered)
+      setLoading(false)
+    }
     loadItems()
+    return () => { cancelled = true }
   }, [search, sortKey, activeTab, selectedShow, page, dateFrom, dateTo, hideWacItems])
 
   function applyFilters(query) {
@@ -234,23 +248,12 @@ export default function AdminProfitability() {
     return query
   }
 
-  async function loadItems() {
-    setLoading(true)
-    const opt = SORT_OPTIONS.find(o => o.value === sortKey)
-    let query = supabase.from('profitability').select('*').order(opt.field, { ascending: opt.dir }).range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1)
-    query = applyFilters(query)
-    const { data } = await query
-    // Filter out bad bundle barcodes client-side (orphaned scans with no manifest match)
-    const filtered = (data || []).filter(item => !(item.is_bundle && item.is_bad_barcode))
-    setItems(filtered)
-    setLoading(false)
-  }
-
   // Load stats from ALL matching items — paginate through Supabase's 1000 row cap
   const [fullSummary, setFullSummary] = useState(null)
   const [showWacMap, setShowWacMap] = useState({})
   useEffect(() => {
     if (activeTab === 'bundles') return
+    let cancelled = false
     async function loadStats() {
       let allData = []
       let from = 0
@@ -259,11 +262,13 @@ export default function AdminProfitability() {
         let query = supabase.from('profitability').select('profit, net_payout, buyer_paid, margin, cost_freight, is_bad_barcode, show_name').range(from, from + batchSize - 1)
         query = applyFilters(query)
         const { data } = await query
+        if (cancelled) return
         if (!data || data.length === 0) break
         allData = allData.concat(data)
         if (data.length < batchSize) break
         from += batchSize
       }
+      if (cancelled) return
       if (allData.length > 0) {
         const n = allData.length
         // Build per-show WAC map: avg cost_freight of matched items in each show
@@ -315,6 +320,7 @@ export default function AdminProfitability() {
       }
     }
     loadStats()
+    return () => { cancelled = true }
   }, [activeTab, selectedShow, search, dateFrom, dateTo, hideWacItems])
 
   const s = fullSummary
@@ -381,20 +387,17 @@ export default function AdminProfitability() {
       {s && (
         <div className="mb-6 space-y-4">
           {/* Hero Card */}
-          <div className="relative rounded-3xl shadow-2xl shadow-cyan-900/20">
-            {/* Gradient border */}
-            <div className="absolute inset-0 bg-gradient-to-r from-cyan-600 via-cyan-500 to-cyan-400 rounded-3xl" />
-            
+          <div className="relative rounded-3xl">
             {/* Inner card */}
-            <div className="relative m-[1.5px] rounded-3xl bg-gradient-to-br from-[#1a1035] via-[#0f1629] to-[#0a1a2e] p-7">
+            <div className="relative rounded-3xl bg-gradient-to-br from-[#1a1035] via-[#0f1629] to-[#0a1a2e] p-7 overflow-hidden">
               {/* Inner highlight - top edge */}
               <div className="absolute inset-x-0 top-0 h-[1px] bg-gradient-to-r from-transparent via-white/20 to-transparent" />
-              
+
               {/* Glow orbs */}
               <div className="absolute top-0 right-1/4 w-80 h-80 bg-cyan-600/25 rounded-full blur-[100px] pointer-events-none" />
               <div className="absolute bottom-0 left-1/4 w-80 h-80 bg-cyan-600/20 rounded-full blur-[100px] pointer-events-none" />
               <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-40 h-40 bg-cyan-500/15 rounded-full blur-[60px] pointer-events-none" />
-              
+
               {/* Content */}
               <div className="relative flex items-center justify-between">
                 <div>

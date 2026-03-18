@@ -472,6 +472,22 @@ export default function AdminDataCheck() {
           `Non-bundle: ${nonBundleCount} + Bundle: ${bundleCount} = ${combined} | Dashboard: ${dashItems}${ok ? '' : ' — MISMATCH'}`)
       }
 
+      // ═══════════════════════════════════════════
+      // SECTION 21: RDM ITEMS CONSISTENCY
+      // RDM scans in sold_scans must match RDM items in profitability view
+      // ═══════════════════════════════════════════
+      {
+        const { count: scanRdm } = await supabase.from('jumpstart_sold_scans')
+          .select('id', { count: 'exact', head: true })
+          .eq('barcode', 'RDM')
+        const { count: profRdm } = await supabase.from('profitability')
+          .select('scan_id', { count: 'exact', head: true })
+          .eq('barcode', 'RDM')
+        const ok = scanRdm === profRdm
+        check('RDM Scans = Profitability RDM Items', ok,
+          `Scans: ${scanRdm} | Profitability: ${profRdm}${ok ? '' : ' — MISMATCH (check show_items join)'}`)
+      }
+
     } catch (err) {
       results.push({ label: 'Unexpected Error', pass: false, detail: err.message })
     }
@@ -517,7 +533,7 @@ export default function AdminDataCheck() {
             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
           </svg>
-          Running {results ? results.length : 0} of 20 checks...
+          Running {results ? results.length : 0} of 21 checks...
         </div>
       )}
 

@@ -1,9 +1,16 @@
--- Add bundle sales to profitability view
--- Each item in a sold bundle gets a proportional share of the sale price
--- Bundles sold outside Whatnot → 0% fees
+-- Add is_test flag to shows table
+-- Test shows are excluded from all profitability/analytics views
 -- Run in Supabase Dashboard > SQL Editor
--- Date: 2026-03-11
+-- Date: 2026-03-18
 
+-- Step 1: Add column
+ALTER TABLE shows ADD COLUMN IF NOT EXISTS is_test BOOLEAN DEFAULT false;
+
+-- Step 2: Mark existing test shows
+UPDATE shows SET is_test = true WHERE id IN (52, 66);
+-- 52 = TEST - Kickstart, 66 = TEST - Jumpstart
+
+-- Step 3: Recreate profitability view to exclude test shows
 DROP VIEW IF EXISTS profitability CASCADE;
 
 CREATE VIEW profitability AS
@@ -89,6 +96,7 @@ LEFT JOIN (
   ORDER BY barcode, id
 ) m ON s.barcode != 'RDM' AND s.barcode = m.barcode
 WHERE si.status = 'valid'
+  AND COALESCE(sh.is_test, false) = false
 
 UNION ALL
 
@@ -146,6 +154,7 @@ LEFT JOIN (
 ) k2 ON s.intake_id IS NULL AND s.barcode = k2.upc
 LEFT JOIN kickstart_show_wac wac ON wac.show_id = s.show_id
 WHERE si.status = 'valid'
+  AND COALESCE(sh.is_test, false) = false
 
 UNION ALL
 

@@ -430,6 +430,30 @@ Automated monthly P&L report sent via Resend API.
 - **Testing:** Test on actual mobile devices — scanner features require camera access.
 - **SQL changes:** Always save SQL changes from Supabase SQL Editor back to local migration files — stale local files have caused bugs.
 - **Handoffs:** When hitting message limits, provide a summary of what was done and what's pending.
+- **React async effects:** Any `useEffect` with async Supabase queries that depend on filter/search state MUST use a `cancelled` flag pattern to prevent race conditions (stale queries overwriting fresh results).
+
+### Impact Analysis (MUST follow before implementing ANY change)
+
+**Before writing any code, present an impact analysis to Jer and get a "go" before proceeding.** This applies to everything — data changes, UI changes, new features, bug fixes, refactors. No exceptions.
+
+**For every change, answer:**
+1. **What does this touch?** List every file, table, view, function, and component affected.
+2. **What else depends on those things?** Trace downstream. Table changed → what views use it? State changed → what effects react to it? Component changed → what pages render it?
+3. **What could break?** Be specific — not "things might break" but "the stats query doesn't filter on this new value, so totals will be wrong."
+4. **What needs to be added/updated alongside?** New SQL CASE statements? Data checks? Cancellation patterns? Migration files?
+
+**Present it like:** "This change touches X, Y, Z. Downstream: A depends on X, B displays Y. I also need to update C and add a data check for D. Good to go?"
+
+**Data pipeline changes:**
+- Trace: scan table → views (`profitability`, `profitability_summary`, `bundle_manifest`, `dashboard_summary`) → RPC (`get_dashboard_summary`) → frontend (`AdminDashboard`, `AdminProfitability`, `AdminAnalytics`, `AdminDataCheck`)
+- New special-case values (like `barcode='RDM'`) need CASE handling in every SQL column that references the source table
+- New data relationships need a corresponding AdminDataCheck cross-check
+
+**UI/frontend changes:**
+- Async `useEffect` with filter dependencies needs cancellation pattern
+- State changes that affect multiple components — trace all consumers
+- New filters must work in BOTH the table query AND the stats/summary query
+- **Brand consistency:** Every UI change must follow the design system in the "UI Design System" section above. No ad-hoc colors, borders, or effects — use the established palette, glass-card patterns, glow classes, and font system. If a change looks "off brand," it's wrong.
 
 ---
 

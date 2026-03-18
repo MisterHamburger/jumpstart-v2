@@ -673,7 +673,8 @@ function ShowUpload() {
           <div className="space-y-2">
             {existingShows.map(show => {
               const display = formatShowDisplay(show)
-              const isComplete = show.status === 'completed' || (show.scanned_count && show.total_items && show.scanned_count >= show.total_items)
+              const isComplete = show.status === 'completed' || !!(show.scanned_count && show.total_items && show.scanned_count >= show.total_items)
+              const isTest = show.is_test === true || show.date === '2099-12-31'
               return (
                 <div key={show.id} className={`flex justify-between items-center py-3 px-4 rounded-xl border transition-colors ${isComplete ? 'bg-emerald-900/20 border-emerald-500/20' : 'bg-slate-800/30 border-white/[0.04] hover:bg-slate-800/50'}`}>
                   <div>
@@ -688,7 +689,10 @@ function ShowUpload() {
                       <span>{display.channel}</span>
                       <span className="text-slate-500">·</span>
                       <span className="text-cyan-400">{display.streamer}</span>
-                      {isComplete && <span className="text-[10px] font-bold uppercase tracking-wider bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded-full">Complete</span>}
+                      {isComplete
+                        ? <span className="text-[10px] font-bold uppercase tracking-wider bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded-full">Complete</span>
+                        : !isTest && show.total_items > 0 && <span className="text-[10px] font-bold uppercase tracking-wider bg-amber-500/20 text-amber-400 px-2 py-0.5 rounded-full">Incomplete</span>
+                      }
                     </div>
                     <div className="text-xs text-slate-500 mt-0.5">
                       {show.total_items || 0} items
