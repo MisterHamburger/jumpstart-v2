@@ -153,13 +153,23 @@ export default function AdminProfitability() {
         ;(intakeData || []).forEach(i => { intakeMap[i.id] = i })
       }
 
+      // Hardcoded known-correct data for historical boxes
+      const hardcodedBoxes = {
+        1: { totalCost: 689.50, salePrice: 890 },
+        2: { totalCost: 4607, salePrice: 5758 },
+      }
+
       ksBoxStats = ksBoxes.map(box => {
         const scans = (ksScans || []).filter(s => s.box_number === box.box_number)
         const items = scans.map(s => intakeMap[s.intake_id] || { cost: 0, true_cost: 0, msrp: 0 })
         const totalMsrp = items.reduce((sum, i) => sum + (i.msrp || 0), 0)
-        const totalCost = items.reduce((sum, i) => sum + (i.true_cost || i.cost || 0), 0)
         const markup = box.markup_percentage || 25
-        const salePrice = totalCost * (1 + markup / 100)
+
+        // Use hardcoded data for historical boxes, otherwise use true_cost + sale_price
+        const hc = hardcodedBoxes[box.box_number]
+        const totalCost = hc ? hc.totalCost : items.reduce((sum, i) => sum + (i.true_cost || i.cost || 0), 0)
+        const salePrice = hc ? hc.salePrice : box.sale_price
+
         const shippingCharged = box.shipping_charged || 0
         const shippingCost = box.shipping_cost || 0
         const shippingProfit = shippingCharged - shippingCost
@@ -670,7 +680,37 @@ export default function AdminProfitability() {
 
 // Bundles View Component
 function BundlesView({ data, onRefresh }) {
-  const { boxes, summary, loading } = data
+  const { boxes: allBoxes, summary: rawSummary, loading } = data
+  const [bundleChannel, setBundleChannel] = useState('all') // 'all', 'Jumpstart', 'Kickstart'
+
+  // Filter boxes by channel — deduplicate by channel+boxNumber
+  const boxes = useMemo(() => {
+    const src = bundleChannel === 'all' ? (allBoxes || []) : (allBoxes || []).filter(b => b.channel === bundleChannel)
+    const seen = new Set()
+    return src.filter(b => {
+      const key = `${b.channel}-${b.boxNumber}`
+      if (seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
+  }, [allBoxes, bundleChannel])
+
+  // Recalculate summary for filtered boxes
+  const summary = useMemo(() => {
+    if (!boxes || boxes.length === 0) return null
+    const s = {
+      totalBoxes: boxes.length,
+      totalRevenue: boxes.reduce((sum, b) => sum + (b.totalRevenue || b.salePrice), 0),
+      totalCost: boxes.reduce((sum, b) => sum + b.totalCost, 0),
+      totalShippingCost: boxes.reduce((sum, b) => sum + (b.shippingCost || 0), 0),
+      totalProfit: boxes.reduce((sum, b) => sum + b.profit, 0),
+      totalItems: boxes.reduce((sum, b) => sum + b.itemCount, 0),
+      profitableBoxes: boxes.filter(b => b.profit >= 0).length,
+      losingBoxes: boxes.filter(b => b.profit < 0).length
+    }
+    s.overallMargin = s.totalRevenue > 0 ? (s.totalProfit / s.totalRevenue) * 100 : 0
+    return s
+  }, [boxes])
 
   if (loading) {
     return (
@@ -694,11 +734,27 @@ function BundlesView({ data, onRefresh }) {
 
   return (
     <div>
+      {/* Channel Filter */}
+      <div className="flex gap-2 mb-4">
+        {['all', 'Jumpstart', 'Kickstart'].map(ch => (
+          <button
+            key={ch}
+            onClick={() => setBundleChannel(ch)}
+            className={`px-4 py-2 rounded-2xl text-sm font-semibold transition-all duration-200
+              ${bundleChannel === ch
+                ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 shadow-lg shadow-emerald-900/20'
+                : 'bg-white/5 text-slate-400 border border-white/10 hover:bg-white/[0.08] hover:text-slate-300'
+              }`}
+          >
+            {ch === 'all' ? 'All Boxes' : ch}
+          </button>
+        ))}
+      </div>
+
       {/* Summary Hero Card */}
       <div className="mb-6 space-y-4">
-        <div className="relative rounded-3xl shadow-2xl shadow-emerald-900/20">
-          <div className="absolute inset-0 bg-gradient-to-r from-emerald-600 via-green-500 to-teal-500 rounded-3xl" />
-          <div className="relative m-[1.5px] rounded-3xl bg-gradient-to-br from-[#0a1f1a] via-[#0f1629] to-[#0a1a2e] p-7">
+        <div className="relative rounded-3xl">
+          <div className="relative rounded-3xl bg-gradient-to-br from-[#0a1f1a] via-[#0f1629] to-[#0a1a2e] p-7">
             <div className="absolute inset-x-0 top-0 h-[1px] bg-gradient-to-r from-transparent via-white/20 to-transparent" />
             <div className="absolute top-0 right-1/4 w-80 h-80 bg-emerald-600/25 rounded-full blur-[100px] pointer-events-none" />
             <div className="absolute bottom-0 left-1/4 w-80 h-80 bg-teal-600/20 rounded-full blur-[100px] pointer-events-none" />
@@ -786,7 +842,7 @@ function BundlesView({ data, onRefresh }) {
             <tbody>
               {boxes.map((box, i) => (
                 <tr
-                  key={box.boxNumber}
+                  key={`${box.channel}-${box.boxNumber}`}
                   className={`
                     transition-all duration-200 border-b border-white/[0.04]
                     hover:bg-gradient-to-r hover:from-emerald-600/10 hover:via-emerald-600/5 hover:to-transparent
