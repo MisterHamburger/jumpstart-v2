@@ -488,6 +488,24 @@ export default function AdminDataCheck() {
           `Scans: ${scanRdm} | Profitability: ${profRdm}${ok ? '' : ' — MISMATCH (check show_items join)'}`)
       }
 
+      // ═══════════════════════════════════════════
+      // SECTION 22: EXPENSE DATA SANITY
+      // If payroll exists, OpEx should too (and vice versa) — catches silent upload failures
+      // ═══════════════════════════════════════════
+      {
+        const opex = data.totalExpenses
+        const payroll = data.totalPayroll
+        const bothZero = opex === 0 && payroll === 0
+        const bothPresent = opex > 0 && payroll > 0
+        const oneZero = !bothZero && !bothPresent
+        check('Expense Data Sanity (OpEx + Payroll)', !oneZero,
+          bothZero
+            ? 'Both OpEx and Payroll are $0 — no expense data uploaded'
+            : oneZero
+              ? `OpEx: ${fmt(opex)} | Payroll: ${fmt(payroll)} — one is $0 while the other has data. Likely a bad upload (check CSV category column for OPEX/PAYROLL values)`
+              : `OpEx: ${fmt(opex)} | Payroll: ${fmt(payroll)} — both have data`)
+      }
+
     } catch (err) {
       results.push({ label: 'Unexpected Error', pass: false, detail: err.message })
     }
@@ -533,7 +551,7 @@ export default function AdminDataCheck() {
             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
           </svg>
-          Running {results ? results.length : 0} of 21 checks...
+          Running {results ? results.length : 0} of 22 checks...
         </div>
       )}
 

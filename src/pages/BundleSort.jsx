@@ -4,7 +4,7 @@ import { Html5Qrcode } from 'html5-qrcode'
 import { supabase } from '../lib/supabase'
 import { normalizeBarcode } from '../lib/barcodes'
 import jsPDF from 'jspdf'
-import autoTable from 'jspdf-autotable'
+import html2canvas from 'html2canvas'
 
 // Lazy-loading photo thumbnail for No Barcode picker
 function LazyPhoto({ intakeId }) {
@@ -773,196 +773,222 @@ export default function BundleSort() {
         alert('No items to generate PDF')
         return
       }
+      setGeneratingPdf(true)
 
-      const doc = new jsPDF({ orientation: 'landscape' })
-      const pageWidth = doc.internal.pageSize.getWidth()
-
+      // --- Compute pricing ---
+      const totalMsrp = items.reduce((sum, item) => sum + (item.msrp || 0), 0)
+      let salePrice, avgPerItem, pricingLabel
       if (isKickstart) {
-        setGeneratingPdf(true)
-
-        // Fetch photos for all intake items
-        const intakeIds = items.map(i => i.intake_id).filter(Boolean)
-        console.log('PDF: fetching photos for', intakeIds.length, 'items, ids:', intakeIds.slice(0, 5))
-        const photoMap = {}
-        if (intakeIds.length > 0) {
-          // Fetch in batches of 5 to avoid huge payloads
-          for (let i = 0; i < intakeIds.length; i += 5) {
-            const batch = intakeIds.slice(i, i + 5)
-            const { data: photoData, error } = await supabase
-              .from('kickstart_intake')
-              .select('id, item_photo_data, photo_data')
-              .in('id', batch)
-            if (error) console.error('PDF photo fetch error:', error)
-            ;(photoData || []).forEach(p => {
-              const photo = p.item_photo_data || p.photo_data
-              if (photo) photoMap[p.id] = photo
-            })
-          }
-        }
-
-        console.log('PDF: photoMap has', Object.keys(photoMap).length, 'photos')
-
-        // Kickstart PDF: cost + markup pricing
         const calcCost = items.reduce((sum, item) => sum + (item.cost || 0), 0)
         const totalCost = viewingBox.costOverride || calcCost
-        const totalMsrp = items.reduce((sum, item) => sum + (item.msrp || 0), 0)
         const markup = viewingBox.markupPercentage || 25
-        const salePrice = viewingBox.priceOverride || (totalCost * (1 + markup / 100))
-
-        const hasPhotos = Object.keys(photoMap).length > 0
-        const imgSize = 20
-        const leftMargin = 8
-
-        doc.setTextColor(0, 0, 0)
-        doc.setFontSize(14)
-        doc.setFont('helvetica', 'bold')
-        doc.text(`BOX #${viewingBox.boxNumber} - Free People/UO/Anthro Liquidation Bundle`, leftMargin, 12)
-
-        doc.setFontSize(9)
-        doc.setFont('helvetica', 'normal')
-        doc.text(`${items.length} Pieces | Mixed Brands & Categories`, leftMargin, 18)
-
-        const tableData = items.map(item => {
-          const row = []
-          if (hasPhotos) row.push('')  // photo placeholder
-          row.push(item.brand || '', item.description || 'Unknown', item.notes || '', item.condition || '', item.color || '', item.size || '', `$${(item.msrp || 0).toFixed(2)}`)
-          return row
-        })
-
-        const headRow = []
-        if (hasPhotos) headRow.push('')
-        headRow.push('Brand', 'Category', 'Description', 'Condition', 'Color', 'Size', 'MSRP')
-
-        const colStyles = {}
-        let col = 0
-        if (hasPhotos) { colStyles[col] = { cellWidth: imgSize + 3 }; col++ }
-        col++ // Brand - auto
-        col++ // Category - auto
-        col++ // Description - auto
-        col++ // Condition - auto
-        col++ // Color - auto
-        col++ // Size - auto
-        colStyles[col] = { halign: 'right' }  // MSRP
-        const msrpCol = col
-
-        autoTable(doc, {
-          startY: 22,
-          head: [headRow],
-          body: tableData,
-          theme: 'grid',
-          styles: { fontSize: 7, cellPadding: 1, lineWidth: 0.1, ...(hasPhotos ? { minCellHeight: imgSize + 2 } : {}) },
-          headStyles: { fillColor: [120, 40, 100], textColor: 255, fontStyle: 'bold', fontSize: 7, cellPadding: 1.5, halign: 'left', minCellHeight: 0 },
-          columnStyles: colStyles,
-          margin: { left: leftMargin, right: leftMargin, top: 10, bottom: 10 },
-          didParseCell: function(data) {
-            if (data.section === 'head' && data.column.index === msrpCol) {
-              data.cell.styles.halign = 'right'
-            }
-          },
-          didDrawCell: function(data) {
-            if (hasPhotos && data.section === 'body' && data.column.index === 0) {
-              const item = items[data.row.index]
-              const base64 = item?.intake_id ? photoMap[item.intake_id] : null
-              if (base64) {
-                try {
-                  doc.addImage(`data:image/jpeg;base64,${base64}`, 'JPEG', data.cell.x + 1, data.cell.y + 1, imgSize, imgSize)
-                } catch (e) { console.error('PDF image error for item', item?.intake_id, e) }
-              }
-            }
-          }
-        })
-
-        const tableRightEdge = pageWidth - leftMargin
-        const finalY = doc.lastAutoTable.finalY + 5
-
-        doc.setFontSize(9)
-        doc.setFont('helvetica', 'normal')
-        doc.setTextColor(80, 80, 80)
-        const avgPerItem = salePrice / items.length
-        const detailText = `${items.length} items  •  $${avgPerItem.toFixed(2)} avg per item  •  Retail Value: $${totalMsrp.toFixed(2)} MSRP`
-        doc.text(detailText, tableRightEdge, finalY, { align: 'right' })
-
-        doc.setFontSize(12)
-        doc.setFont('helvetica', 'bold')
-        doc.setTextColor(120, 40, 100)
-        doc.text(`YOUR PRICE: $${salePrice.toFixed(2)}`, tableRightEdge, finalY + 6, { align: 'right' })
-
-        doc.save(`Kickstart_Box_${viewingBox.boxNumber}_Manifest.pdf`)
+        salePrice = viewingBox.priceOverride || (totalCost * (1 + markup / 100))
+        avgPerItem = salePrice / items.length
+        pricingLabel = 'Mixed Brands & Categories'
       } else {
-        // Jumpstart PDF (existing logic)
-        const totalMsrp = items.reduce((sum, item) => sum + (item.msrp || 0), 0)
         const pricePercent = viewingBox.pricePercentage || 10
-        const totalCustomerPrice = totalMsrp * (pricePercent / 100)
-
-        const tableWidth = 234
-        const leftMargin = (pageWidth - tableWidth) / 2
-
-        doc.setTextColor(0, 0, 0)
-        doc.setFontSize(14)
-        doc.setFont('helvetica', 'bold')
-        doc.text(`BOX #${viewingBox.boxNumber} - Madewell/J.Crew Liquidation Bundle`, leftMargin, 12)
-
-        doc.setFontSize(9)
-        doc.setFont('helvetica', 'normal')
-        doc.text(`${items.length} Pieces | Mixed Categories`, leftMargin, 18)
-
-        const tableData = items.map(item => {
-          const msrp = item.msrp || 0
-          const yourPrice = msrp * (pricePercent / 100)
-          return [
-            item.description || 'Unknown',
-            item.color || '',
-            item.style || '',
-            item.size || '',
-            item.category || '',
-            item.vendor || '',
-            `$${msrp.toFixed(2)}`,
-            `$${yourPrice.toFixed(2)}`
-          ]
-        })
-
-        autoTable(doc, {
-          startY: 22,
-          head: [['Description', 'Color', 'Style', 'Size', 'Category', 'Vendor', 'MSRP', 'Your Price']],
-          body: tableData,
-          theme: 'grid',
-          styles: { fontSize: 7, cellPadding: 1, lineWidth: 0.1 },
-          headStyles: { fillColor: [30, 58, 138], textColor: 255, fontStyle: 'bold', fontSize: 7, cellPadding: 1.5, halign: 'left' },
-          columnStyles: {
-            0: { cellWidth: 75 },
-            1: { cellWidth: 22 },
-            2: { cellWidth: 20 },
-            3: { cellWidth: 15 },
-            4: { cellWidth: 32 },
-            5: { cellWidth: 28 },
-            6: { cellWidth: 20, halign: 'right' },
-            7: { cellWidth: 22, halign: 'right' }
-          },
-          margin: { left: leftMargin, right: leftMargin, top: 10, bottom: 10 },
-          didParseCell: function(data) {
-            if (data.section === 'head' && (data.column.index === 6 || data.column.index === 7)) {
-              data.cell.styles.halign = 'right'
-            }
-          }
-        })
-
-        const tableRightEdge = leftMargin + tableWidth
-        const finalY = doc.lastAutoTable.finalY + 5
-
-        doc.setFontSize(9)
-        doc.setFont('helvetica', 'normal')
-        doc.setTextColor(80, 80, 80)
-        const avgPerItem = totalCustomerPrice / items.length
-        const detailText = `${items.length} items  •  $${avgPerItem.toFixed(2)} avg per item  •  Retail Value: $${totalMsrp.toFixed(2)} MSRP  •  ${pricePercent}% of MSRP`
-        doc.text(detailText, tableRightEdge, finalY, { align: 'right' })
-
-        doc.setFontSize(12)
-        doc.setFont('helvetica', 'bold')
-        doc.setTextColor(30, 58, 138)
-        doc.text(`YOUR PRICE: $${totalCustomerPrice.toFixed(2)}`, tableRightEdge, finalY + 6, { align: 'right' })
-
-        doc.save(`Box_${viewingBox.boxNumber}_Manifest.pdf`)
+        salePrice = totalMsrp * (pricePercent / 100)
+        avgPerItem = salePrice / items.length
+        pricingLabel = `${pricePercent}% of MSRP`
       }
+
+      // --- Fetch photos for Kickstart ---
+      const photoMap = {}
+      if (isKickstart) {
+        const intakeIds = items.map(i => i.intake_id).filter(Boolean)
+        for (let i = 0; i < intakeIds.length; i += 5) {
+          const batch = intakeIds.slice(i, i + 5)
+          const { data: photoData, error } = await supabase
+            .from('kickstart_intake')
+            .select('id, item_photo_data, photo_data')
+            .in('id', batch)
+          if (error) console.error('PDF photo fetch error:', error)
+          ;(photoData || []).forEach(p => {
+            const photo = p.item_photo_data || p.photo_data
+            if (photo) photoMap[p.id] = photo
+          })
+        }
+      }
+
+      // --- Build item rows HTML ---
+      const itemRows = items.map((item, i) => {
+        if (isKickstart) {
+          const photo = item.intake_id ? photoMap[item.intake_id] : null
+          return `
+            <div style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:12px 16px;display:flex;align-items:center;gap:16px;margin-bottom:8px;">
+              <div style="width:64px;height:64px;border-radius:8px;flex-shrink:0;overflow:hidden;background:#f3f4f6;display:flex;align-items:center;justify-content:center;">
+                ${photo
+                  ? `<img src="data:image/jpeg;base64,${photo}" style="width:64px;height:64px;object-fit:cover;border-radius:8px;" />`
+                  : `<div style="width:64px;height:64px;background:#f3f4f6;border-radius:8px;"></div>`
+                }
+              </div>
+              <div style="flex:1;min-width:0;overflow:hidden;">
+                <p style="font-size:10px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#0d9488;margin:0 0 2px 0;">${item.brand || ''}</p>
+                <p style="font-weight:700;font-size:13px;color:#111827;margin:0 0 4px 0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${item.description || 'Unknown'}</p>
+                <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                  ${item.notes ? `<span style="font-size:10px;color:#4b5563;background:#f3f4f6;padding:1px 8px;border-radius:999px;border:1px solid #e5e7eb;">${item.notes}</span>` : ''}
+                  ${item.color ? `<span style="font-size:10px;color:#6b7280;">${item.color}</span>` : ''}
+                  ${item.size ? `<span style="font-size:10px;color:#6b7280;">Size ${item.size}</span>` : ''}
+                </div>
+              </div>
+              <div style="display:flex;align-items:center;gap:16px;flex-shrink:0;">
+                ${item.condition ? `<span style="font-size:10px;font-weight:700;padding:3px 10px;border-radius:999px;${
+                  item.condition === 'NWT' ? 'background:rgba(32,178,170,0.1);border:1px solid rgba(32,178,170,0.25);color:#0f766e;'
+                  : item.condition === 'NWOT' ? 'background:rgba(99,102,241,0.08);border:1px solid rgba(99,102,241,0.2);color:#4338ca;'
+                  : 'background:rgba(245,158,11,0.1);border:1px solid rgba(245,158,11,0.25);color:#92400e;'
+                }">${item.condition}</span>` : ''}
+                <div style="text-align:right;min-width:60px;">
+                  <p style="font-size:8px;text-transform:uppercase;letter-spacing:0.08em;color:#9ca3af;margin:0 0 1px 0;">MSRP</p>
+                  <p style="font-weight:800;font-size:16px;color:#0d9488;margin:0;">$${(item.msrp || 0).toFixed(0)}</p>
+                </div>
+              </div>
+            </div>`
+        } else {
+          const yourPrice = (item.msrp || 0) * ((viewingBox.pricePercentage || 10) / 100)
+          return `
+            <div style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:12px 16px;display:flex;align-items:center;gap:16px;margin-bottom:8px;">
+              <div style="flex:1;min-width:0;overflow:hidden;">
+                <p style="font-size:10px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#0d9488;margin:0 0 2px 0;">${item.vendor || ''}</p>
+                <p style="font-weight:700;font-size:13px;color:#111827;margin:0 0 4px 0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${item.description || 'Unknown'}</p>
+                <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                  ${item.category ? `<span style="font-size:10px;color:#4b5563;background:#f3f4f6;padding:1px 8px;border-radius:999px;border:1px solid #e5e7eb;">${item.category}</span>` : ''}
+                  ${item.color ? `<span style="font-size:10px;color:#6b7280;">${item.color}</span>` : ''}
+                  ${item.style ? `<span style="font-size:10px;color:#6b7280;">Style ${item.style}</span>` : ''}
+                  ${item.size ? `<span style="font-size:10px;color:#6b7280;">Size ${item.size}</span>` : ''}
+                </div>
+              </div>
+              <div style="display:flex;align-items:center;gap:16px;flex-shrink:0;">
+                <div style="text-align:right;min-width:60px;">
+                  <p style="font-size:8px;text-transform:uppercase;letter-spacing:0.08em;color:#9ca3af;margin:0 0 1px 0;">MSRP</p>
+                  <p style="font-weight:800;font-size:16px;color:#0d9488;margin:0;">$${(item.msrp || 0).toFixed(0)}</p>
+                </div>
+                <div style="text-align:right;min-width:60px;">
+                  <p style="font-size:8px;text-transform:uppercase;letter-spacing:0.08em;color:#9ca3af;margin:0 0 1px 0;">YOUR PRICE</p>
+                  <p style="font-weight:800;font-size:16px;color:#0f766e;margin:0;">$${yourPrice.toFixed(2)}</p>
+                </div>
+              </div>
+            </div>`
+        }
+      }).join('')
+
+      // --- Stats bar ---
+      const statsItems = []
+      if (isKickstart) {
+        const brands = {}
+        items.forEach(item => { const b = item.brand || 'Other'; brands[b] = (brands[b] || 0) + 1 })
+        Object.entries(brands).forEach(([brand, count]) => {
+          statsItems.push(`<div style="display:flex;align-items:center;gap:6px;"><div style="width:6px;height:6px;border-radius:50%;background:#0d9488;"></div><span style="font-size:10px;color:#6b7280;">${brand}</span><span style="font-weight:700;font-size:11px;color:#111827;">${count}</span></div>`)
+        })
+      } else {
+        const vendors = {}
+        items.forEach(item => { const v = item.vendor || 'Other'; vendors[v] = (vendors[v] || 0) + 1 })
+        Object.entries(vendors).forEach(([vendor, count]) => {
+          statsItems.push(`<div style="display:flex;align-items:center;gap:6px;"><div style="width:6px;height:6px;border-radius:50%;background:#0d9488;"></div><span style="font-size:10px;color:#6b7280;">${vendor}</span><span style="font-weight:700;font-size:11px;color:#111827;">${count}</span></div>`)
+        })
+      }
+
+      const channelName = isKickstart ? 'Kickstart' : 'Jumpstart'
+      const brandLabel = isKickstart ? 'Free People / UO / Anthro' : 'Madewell / J.Crew'
+      const subtitle = `${items.length} Pieces · ${brandLabel}`
+
+      // --- Full HTML (sized for landscape A4: ~1120px wide) ---
+      const htmlContent = `
+        <div id="pdf-root" style="width:1120px;background:#f9fafb;padding:32px 40px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:#111827;">
+          <!-- Header -->
+          <div style="margin-bottom:24px;">
+            <p style="font-size:11px;font-weight:600;letter-spacing:0.12em;text-transform:uppercase;color:#9ca3af;margin:0 0 4px 0;">${channelName}</p>
+            <h1 style="font-weight:800;font-size:32px;letter-spacing:-0.02em;color:#0d9488;margin:0 0 4px 0;">Bundle #${viewingBox.boxNumber}</h1>
+            <p style="color:#6b7280;font-size:12px;margin:0;">${subtitle}</p>
+          </div>
+
+          <!-- Stats Bar -->
+          <div style="background:#f3f4f6;border:1px solid #e5e7eb;border-radius:12px;padding:12px 16px;margin-bottom:20px;display:flex;align-items:center;gap:24px;">
+            <div style="display:flex;align-items:center;gap:6px;">
+              <div style="width:6px;height:6px;border-radius:50%;background:#0d9488;"></div>
+              <span style="font-size:10px;color:#6b7280;">Total Items</span>
+              <span style="font-weight:700;font-size:11px;color:#111827;">${items.length}</span>
+            </div>
+            ${statsItems.join('')}
+            <div style="margin-left:auto;display:flex;align-items:center;gap:6px;">
+              <span style="font-size:10px;color:#6b7280;">Retail Value</span>
+              <span style="font-weight:700;font-size:16px;color:#0d9488;">$${totalMsrp.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+            </div>
+          </div>
+
+          <!-- Item List -->
+          <div>
+            ${itemRows}
+          </div>
+
+          <!-- Footer -->
+          <div style="margin-top:20px;padding-top:16px;border-top:1px solid #e5e7eb;display:flex;justify-content:space-between;align-items:center;">
+            <p style="font-size:11px;color:#9ca3af;margin:0;">${items.length} items · $${avgPerItem.toFixed(2)} avg per item · ${pricingLabel}</p>
+            <div style="text-align:right;">
+              <p style="font-size:9px;text-transform:uppercase;letter-spacing:0.08em;color:#9ca3af;margin:0 0 2px 0;">Your Price</p>
+              <p style="font-weight:800;font-size:24px;color:#0d9488;margin:0;">$${salePrice.toFixed(2)}</p>
+            </div>
+          </div>
+        </div>`
+
+      // --- Render to canvas and convert to PDF ---
+      const container = document.createElement('div')
+      container.style.position = 'fixed'
+      container.style.left = '-9999px'
+      container.style.top = '0'
+      container.innerHTML = htmlContent
+      document.body.appendChild(container)
+
+      const root = container.querySelector('#pdf-root')
+      const canvas = await html2canvas(root, {
+        scale: 2,
+        useCORS: true,
+        backgroundColor: '#f9fafb',
+        logging: false,
+      })
+
+      document.body.removeChild(container)
+
+      const imgData = canvas.toDataURL('image/jpeg', 0.95)
+      const imgWidth = canvas.width
+      const imgHeight = canvas.height
+
+      // Landscape orientation
+      const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' })
+      const pageW = doc.internal.pageSize.getWidth()
+      const pageH = doc.internal.pageSize.getHeight()
+      const margin = 8
+      const contentW = pageW - margin * 2
+      const contentH = (imgHeight / imgWidth) * contentW
+
+      // If content fits on one page
+      if (contentH <= pageH - margin * 2) {
+        doc.addImage(imgData, 'JPEG', margin, margin, contentW, contentH)
+      } else {
+        // Multi-page: slice the canvas
+        const pxPerPage = ((pageH - margin * 2) / contentW) * imgWidth
+        let yOffset = 0
+        let page = 0
+        while (yOffset < imgHeight) {
+          if (page > 0) doc.addPage()
+          const sliceH = Math.min(pxPerPage, imgHeight - yOffset)
+          const sliceCanvas = document.createElement('canvas')
+          sliceCanvas.width = imgWidth
+          sliceCanvas.height = sliceH
+          const ctx = sliceCanvas.getContext('2d')
+          ctx.drawImage(canvas, 0, yOffset, imgWidth, sliceH, 0, 0, imgWidth, sliceH)
+          const sliceImg = sliceCanvas.toDataURL('image/jpeg', 0.95)
+          const drawH = (sliceH / imgWidth) * contentW
+          doc.addImage(sliceImg, 'JPEG', margin, margin, contentW, drawH)
+          yOffset += pxPerPage
+          page++
+        }
+      }
+
+      const filename = isKickstart
+        ? `Kickstart_Bundle_${viewingBox.boxNumber}_Manifest.pdf`
+        : `Bundle_${viewingBox.boxNumber}_Manifest.pdf`
+      doc.save(filename)
+
     } catch (err) {
       console.error('PDF generation error:', err)
       alert('Error generating PDF: ' + err.message)

@@ -1,0 +1,496 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bundle PDF Template</title>
+    <link href="https://api.fontshare.com/v2/css?f[]=cabinet-grotesk@800,700,500&f[]=satoshi@700,500,400&display=swap" rel="stylesheet">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Satoshi', -apple-system, sans-serif; background: #e5e7eb; padding: 20px; }
+
+        .page {
+            width: 1120px;
+            background: #fff;
+            margin: 0 auto;
+            padding: 36px 44px;
+            border-radius: 4px;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+        }
+
+        /* --- Header --- */
+        .header { margin-bottom: 28px; display: flex; justify-content: space-between; align-items: flex-end; }
+        .header-left {}
+        .channel-label {
+            font-size: 11px;
+            font-weight: 600;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            color: #9ca3af;
+            margin-bottom: 4px;
+        }
+        .bundle-title {
+            font-family: 'Cabinet Grotesk', sans-serif;
+            font-weight: 800;
+            font-size: 30px;
+            color: #111827;
+            letter-spacing: -0.02em;
+            margin-bottom: 2px;
+        }
+        .bundle-subtitle {
+            font-size: 13px;
+            color: #6b7280;
+        }
+        .header-right { text-align: right; }
+        .price-label {
+            font-size: 9px;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            color: #9ca3af;
+            margin-bottom: 2px;
+        }
+        .price-value {
+            font-family: 'Cabinet Grotesk', sans-serif;
+            font-weight: 800;
+            font-size: 36px;
+            color: #0d9488;
+        }
+        .price-detail {
+            font-size: 11px;
+            color: #9ca3af;
+            margin-top: 2px;
+        }
+
+        /* --- Stats Bar --- */
+        .stats-bar {
+            display: flex;
+            align-items: stretch;
+            gap: 0;
+            background: #f9fafb;
+            border: 1px solid #e5e7eb;
+            border-radius: 12px;
+            margin-bottom: 24px;
+            overflow: hidden;
+        }
+        .stat-group {
+            flex: 1;
+            padding: 14px 20px;
+            border-right: 1px solid #e5e7eb;
+        }
+        .stat-group:last-child { border-right: none; }
+        .stat-label {
+            font-size: 9px;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: #9ca3af;
+            margin-bottom: 6px;
+            font-weight: 600;
+        }
+        .stat-items {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+        }
+        .stat-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            font-size: 11px;
+            color: #374151;
+            background: #fff;
+            border: 1px solid #e5e7eb;
+            border-radius: 999px;
+            padding: 2px 10px 2px 8px;
+        }
+        .stat-pill-count {
+            font-weight: 700;
+            color: #111827;
+        }
+        .stat-highlight {
+            padding: 14px 24px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: flex-end;
+            min-width: 160px;
+        }
+        .stat-highlight-value {
+            font-family: 'Cabinet Grotesk', sans-serif;
+            font-weight: 800;
+            font-size: 22px;
+            color: #0d9488;
+        }
+        .stat-highlight-sub {
+            font-size: 10px;
+            color: #9ca3af;
+            margin-top: 1px;
+        }
+        .stat-sub {
+            font-size: 11px;
+            color: #9ca3af;
+            margin-top: 2px;
+        }
+
+        /* --- Item List --- */
+        .item-list { }
+        .item-row {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            padding: 10px 16px;
+            border: 1px solid #f3f4f6;
+            border-radius: 10px;
+            margin-bottom: 6px;
+            background: #fff;
+            transition: background 0.15s;
+        }
+        .item-row:hover { background: #fafafa; }
+
+        .item-photo {
+            width: 56px;
+            height: 56px;
+            border-radius: 8px;
+            flex-shrink: 0;
+            overflow: hidden;
+            background: #f3f4f6;
+        }
+        .item-photo img {
+            width: 56px;
+            height: 56px;
+            object-fit: cover;
+        }
+
+        .item-info { flex: 1; min-width: 0; }
+        .item-brand {
+            font-size: 10px;
+            font-weight: 700;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            color: #0d9488;
+            margin-bottom: 1px;
+        }
+        .item-name {
+            font-weight: 600;
+            font-size: 13px;
+            color: #111827;
+            margin-bottom: 3px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .item-details {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            flex-wrap: wrap;
+        }
+        .item-tag {
+            font-size: 10px;
+            color: #6b7280;
+            background: #f3f4f6;
+            padding: 1px 8px;
+            border-radius: 999px;
+            border: 1px solid #e5e7eb;
+        }
+        .item-detail {
+            font-size: 10px;
+            color: #6b7280;
+        }
+        .item-detail::before {
+            content: '·';
+            margin-right: 6px;
+            color: #d1d5db;
+        }
+        .item-detail:first-child::before { content: none; margin: 0; }
+
+        .item-right {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            flex-shrink: 0;
+        }
+
+        .condition-badge {
+            font-size: 10px;
+            font-weight: 700;
+            padding: 3px 10px;
+            border-radius: 999px;
+            white-space: nowrap;
+        }
+        .condition-nwt {
+            background: rgba(32, 178, 170, 0.08);
+            border: 1px solid rgba(32, 178, 170, 0.2);
+            color: #0f766e;
+        }
+        .condition-nwot {
+            background: rgba(99, 102, 241, 0.06);
+            border: 1px solid rgba(99, 102, 241, 0.15);
+            color: #4338ca;
+        }
+        .condition-good {
+            background: rgba(245, 158, 11, 0.08);
+            border: 1px solid rgba(245, 158, 11, 0.2);
+            color: #92400e;
+        }
+
+        .item-price-col {
+            text-align: right;
+            min-width: 56px;
+        }
+        .item-price-label {
+            font-size: 8px;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: #d1d5db;
+        }
+        .item-msrp-value {
+            font-family: 'Cabinet Grotesk', sans-serif;
+            font-weight: 700;
+            font-size: 14px;
+            color: #9ca3af;
+            text-decoration: line-through;
+        }
+        .item-your-price-value {
+            font-family: 'Cabinet Grotesk', sans-serif;
+            font-weight: 800;
+            font-size: 16px;
+            color: #0d9488;
+        }
+
+        /* --- Footer --- */
+        .footer {
+            margin-top: 20px;
+            padding-top: 16px;
+            border-top: 1px solid #e5e7eb;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .footer-left {
+            font-size: 11px;
+            color: #9ca3af;
+        }
+        .footer-right {
+            font-size: 10px;
+            color: #9ca3af;
+        }
+    </style>
+</head>
+<body>
+    <div class="page">
+
+        <!-- Header -->
+        <div class="header">
+            <div class="header-left" style="border-left:3px solid #0d9488;padding-left:14px;">
+                <div class="channel-label">Kickstart <span style="color:#d1d5db;margin:0 4px;">·</span> Bundle #3</div>
+                <h1 class="bundle-title">Free People / UO / Anthro Bundle</h1>
+                <p class="bundle-subtitle">26 pieces · Curated assortment · NWT + NWOT condition</p>
+            </div>
+            <div class="header-right">
+                <div class="price-label">Your Price</div>
+                <div class="price-value">$756</div>
+                <div class="price-detail">$29.08 per item</div>
+                <div class="price-detail">vs. $3,118 retail</div>
+            </div>
+        </div>
+
+        <!-- Stats Bar -->
+        <div class="stats-bar">
+            <div class="stat-group">
+                <div class="stat-label">Pieces</div>
+                <div style="font-family:'Cabinet Grotesk',sans-serif;font-weight:800;font-size:28px;color:#111827;">26</div>
+                <div class="stat-sub">Total items in bundle</div>
+            </div>
+            <div class="stat-group" style="text-align:center;">
+                <div class="stat-label">Avg MSRP / Piece</div>
+                <div style="font-family:'Cabinet Grotesk',sans-serif;font-weight:800;font-size:28px;color:#111827;"><span style="font-size:16px;vertical-align:top;margin-right:1px;">$</span>119<span style="font-size:18px;">.92</span></div>
+                <div class="stat-sub">Average retail per item</div>
+            </div>
+            <div class="stat-group" style="text-align:center;">
+                <div class="stat-label">Condition</div>
+                <div style="display:flex;align-items:center;gap:8px;margin-top:6px;justify-content:center;">
+                    <span style="display:inline-flex;align-items:center;gap:5px;font-size:13px;font-weight:700;color:#111827;background:#f3f4f6;border:1px solid #e5e7eb;border-radius:6px;padding:4px 12px;"><span style="width:7px;height:7px;border-radius:50%;background:#0d9488;display:inline-block;"></span> NWT</span>
+                    <span style="color:#d1d5db;font-size:14px;">+</span>
+                    <span style="display:inline-flex;align-items:center;gap:5px;font-size:13px;font-weight:700;color:#111827;background:#f3f4f6;border:1px solid #e5e7eb;border-radius:6px;padding:4px 12px;"><span style="width:7px;height:7px;border-radius:50%;background:#0d9488;display:inline-block;"></span> NWOT</span>
+                </div>
+                <div class="stat-sub">New with &amp; without tags</div>
+            </div>
+            <div class="stat-group" style="border-right:none;text-align:right;margin-left:auto;">
+                <div class="stat-label">Retail Value</div>
+                <div style="font-family:'Cabinet Grotesk',sans-serif;font-weight:800;font-size:28px;color:#111827;"><span style="font-size:16px;vertical-align:top;margin-right:1px;">$</span>3,118</div>
+                <div style="margin-top:4px;"><span style="font-size:10px;font-weight:700;color:#0d9488;background:rgba(13,148,136,0.08);border:1px solid rgba(13,148,136,0.2);border-radius:999px;padding:2px 8px;">76% off</span> <span style="font-size:11px;color:#9ca3af;margin-left:4px;">vs retail</span></div>
+            </div>
+        </div>
+
+        <!-- Savings Bar -->
+        <div style="display:flex;align-items:center;background:#f0fdf4;border:1px solid #d1fae5;border-radius:12px;margin-bottom:24px;overflow:hidden;">
+            <div style="display:flex;align-items:center;gap:10px;padding:14px 20px;border-right:1px solid #d1fae5;min-width:260px;">
+                <div style="width:32px;height:32px;border-radius:8px;background:#d1fae5;display:flex;align-items:center;justify-content:center;"><span style="color:#059669;font-size:16px;">↗</span></div>
+                <div>
+                    <div style="font-weight:700;font-size:13px;color:#111827;">Total Savings</div>
+                    <div style="font-size:11px;color:#6b7280;">What you save on this bundle</div>
+                </div>
+            </div>
+            <div style="padding:14px 24px;border-right:1px solid #d1fae5;">
+                <span style="font-family:'Cabinet Grotesk',sans-serif;font-weight:800;font-size:24px;color:#0d9488;">$2,362</span>
+                <span style="font-size:13px;color:#6b7280;margin-left:4px;">saved</span>
+            </div>
+            <div style="margin-left:auto;padding:14px 24px;display:flex;align-items:center;gap:12px;">
+                <div style="text-align:center;">
+                    <div style="font-size:10px;color:#9ca3af;text-transform:uppercase;letter-spacing:0.05em;">Retail</div>
+                    <div style="font-family:'Cabinet Grotesk',sans-serif;font-weight:700;font-size:16px;color:#9ca3af;text-decoration:line-through;">$3,118</div>
+                </div>
+                <span style="color:#d1d5db;font-size:16px;">→</span>
+                <div style="text-align:center;">
+                    <div style="font-size:10px;color:#0d9488;text-transform:uppercase;letter-spacing:0.05em;">Your Price</div>
+                    <div style="font-family:'Cabinet Grotesk',sans-serif;font-weight:800;font-size:16px;color:#0d9488;">$756</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Item List -->
+        <div class="item-list">
+
+            <!-- Item row with photo -->
+            <div class="item-row">
+                <div class="item-photo">
+                    <div style="width:56px;height:56px;background:#e5e7eb;border-radius:8px;"></div>
+                </div>
+                <div class="item-info">
+                    <div class="item-brand">Free People</div>
+                    <div class="item-name">FP Movement Moon Magic Rain Parka</div>
+                    <div class="item-details">
+                        <span class="item-tag">Outerwear/Jackets</span>
+                        <span class="item-detail">Dark Blue</span>
+                        <span class="item-detail">Size S</span>
+                    </div>
+                </div>
+                <div class="item-right">
+                    <span class="condition-badge condition-nwt">NWT</span>
+                    <div class="item-price-col">
+                        <div class="item-price-label">MSRP</div>
+                        <div class="item-msrp-value" style="text-decoration:none;color:#111827;">$298</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="item-row">
+                <div class="item-photo">
+                    <div style="width:56px;height:56px;background:#e5e7eb;border-radius:8px;"></div>
+                </div>
+                <div class="item-info">
+                    <div class="item-brand">Free People</div>
+                    <div class="item-name">FP Movement Moon Magic Rain Parka</div>
+                    <div class="item-details">
+                        <span class="item-tag">Outerwear/Jackets</span>
+                        <span class="item-detail">Dark Blue</span>
+                        <span class="item-detail">Size S</span>
+                    </div>
+                </div>
+                <div class="item-right">
+                    <span class="condition-badge condition-nwt">NWT</span>
+                    <div class="item-price-col">
+                        <div class="item-price-label">MSRP</div>
+                        <div class="item-msrp-value" style="text-decoration:none;color:#111827;">$298</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="item-row">
+                <div class="item-photo">
+                    <div style="width:56px;height:56px;background:#e5e7eb;border-radius:8px;"></div>
+                </div>
+                <div class="item-info">
+                    <div class="item-brand">Free People</div>
+                    <div class="item-name">Printed Shorts</div>
+                    <div class="item-details">
+                        <span class="item-tag">Shorts</span>
+                        <span class="item-detail">Multi-Color</span>
+                        <span class="item-detail">Size M</span>
+                    </div>
+                </div>
+                <div class="item-right">
+                    <span class="condition-badge condition-nwot">NWOT</span>
+                    <div class="item-price-col">
+                        <div class="item-price-label">MSRP</div>
+                        <div class="item-msrp-value" style="text-decoration:none;color:#111827;">$40</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="item-row">
+                <div class="item-photo">
+                    <div style="width:56px;height:56px;background:#e5e7eb;border-radius:8px;"></div>
+                </div>
+                <div class="item-info">
+                    <div class="item-brand">Free People</div>
+                    <div class="item-name">We The Free Long Sleeve Henley</div>
+                    <div class="item-details">
+                        <span class="item-tag">Long Sleeve Tops</span>
+                        <span class="item-detail">Ivory</span>
+                        <span class="item-detail">Size L</span>
+                    </div>
+                </div>
+                <div class="item-right">
+                    <span class="condition-badge condition-nwot">NWOT</span>
+                    <div class="item-price-col">
+                        <div class="item-price-label">MSRP</div>
+                        <div class="item-msrp-value" style="text-decoration:none;color:#111827;">$68</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="item-row">
+                <div class="item-photo">
+                    <div style="width:56px;height:56px;background:#e5e7eb;border-radius:8px;"></div>
+                </div>
+                <div class="item-info">
+                    <div class="item-brand">Free People</div>
+                    <div class="item-name">FP Movement Hoodie</div>
+                    <div class="item-details">
+                        <span class="item-tag">Hoodies</span>
+                        <span class="item-detail">Black</span>
+                        <span class="item-detail">Size XS</span>
+                    </div>
+                </div>
+                <div class="item-right">
+                    <span class="condition-badge condition-nwt">NWT</span>
+                    <div class="item-price-col">
+                        <div class="item-price-label">MSRP</div>
+                        <div class="item-msrp-value" style="text-decoration:none;color:#111827;">$128</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="item-row">
+                <div class="item-photo">
+                    <div style="width:56px;height:56px;background:#e5e7eb;border-radius:8px;"></div>
+                </div>
+                <div class="item-info">
+                    <div class="item-brand">Free People</div>
+                    <div class="item-name">Graphic Crop Tee</div>
+                    <div class="item-details">
+                        <span class="item-tag">Short Sleeve Tops</span>
+                        <span class="item-detail">White</span>
+                        <span class="item-detail">Size M</span>
+                    </div>
+                </div>
+                <div class="item-right">
+                    <span class="condition-badge condition-nwt">NWT</span>
+                    <div class="item-price-col">
+                        <div class="item-price-label">MSRP</div>
+                        <div class="item-msrp-value" style="text-decoration:none;color:#111827;">$48</div>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- Footer -->
+        <div class="footer" style="justify-content:center;">
+            <div class="footer-left">Generated by Jumpstart Scanner · jumpstartscanner.com</div>
+        </div>
+
+    </div>
+</body>
+</html>

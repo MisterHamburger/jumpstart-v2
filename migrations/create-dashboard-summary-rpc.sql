@@ -2,11 +2,13 @@
 -- Cards: avg sale price, profit/unit, gross profit, net profit
 -- P&L table: revenue, fees, net revenue, COGS, gross profit, expenses, payroll, net profit
 -- Run in Supabase Dashboard > SQL Editor
--- Date: 2026-03-10
+-- Date: 2026-03-20
 -- FIX: net_revenue and gross_profit are DERIVED (not independently summed) so P&L always reconciles.
 --   net_revenue = revenue - fees
 --   cogs = SUM(cost_freight) for ALL items (not just matched barcodes)
 --   gross_profit = net_revenue - cogs
+-- FIX: Expenses always clamped to business start date (2026-02-07) via GREATEST()
+--   to exclude pre-business legacy data even when date_cutoff is NULL.
 
 DROP FUNCTION IF EXISTS get_dashboard_summary(date, date);
 
@@ -23,7 +25,10 @@ DECLARE
   ks RECORD;
   total_expenses NUMERIC;
   total_payroll NUMERIC;
+  effective_start DATE;
 BEGIN
+  effective_start := GREATEST(COALESCE(date_cutoff, '2026-02-07'), '2026-02-07');
+
   SELECT
     COUNT(*)::BIGINT AS items,
     COALESCE(SUM(buyer_paid), 0) AS revenue,
@@ -53,15 +58,15 @@ BEGIN
   SELECT COALESCE(SUM(amount), 0)
   INTO total_expenses
   FROM expenses
-  WHERE category = 'EXPENSES'
-    AND (date_cutoff IS NULL OR date >= date_cutoff)
+  WHERE category = 'OPEX'
+    AND date >= effective_start
     AND (date_end IS NULL OR date <= date_end);
 
   SELECT COALESCE(SUM(amount), 0)
   INTO total_payroll
   FROM expenses
   WHERE category = 'PAYROLL'
-    AND (date_cutoff IS NULL OR date >= date_cutoff)
+    AND date >= effective_start
     AND (date_end IS NULL OR date <= date_end);
 
   result := json_build_object(
