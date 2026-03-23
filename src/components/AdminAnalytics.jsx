@@ -104,18 +104,28 @@ export default function AdminAnalytics() {
     setLoading(false)
   }
 
+  // Helper: get all sold barcodes from sold scans + sold bundle items
+  async function getSoldBarcodes() {
+    const soldScansData = await fetchAllRows('jumpstart_sold_scans', 'barcode')
+    const soldBoxes = (await supabase.from('jumpstart_bundle_boxes').select('box_number').not('sold_at', 'is', null)).data || []
+    const soldBoxNumbers = soldBoxes.map(b => b.box_number)
+    let soldBundleData = []
+    if (soldBoxNumbers.length > 0) {
+      const allBundleScans = await fetchAllRows('jumpstart_bundle_scans', 'barcode,box_number')
+      soldBundleData = allBundleScans.filter(s => soldBoxNumbers.includes(s.box_number))
+    }
+    return [...soldScansData, ...soldBundleData]
+  }
+
   async function loadAgingData() {
     setAgingLoading(true)
-    const [manifestData, soldDataRaw, loadsData] = await Promise.all([
+    const [manifestData, soldData, loadsData] = await Promise.all([
       fetchAllRows('jumpstart_manifest', 'barcode,cost_freight,load_id,category,zone,msrp,description'),
-      fetchAllRows('profitability', 'barcode,is_bad_barcode', [{ type: 'eq', col: 'channel', val: 'Jumpstart' }]),
+      getSoldBarcodes(),
       supabase.from('loads').select('id,date,vendor,notes').then(r => r.data || []),
     ])
 
-    // Only count items that came from manifest inventory (exclude RDM + bad barcodes)
-    const soldData = soldDataRaw.filter(r => r.barcode !== 'RDM' && !r.is_bad_barcode)
-
-    // Count sold per barcode (from profitability view — includes Whatnot sales + sold bundles)
+    // Count sold per barcode (from sold scans + sold bundles — items that physically left)
     const soldCounts = {}
     soldData.forEach(row => {
       soldCounts[row.barcode] = (soldCounts[row.barcode] || 0) + 1
@@ -165,14 +175,11 @@ export default function AdminAnalytics() {
 
   async function loadLoadROIData() {
     setLoadROILoading(true)
-    const [manifestData, loadsData, soldDataRaw] = await Promise.all([
+    const [manifestData, loadsData, soldData] = await Promise.all([
       fetchAllRows('jumpstart_manifest', 'barcode,cost_freight,load_id'),
       supabase.from('loads').select('id,date,vendor,notes,total_cost,quantity').then(r => r.data || []),
-      fetchAllRows('profitability', 'barcode,is_bad_barcode', [{ type: 'eq', col: 'channel', val: 'Jumpstart' }]),
+      getSoldBarcodes(),
     ])
-
-    // Only count items that came from manifest inventory (exclude RDM + bad barcodes)
-    const soldData = soldDataRaw.filter(r => r.barcode !== 'RDM' && !r.is_bad_barcode)
 
     // Count items per load and total cost per load from manifest
     const loadManifest = {}
@@ -192,7 +199,7 @@ export default function AdminAnalytics() {
       if (!barcodeToLoad[item.barcode]) barcodeToLoad[item.barcode] = item.load_id
     })
 
-    // Count sold per barcode (from profitability view — includes Whatnot sales + sold bundles)
+    // Count sold per barcode (from sold scans + sold bundles — items that physically left)
     const soldCounts = {}
     soldData.forEach(row => {
       soldCounts[row.barcode] = (soldCounts[row.barcode] || 0) + 1

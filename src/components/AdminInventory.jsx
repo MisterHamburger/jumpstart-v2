@@ -38,14 +38,17 @@ export default function AdminInventory() {
     const { count: z2p } = await supabase.from('jumpstart_manifest').select('id', { count: 'exact', head: true }).eq('zone', 'Zone 2 Pants')
     const { count: total } = await supabase.from('jumpstart_manifest').select('id', { count: 'exact', head: true })
 
-    // Get sold count from profitability view (includes Whatnot sales + sold bundles)
-    // Exclude RDM and bad barcodes — only count items that came from manifest inventory
-    const { count: sold } = await supabase
-      .from('profitability')
-      .select('scan_id', { count: 'exact', head: true })
-      .eq('channel', 'Jumpstart')
-      .eq('is_bad_barcode', false)
-      .neq('barcode', 'RDM')
+    // Get sold count: sold scans + sold bundle items (items that physically left inventory)
+    const { count: soldScans } = await supabase
+      .from('jumpstart_sold_scans')
+      .select('id', { count: 'exact', head: true })
+    const { count: soldBundleItems } = await supabase
+      .from('jumpstart_bundle_scans')
+      .select('id', { count: 'exact', head: true })
+      .in('box_number',
+        (await supabase.from('jumpstart_bundle_boxes').select('box_number').not('sold_at', 'is', null)).data?.map(b => b.box_number) || []
+      )
+    const sold = (soldScans || 0) + (soldBundleItems || 0)
 
     const totalItems = loadData?.reduce((sum, l) => sum + Number(l.item_count), 0) || 0
     const totalCost = loadData?.reduce((sum, l) => sum + Number(l.total_cost), 0) || 0
@@ -96,10 +99,16 @@ export default function AdminInventory() {
     const manifestData = await fetchAllRows('jumpstart_manifest', 'barcode,cost_freight,load_id')
     const { data: loadsInfo } = await supabase.from('loads').select('id,vendor,notes')
 
-    // Get all sold barcodes from profitability view (includes Whatnot sales + sold bundles)
-    // Exclude RDM and bad barcodes — only count items that came from manifest inventory
-    const soldDataRaw = await fetchAllRows('profitability', 'barcode,is_bad_barcode', [{ type: 'eq', col: 'channel', val: 'Jumpstart' }])
-    const soldData = soldDataRaw.filter(r => r.barcode !== 'RDM' && !r.is_bad_barcode)
+    // Get all sold barcodes: sold scans + sold bundle items (items that physically left inventory)
+    const soldScansData = await fetchAllRows('jumpstart_sold_scans', 'barcode')
+    const soldBoxes = (await supabase.from('jumpstart_bundle_boxes').select('box_number').not('sold_at', 'is', null)).data || []
+    const soldBoxNumbers = soldBoxes.map(b => b.box_number)
+    let soldBundleData = []
+    if (soldBoxNumbers.length > 0) {
+      const allBundleScans = await fetchAllRows('jumpstart_bundle_scans', 'barcode,box_number')
+      soldBundleData = allBundleScans.filter(s => soldBoxNumbers.includes(s.box_number))
+    }
+    const soldData = [...soldScansData, ...soldBundleData]
 
     if (!manifestData || manifestData.length === 0) {
       setUnsoldStats({ totalUnsoldCost: 0, totalUnsoldCount: 0, avgUnsoldCost: 0, byLoad: [] })
