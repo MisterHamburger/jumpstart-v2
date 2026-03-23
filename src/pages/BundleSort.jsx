@@ -4,7 +4,6 @@ import { Html5Qrcode } from 'html5-qrcode'
 import { supabase } from '../lib/supabase'
 import { normalizeBarcode } from '../lib/barcodes'
 import jsPDF from 'jspdf'
-import html2canvas from 'html2canvas'
 
 // Lazy-loading photo thumbnail for No Barcode picker
 function LazyPhoto({ intakeId }) {
@@ -769,27 +768,23 @@ export default function BundleSort() {
   const generatePDF = async () => {
     try {
       const items = viewingBox.manifestItems || []
-      if (items.length === 0) {
-        alert('No items to generate PDF')
-        return
-      }
+      if (items.length === 0) { alert('No items to generate PDF'); return }
       setGeneratingPdf(true)
 
       // --- Compute pricing ---
       const totalMsrp = items.reduce((sum, item) => sum + (item.msrp || 0), 0)
-      let salePrice, avgPerItem, pricingLabel
+      const avgMsrp = items.length > 0 ? totalMsrp / items.length : 0
+      let salePrice, avgPerItem
       if (isKickstart) {
         const calcCost = items.reduce((sum, item) => sum + (item.cost || 0), 0)
         const totalCost = viewingBox.costOverride || calcCost
         const markup = viewingBox.markupPercentage || 25
         salePrice = viewingBox.priceOverride || (totalCost * (1 + markup / 100))
         avgPerItem = salePrice / items.length
-        pricingLabel = 'Mixed Brands & Categories'
       } else {
         const pricePercent = viewingBox.pricePercentage || 10
         salePrice = totalMsrp * (pricePercent / 100)
         avgPerItem = salePrice / items.length
-        pricingLabel = `${pricePercent}% of MSRP`
       }
 
       // --- Fetch photos for Kickstart ---
@@ -810,180 +805,274 @@ export default function BundleSort() {
         }
       }
 
-      // --- Build item rows HTML ---
-      const itemRows = items.map((item, i) => {
-        if (isKickstart) {
-          const photo = item.intake_id ? photoMap[item.intake_id] : null
-          return `
-            <div style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:12px 16px;display:flex;align-items:center;gap:16px;margin-bottom:8px;">
-              <div style="width:64px;height:64px;border-radius:8px;flex-shrink:0;overflow:hidden;background:#f3f4f6;display:flex;align-items:center;justify-content:center;">
-                ${photo
-                  ? `<img src="data:image/jpeg;base64,${photo}" style="width:64px;height:64px;object-fit:cover;border-radius:8px;" />`
-                  : `<div style="width:64px;height:64px;background:#f3f4f6;border-radius:8px;"></div>`
-                }
-              </div>
-              <div style="flex:1;min-width:0;overflow:hidden;">
-                <p style="font-size:10px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#0d9488;margin:0 0 2px 0;">${item.brand || ''}</p>
-                <p style="font-weight:700;font-size:13px;color:#111827;margin:0 0 4px 0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${item.description || 'Unknown'}</p>
-                <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-                  ${item.notes ? `<span style="font-size:10px;color:#4b5563;background:#f3f4f6;padding:1px 8px;border-radius:999px;border:1px solid #e5e7eb;">${item.notes}</span>` : ''}
-                  ${item.color ? `<span style="font-size:10px;color:#6b7280;">${item.color}</span>` : ''}
-                  ${item.size ? `<span style="font-size:10px;color:#6b7280;">Size ${item.size}</span>` : ''}
-                </div>
-              </div>
-              <div style="display:flex;align-items:center;gap:16px;flex-shrink:0;">
-                ${item.condition ? `<span style="font-size:10px;font-weight:700;padding:3px 10px;border-radius:999px;${
-                  item.condition === 'NWT' ? 'background:rgba(32,178,170,0.1);border:1px solid rgba(32,178,170,0.25);color:#0f766e;'
-                  : item.condition === 'NWOT' ? 'background:rgba(99,102,241,0.08);border:1px solid rgba(99,102,241,0.2);color:#4338ca;'
-                  : 'background:rgba(245,158,11,0.1);border:1px solid rgba(245,158,11,0.25);color:#92400e;'
-                }">${item.condition}</span>` : ''}
-                <div style="text-align:right;min-width:60px;">
-                  <p style="font-size:8px;text-transform:uppercase;letter-spacing:0.08em;color:#9ca3af;margin:0 0 1px 0;">MSRP</p>
-                  <p style="font-weight:800;font-size:16px;color:#0d9488;margin:0;">$${(item.msrp || 0).toFixed(0)}</p>
-                </div>
-              </div>
-            </div>`
-        } else {
-          const yourPrice = (item.msrp || 0) * ((viewingBox.pricePercentage || 10) / 100)
-          return `
-            <div style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:12px 16px;display:flex;align-items:center;gap:16px;margin-bottom:8px;">
-              <div style="flex:1;min-width:0;overflow:hidden;">
-                <p style="font-size:10px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#0d9488;margin:0 0 2px 0;">${item.vendor || ''}</p>
-                <p style="font-weight:700;font-size:13px;color:#111827;margin:0 0 4px 0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${item.description || 'Unknown'}</p>
-                <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-                  ${item.category ? `<span style="font-size:10px;color:#4b5563;background:#f3f4f6;padding:1px 8px;border-radius:999px;border:1px solid #e5e7eb;">${item.category}</span>` : ''}
-                  ${item.color ? `<span style="font-size:10px;color:#6b7280;">${item.color}</span>` : ''}
-                  ${item.style ? `<span style="font-size:10px;color:#6b7280;">Style ${item.style}</span>` : ''}
-                  ${item.size ? `<span style="font-size:10px;color:#6b7280;">Size ${item.size}</span>` : ''}
-                </div>
-              </div>
-              <div style="display:flex;align-items:center;gap:16px;flex-shrink:0;">
-                <div style="text-align:right;min-width:60px;">
-                  <p style="font-size:8px;text-transform:uppercase;letter-spacing:0.08em;color:#9ca3af;margin:0 0 1px 0;">MSRP</p>
-                  <p style="font-weight:800;font-size:16px;color:#0d9488;margin:0;">$${(item.msrp || 0).toFixed(0)}</p>
-                </div>
-                <div style="text-align:right;min-width:60px;">
-                  <p style="font-size:8px;text-transform:uppercase;letter-spacing:0.08em;color:#9ca3af;margin:0 0 1px 0;">YOUR PRICE</p>
-                  <p style="font-weight:800;font-size:16px;color:#0f766e;margin:0;">$${yourPrice.toFixed(2)}</p>
-                </div>
-              </div>
-            </div>`
-        }
-      }).join('')
+      // --- Condition counts ---
+      const conditions = {}
+      items.forEach(item => { const c = item.condition || 'Unknown'; conditions[c] = (conditions[c] || 0) + 1 })
+      const hasNWT = conditions['NWT'] > 0
+      const hasNWOT = conditions['NWOT'] > 0
 
-      // --- Stats bar ---
-      const statsItems = []
-      if (isKickstart) {
-        const brands = {}
-        items.forEach(item => { const b = item.brand || 'Other'; brands[b] = (brands[b] || 0) + 1 })
-        Object.entries(brands).forEach(([brand, count]) => {
-          statsItems.push(`<div style="display:flex;align-items:center;gap:6px;"><div style="width:6px;height:6px;border-radius:50%;background:#0d9488;"></div><span style="font-size:10px;color:#6b7280;">${brand}</span><span style="font-weight:700;font-size:11px;color:#111827;">${count}</span></div>`)
-        })
-      } else {
-        const vendors = {}
-        items.forEach(item => { const v = item.vendor || 'Other'; vendors[v] = (vendors[v] || 0) + 1 })
-        Object.entries(vendors).forEach(([vendor, count]) => {
-          statsItems.push(`<div style="display:flex;align-items:center;gap:6px;"><div style="width:6px;height:6px;border-radius:50%;background:#0d9488;"></div><span style="font-size:10px;color:#6b7280;">${vendor}</span><span style="font-weight:700;font-size:11px;color:#111827;">${count}</span></div>`)
-        })
+      // --- Labels ---
+      const brandNames = isKickstart
+        ? [...new Set(items.map(i => i.brand).filter(Boolean))]
+        : [...new Set(items.map(i => i.vendor).filter(Boolean))]
+      const brandTitle = brandNames.length > 0 ? brandNames.join(' · ') : (isKickstart ? 'Free People · UO · Anthro' : 'J.Crew · Madewell')
+      const fmt = (n) => '$' + Math.round(n).toLocaleString()
+      const fmt2 = (n) => '$' + n.toFixed(2)
+
+      // --- jsPDF direct drawing ---
+      const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' })
+      const pageW = doc.internal.pageSize.getWidth()  // 297
+      const pageH = doc.internal.pageSize.getHeight() // 210
+      const mx = 18  // margin x
+      const mt = 16  // margin top
+      const cw = pageW - mx * 2  // content width ~261
+      let y = mt
+
+      // Colors
+      const TEAL = [32, 178, 170]
+      const DARK = [23, 23, 23]
+      const GRAY4 = [163, 163, 163]   // neutral-400
+      const GRAY3 = [212, 212, 212]   // neutral-300
+      const GRAY2 = [229, 229, 229]   // neutral-200
+      const GRAY1 = [245, 245, 245]   // neutral-100
+      const GRAY0 = [250, 250, 250]   // neutral-50
+
+      const setC = (c) => doc.setTextColor(c[0], c[1], c[2])
+      const setD = (c) => doc.setDrawColor(c[0], c[1], c[2])
+      const setF = (c) => doc.setFillColor(c[0], c[1], c[2])
+
+      // Check page break
+      const needsPage = (h) => {
+        if (y + h > pageH - 12) { doc.addPage(); y = mt; return true }
+        return false
       }
 
-      const channelName = isKickstart ? 'Kickstart' : 'Jumpstart'
-      const brandLabel = isKickstart ? 'Free People / UO / Anthro' : 'Madewell / J.Crew'
-      const subtitle = `${items.length} Pieces · ${brandLabel}`
+      // ========== BRAND TITLE ==========
+      doc.setFont('helvetica', 'bold')
+      doc.setFontSize(16)
+      setC(DARK)
+      doc.text(brandTitle, mx, y + 5)
+      y += 14
 
-      // --- Full HTML (sized for landscape A4: ~1120px wide) ---
-      const htmlContent = `
-        <div id="pdf-root" style="width:1120px;background:#f9fafb;padding:32px 40px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:#111827;">
-          <!-- Header -->
-          <div style="margin-bottom:24px;">
-            <p style="font-size:11px;font-weight:600;letter-spacing:0.12em;text-transform:uppercase;color:#9ca3af;margin:0 0 4px 0;">${channelName}</p>
-            <h1 style="font-weight:800;font-size:32px;letter-spacing:-0.02em;color:#0d9488;margin:0 0 4px 0;">Bundle #${viewingBox.boxNumber}</h1>
-            <p style="color:#6b7280;font-size:12px;margin:0;">${subtitle}</p>
-          </div>
+      // ========== STATS ROW + YOUR PRICE ==========
+      // Layout: compact stats on left, YOUR PRICE on right with breathing room
+      const statsY = y
+      const statsLabelY = statsY
+      const statsValueY = statsY + 8
+      const statsColW = 42  // wide enough to not overlap
 
-          <!-- Stats Bar -->
-          <div style="background:#f3f4f6;border:1px solid #e5e7eb;border-radius:12px;padding:12px 16px;margin-bottom:20px;display:flex;align-items:center;gap:24px;">
-            <div style="display:flex;align-items:center;gap:6px;">
-              <div style="width:6px;height:6px;border-radius:50%;background:#0d9488;"></div>
-              <span style="font-size:10px;color:#6b7280;">Total Items</span>
-              <span style="font-weight:700;font-size:11px;color:#111827;">${items.length}</span>
-            </div>
-            ${statsItems.join('')}
-            <div style="margin-left:auto;display:flex;align-items:center;gap:6px;">
-              <span style="font-size:10px;color:#6b7280;">Retail Value</span>
-              <span style="font-weight:700;font-size:16px;color:#0d9488;">$${totalMsrp.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-            </div>
-          </div>
+      // Metric 1: Pieces
+      doc.setFont('helvetica', 'bold')
+      doc.setFontSize(6.5)
+      setC(GRAY4)
+      doc.text('PIECES', mx, statsLabelY)
+      doc.setFont('helvetica', 'bold')
+      doc.setFontSize(16)
+      setC(DARK)
+      doc.text(`${items.length}`, mx, statsValueY)
 
-          <!-- Item List -->
-          <div>
-            ${itemRows}
-          </div>
+      // Divider 1
+      setD(GRAY2)
+      const divTop = statsLabelY - 2
+      const divBot = statsValueY + 2
+      doc.line(mx + statsColW - 4, divTop, mx + statsColW - 4, divBot)
 
-          <!-- Footer -->
-          <div style="margin-top:20px;padding-top:16px;border-top:1px solid #e5e7eb;display:flex;justify-content:space-between;align-items:center;">
-            <p style="font-size:11px;color:#9ca3af;margin:0;">${items.length} items · $${avgPerItem.toFixed(2)} avg per item · ${pricingLabel}</p>
-            <div style="text-align:right;">
-              <p style="font-size:9px;text-transform:uppercase;letter-spacing:0.08em;color:#9ca3af;margin:0 0 2px 0;">Your Price</p>
-              <p style="font-weight:800;font-size:24px;color:#0d9488;margin:0;">$${salePrice.toFixed(2)}</p>
-            </div>
-          </div>
-        </div>`
+      // Metric 2: Avg MSRP
+      const m2x = mx + statsColW
+      doc.setFont('helvetica', 'bold')
+      doc.setFontSize(6.5)
+      setC(GRAY4)
+      doc.text('AVG MSRP', m2x, statsLabelY)
+      doc.setFont('helvetica', 'bold')
+      doc.setFontSize(16)
+      setC(DARK)
+      doc.text(`$${avgMsrp.toFixed(2)}`, m2x, statsValueY)
 
-      // --- Render to canvas and convert to PDF ---
-      const container = document.createElement('div')
-      container.style.position = 'fixed'
-      container.style.left = '-9999px'
-      container.style.top = '0'
-      container.innerHTML = htmlContent
-      document.body.appendChild(container)
+      // Divider 2
+      doc.line(mx + statsColW * 2 - 4, divTop, mx + statsColW * 2 - 4, divBot)
 
-      const root = container.querySelector('#pdf-root')
-      const canvas = await html2canvas(root, {
-        scale: 2,
-        useCORS: true,
-        backgroundColor: '#f9fafb',
-        logging: false,
+      // Metric 3: Condition
+      const m3x = mx + statsColW * 2
+      doc.setFont('helvetica', 'bold')
+      doc.setFontSize(6.5)
+      setC(GRAY4)
+      doc.text('CONDITION', m3x, statsLabelY)
+      doc.setFont('helvetica', 'bold')
+      doc.setFontSize(16)
+      setC(DARK)
+      const condText = hasNWT && hasNWOT ? 'NWT' : hasNWT ? 'NWT' : hasNWOT ? 'NWOT' : 'Mixed'
+      doc.text(condText, m3x, statsValueY)
+      if (hasNWT && hasNWOT) {
+        const nwtW = doc.getTextWidth('NWT')
+        doc.setFontSize(12)
+        setC(GRAY3)
+        doc.text(' + ', m3x + nwtW, statsValueY)
+        const plusW = doc.getTextWidth(' + ')
+        doc.setFontSize(16)
+        setC(DARK)
+        doc.text('NWOT', m3x + nwtW + plusW, statsValueY)
+      }
+
+      // Divider 3
+      doc.line(mx + statsColW * 3 - 4, divTop, mx + statsColW * 3 - 4, divBot)
+
+      // Metric 4: Retail Value
+      const m4x = mx + statsColW * 3
+      doc.setFont('helvetica', 'bold')
+      doc.setFontSize(6.5)
+      setC(GRAY4)
+      doc.text('RETAIL VALUE', m4x, statsLabelY)
+      doc.setFont('helvetica', 'bold')
+      doc.setFontSize(16)
+      setC(DARK)
+      doc.text(fmt(totalMsrp), m4x, statsValueY)
+
+      // YOUR PRICE (right-aligned to same edge as MSRP values below)
+      const priceRightEdge = mx + cw - 5  // same as rightX in item rows
+
+      // Right-align all text to priceRightEdge
+      doc.setFont('helvetica', 'bold')
+      doc.setFontSize(6.5)
+      setC(GRAY4)
+      doc.text('YOUR PRICE', priceRightEdge, statsLabelY, { align: 'right' })
+
+      doc.setFont('helvetica', 'bold')
+      doc.setFontSize(26)
+      setC(DARK)
+      doc.text(fmt(salePrice), priceRightEdge, statsValueY + 3, { align: 'right' })
+
+      // Teal left border — positioned to left of the price text
+      const priceTextW = doc.getTextWidth(fmt(salePrice))
+      setF(TEAL)
+      doc.rect(priceRightEdge - priceTextW - 6, statsLabelY - 4, 0.8, 20, 'F')
+
+      doc.setFont('helvetica', 'normal')
+      doc.setFontSize(7)
+      setC(GRAY4)
+      doc.text(`${fmt2(avgPerItem)} / item`, priceRightEdge, statsValueY + 9, { align: 'right' })
+
+      y = statsValueY + 14
+
+      // ========== DIVIDER ==========
+      const contentRight = mx + cw
+      setD(GRAY2)
+      doc.line(mx, y, contentRight, y)
+      y += 4
+
+      // ========== ITEM ROWS ==========
+      const photoSize = 14  // mm
+      const rowH = isKickstart ? 20 : 16
+
+      items.forEach((item) => {
+        needsPage(rowH + 2)
+
+        const brand = isKickstart ? (item.brand || '') : (item.vendor || '')
+        const desc = item.description || 'Unknown'
+        const category = isKickstart ? (item.notes || '') : (item.category || '')
+        const color = item.color || ''
+        const size = item.size || ''
+        const style = !isKickstart ? (item.style || '') : ''
+        const condition = item.condition || ''
+        const msrp = item.msrp || 0
+
+        let textX = mx
+
+        // Photo (Kickstart only)
+        if (isKickstart) {
+          const rowCenterY = y + rowH / 2
+          const photo = item.intake_id ? photoMap[item.intake_id] : null
+          if (photo) {
+            try {
+              doc.addImage(`data:image/jpeg;base64,${photo}`, 'JPEG', mx, rowCenterY - photoSize / 2, photoSize, photoSize)
+            } catch (e) {
+              setF(GRAY0)
+              doc.rect(mx, rowCenterY - photoSize / 2, photoSize, photoSize, 'F')
+            }
+          } else {
+            setF(GRAY0)
+            doc.rect(mx, rowCenterY - photoSize / 2, photoSize, photoSize, 'F')
+          }
+          textX = mx + photoSize + 6
+        }
+
+        // Brand
+        doc.setFont('helvetica', 'bold')
+        doc.setFontSize(6)
+        setC(TEAL)
+        doc.text(brand.toUpperCase(), textX, y + 5)
+
+        // Description
+        doc.setFont('helvetica', 'bold')
+        doc.setFontSize(9)
+        setC(DARK)
+        let displayDesc = desc
+        const maxW = cw - (textX - mx) - 55
+        while (doc.getTextWidth(displayDesc) > maxW && displayDesc.length > 10) {
+          displayDesc = displayDesc.slice(0, -1)
+        }
+        if (displayDesc !== desc) displayDesc += '...'
+        doc.text(displayDesc, textX, y + 10)
+
+        // Detail line
+        const detailParts = []
+        if (size) detailParts.push(`Size ${size}`)
+        if (category) detailParts.push(category)
+        if (color) detailParts.push(color)
+        if (style) detailParts.push(style)
+        doc.setFont('helvetica', 'normal')
+        doc.setFontSize(7)
+        setC(GRAY4)
+        doc.text(detailParts.join(' · '), textX, y + 14.5)
+
+        // Right side: Condition badge + MSRP — at right edge
+        const rightX = mx + cw - 5
+
+        // MSRP
+        doc.setFont('helvetica', 'normal')
+        doc.setFontSize(6)
+        setC(GRAY4)
+        doc.text('MSRP', rightX, y + 5, { align: 'right' })
+        doc.setFont('helvetica', 'bold')
+        doc.setFontSize(10)
+        setC(DARK)
+        doc.text(`$${msrp.toFixed(0)}`, rightX, y + 11, { align: 'right' })
+
+        // Condition badge (border-only, to left of MSRP)
+        if (condition) {
+          doc.setFont('helvetica', 'bold')
+          doc.setFontSize(6)
+          const isNwt = condition === 'NWT'
+          const badgeTextColor = isNwt ? TEAL : GRAY4
+          const badgeBorderColor = isNwt ? TEAL : GRAY3
+          const bText = condition
+          const bw = doc.getTextWidth(bText) + 5
+          const bx = rightX - 22 - bw
+          const by = y + rowH / 2 - 2.5
+          setD(badgeBorderColor)
+          doc.rect(bx, by, bw, 5, 'S')
+          setC(badgeTextColor)
+          doc.text(bText, bx + 2.5, by + 3.5)
+        }
+
+        // Bottom border
+        setD(GRAY1)
+        doc.line(mx, y + rowH, rightX + 2, y + rowH)
+
+        y += rowH + 1
       })
 
-      document.body.removeChild(container)
+      // ========== FOOTER ==========
+      needsPage(12)
+      y += 6
+      setD(GRAY1)
+      doc.line(mx, y, contentRight, y)
+      y += 5
+      doc.setFont('helvetica', 'normal')
+      doc.setFontSize(6)
+      setC(GRAY3)
+      doc.text('Generated by Jumpstart Scanner', mx, y)
 
-      const imgData = canvas.toDataURL('image/jpeg', 0.95)
-      const imgWidth = canvas.width
-      const imgHeight = canvas.height
-
-      // Landscape orientation
-      const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' })
-      const pageW = doc.internal.pageSize.getWidth()
-      const pageH = doc.internal.pageSize.getHeight()
-      const margin = 8
-      const contentW = pageW - margin * 2
-      const contentH = (imgHeight / imgWidth) * contentW
-
-      // If content fits on one page
-      if (contentH <= pageH - margin * 2) {
-        doc.addImage(imgData, 'JPEG', margin, margin, contentW, contentH)
-      } else {
-        // Multi-page: slice the canvas
-        const pxPerPage = ((pageH - margin * 2) / contentW) * imgWidth
-        let yOffset = 0
-        let page = 0
-        while (yOffset < imgHeight) {
-          if (page > 0) doc.addPage()
-          const sliceH = Math.min(pxPerPage, imgHeight - yOffset)
-          const sliceCanvas = document.createElement('canvas')
-          sliceCanvas.width = imgWidth
-          sliceCanvas.height = sliceH
-          const ctx = sliceCanvas.getContext('2d')
-          ctx.drawImage(canvas, 0, yOffset, imgWidth, sliceH, 0, 0, imgWidth, sliceH)
-          const sliceImg = sliceCanvas.toDataURL('image/jpeg', 0.95)
-          const drawH = (sliceH / imgWidth) * contentW
-          doc.addImage(sliceImg, 'JPEG', margin, margin, contentW, drawH)
-          yOffset += pxPerPage
-          page++
-        }
-      }
-
+      // Save
       const filename = isKickstart
         ? `Kickstart_Bundle_${viewingBox.boxNumber}_Manifest.pdf`
         : `Bundle_${viewingBox.boxNumber}_Manifest.pdf`
