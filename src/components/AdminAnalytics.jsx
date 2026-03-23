@@ -106,29 +106,19 @@ export default function AdminAnalytics() {
 
   async function loadAgingData() {
     setAgingLoading(true)
-    const [manifestData, soldData, loadsData, soldBundleBoxes, bundleScans] = await Promise.all([
+    const [manifestData, soldDataRaw, loadsData] = await Promise.all([
       fetchAllRows('jumpstart_manifest', 'barcode,cost_freight,load_id,category,zone,msrp,description'),
-      fetchAllRows('jumpstart_sold_scans', 'barcode'),
+      fetchAllRows('profitability', 'barcode,is_bad_barcode', [{ type: 'eq', col: 'channel', val: 'Jumpstart' }]),
       supabase.from('loads').select('id,date,vendor,notes').then(r => r.data || []),
-      supabase.from('jumpstart_bundle_boxes').select('box_number').not('sold_at', 'is', null).then(r => r.data || []),
-      fetchAllRows('jumpstart_bundle_scans', 'barcode,box_number'),
     ])
 
-    // Build set of sold box numbers
-    const soldBoxNumbers = new Set(soldBundleBoxes.map(b => b.box_number))
+    // Only count items that came from manifest inventory (exclude RDM + bad barcodes)
+    const soldData = soldDataRaw.filter(r => r.barcode !== 'RDM' && !r.is_bad_barcode)
 
-    // Count sold per barcode (from sold scans)
+    // Count sold per barcode (from profitability view — includes Whatnot sales + sold bundles)
     const soldCounts = {}
     soldData.forEach(row => {
       soldCounts[row.barcode] = (soldCounts[row.barcode] || 0) + 1
-    })
-
-    // Also count bundle-sold barcodes (only from sold boxes)
-    const soldBundleCount = bundleScans.filter(row => soldBoxNumbers.has(row.box_number)).length
-    bundleScans.forEach(row => {
-      if (soldBoxNumbers.has(row.box_number)) {
-        soldCounts[row.barcode] = (soldCounts[row.barcode] || 0) + 1
-      }
     })
 
     // Walk manifest, find unsold items
@@ -167,7 +157,7 @@ export default function AdminAnalytics() {
     setAgingData({
       unsoldItems,
       totalManifest: manifestData.length,
-      totalSold: soldData.length + soldBundleCount,
+      totalSold: manifestData.length - unsoldItems.length,
       loads: loadsData,
     })
     setAgingLoading(false)
@@ -175,13 +165,14 @@ export default function AdminAnalytics() {
 
   async function loadLoadROIData() {
     setLoadROILoading(true)
-    const [manifestData, loadsData, soldData, soldBundleBoxes, bundleScans] = await Promise.all([
+    const [manifestData, loadsData, soldDataRaw] = await Promise.all([
       fetchAllRows('jumpstart_manifest', 'barcode,cost_freight,load_id'),
       supabase.from('loads').select('id,date,vendor,notes,total_cost,quantity').then(r => r.data || []),
-      fetchAllRows('jumpstart_sold_scans', 'barcode'),
-      supabase.from('jumpstart_bundle_boxes').select('box_number').not('sold_at', 'is', null).then(r => r.data || []),
-      fetchAllRows('jumpstart_bundle_scans', 'barcode,box_number'),
+      fetchAllRows('profitability', 'barcode,is_bad_barcode', [{ type: 'eq', col: 'channel', val: 'Jumpstart' }]),
     ])
+
+    // Only count items that came from manifest inventory (exclude RDM + bad barcodes)
+    const soldData = soldDataRaw.filter(r => r.barcode !== 'RDM' && !r.is_bad_barcode)
 
     // Count items per load and total cost per load from manifest
     const loadManifest = {}
@@ -190,7 +181,6 @@ export default function AdminAnalytics() {
       if (!loadManifest[lid]) loadManifest[lid] = { items: 0, totalCost: 0, barcodes: {} }
       loadManifest[lid].items++
       loadManifest[lid].totalCost += Number(item.cost_freight) || 0
-      // Track barcode → load mapping (first occurrence wins)
       if (!loadManifest[lid].barcodes[item.barcode]) {
         loadManifest[lid].barcodes[item.barcode] = true
       }
@@ -202,20 +192,10 @@ export default function AdminAnalytics() {
       if (!barcodeToLoad[item.barcode]) barcodeToLoad[item.barcode] = item.load_id
     })
 
-    // Build set of sold box numbers
-    const soldBoxNumbers = new Set(soldBundleBoxes.map(b => b.box_number))
-
-    // Map sold items to loads via barcode (scans + bundles)
+    // Count sold per barcode (from profitability view — includes Whatnot sales + sold bundles)
     const soldCounts = {}
     soldData.forEach(row => {
       soldCounts[row.barcode] = (soldCounts[row.barcode] || 0) + 1
-    })
-
-    // Also count bundle-sold barcodes
-    bundleScans.forEach(row => {
-      if (soldBoxNumbers.has(row.box_number)) {
-        soldCounts[row.barcode] = (soldCounts[row.barcode] || 0) + 1
-      }
     })
 
     // Count sold items per load

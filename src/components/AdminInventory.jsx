@@ -38,12 +38,14 @@ export default function AdminInventory() {
     const { count: z2p } = await supabase.from('jumpstart_manifest').select('id', { count: 'exact', head: true }).eq('zone', 'Zone 2 Pants')
     const { count: total } = await supabase.from('jumpstart_manifest').select('id', { count: 'exact', head: true })
 
-    // Get sold count from show_items (Jumpstart only)
-    const { data: jsShows } = await supabase.from('shows').select('id').eq('channel', 'Jumpstart')
-    const jsShowIds = jsShows?.map(s => s.id) || []
-    const { count: sold } = jsShowIds.length > 0
-      ? await supabase.from('show_items').select('id', { count: 'exact', head: true }).eq('status', 'valid').in('show_id', jsShowIds)
-      : { count: 0 }
+    // Get sold count from profitability view (includes Whatnot sales + sold bundles)
+    // Exclude RDM and bad barcodes — only count items that came from manifest inventory
+    const { count: sold } = await supabase
+      .from('profitability')
+      .select('scan_id', { count: 'exact', head: true })
+      .eq('channel', 'Jumpstart')
+      .eq('is_bad_barcode', false)
+      .neq('barcode', 'RDM')
 
     const totalItems = loadData?.reduce((sum, l) => sum + Number(l.item_count), 0) || 0
     const totalCost = loadData?.reduce((sum, l) => sum + Number(l.total_cost), 0) || 0
@@ -71,12 +73,16 @@ export default function AdminInventory() {
   }
 
   // Helper to fetch all rows with pagination (Supabase default limit is 1000)
-  async function fetchAllRows(table, columns) {
+  async function fetchAllRows(table, columns, filters = []) {
     let allData = []
     let offset = 0
     const pageSize = 1000
     while (true) {
-      const { data } = await supabase.from(table).select(columns).range(offset, offset + pageSize - 1)
+      let query = supabase.from(table).select(columns).range(offset, offset + pageSize - 1)
+      for (const f of filters) {
+        if (f.type === 'eq') query = query.eq(f.col, f.val)
+      }
+      const { data } = await query
       if (!data || data.length === 0) break
       allData = allData.concat(data)
       offset += pageSize
@@ -90,8 +96,10 @@ export default function AdminInventory() {
     const manifestData = await fetchAllRows('jumpstart_manifest', 'barcode,cost_freight,load_id')
     const { data: loadsInfo } = await supabase.from('loads').select('id,vendor,notes')
 
-    // Get all sold scans (paginated) — these have barcodes of items that were sold
-    const soldData = await fetchAllRows('jumpstart_sold_scans', 'barcode')
+    // Get all sold barcodes from profitability view (includes Whatnot sales + sold bundles)
+    // Exclude RDM and bad barcodes — only count items that came from manifest inventory
+    const soldDataRaw = await fetchAllRows('profitability', 'barcode,is_bad_barcode', [{ type: 'eq', col: 'channel', val: 'Jumpstart' }])
+    const soldData = soldDataRaw.filter(r => r.barcode !== 'RDM' && !r.is_bad_barcode)
 
     if (!manifestData || manifestData.length === 0) {
       setUnsoldStats({ totalUnsoldCost: 0, totalUnsoldCount: 0, avgUnsoldCost: 0, byLoad: [] })
@@ -177,7 +185,11 @@ export default function AdminInventory() {
     setItems(data || [])
   }
 
-  const soldPct = stats.total > 0 ? (stats.sold / stats.total * 100).toFixed(1) : 0
+  // Use unsold count from manifest walk (more accurate than simple subtraction)
+  // Falls back to stats.remaining while unsoldStats is still loading
+  const remaining = unsoldStats.totalUnsoldCount || stats.remaining
+  const sold = stats.total - remaining
+  const soldPct = stats.total > 0 ? (sold / stats.total * 100).toFixed(1) : 0
 
   if (loading) {
     return (
@@ -197,8 +209,8 @@ export default function AdminInventory() {
       {/* Top Stats Row */}
       <div className="grid grid-cols-4 gap-4">
         <StatCard label="Total Items" value={stats.total.toLocaleString()} sub="All inventory" />
-        <StatCard label="Sold" value={stats.sold.toLocaleString()} sub={`${soldPct}% of total`} accent="cyan" />
-        <StatCard label="Remaining" value={stats.remaining.toLocaleString()} sub="In stock" accent="purple" />
+        <StatCard label="Sold" value={sold.toLocaleString()} sub={`${soldPct}% of total`} accent="cyan" />
+        <StatCard label="Remaining" value={remaining.toLocaleString()} sub="In stock" accent="purple" />
         <StatCard label="Avg Cost" value={`$${stats.avgCost.toFixed(2)}`} sub="Per item (incl. freight)" />
       </div>
 
@@ -215,8 +227,8 @@ export default function AdminInventory() {
           />
         </div>
         <div className="flex justify-between mt-2 text-xs text-slate-500">
-          <span>{stats.sold.toLocaleString()} sold</span>
-          <span>{stats.remaining.toLocaleString()} remaining</span>
+          <span>{sold.toLocaleString()} sold</span>
+          <span>{remaining.toLocaleString()} remaining</span>
         </div>
       </div>
 
