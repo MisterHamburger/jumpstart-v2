@@ -96,6 +96,12 @@ export default function AdminDashboard() {
       jumpstart, kickstart, combined,
       totalOpex: Number(raw.expenses) || 0,
       totalPayroll: Number(raw.payroll) || 0,
+      loadCost: Number(raw.load_cost) || 0,
+      loadFreight: Number(raw.load_freight) || 0,
+      sourcing: Number(raw.sourcing) || 0,
+      sourcingDirect: Number(raw.sourcing_direct) || 0,
+      sourcingVenmo: Number(raw.sourcing_venmo) || 0,
+      sourcingUps: Number(raw.sourcing_ups) || 0,
     })
     setLoading(false)
   }
@@ -206,6 +212,71 @@ export default function AdminDashboard() {
                   </div>
                 </>
               )}
+            </div>
+          </div>
+
+          {/* Cashflow Summary */}
+          <div className="glass-card rounded-3xl p-6 mt-4">
+            <h3 className="font-bold font-heading text-lg mb-4">Cashflow Summary</h3>
+            <div className="space-y-0">
+              <PLRow label="Revenue (net of Whatnot fees)" value={stats.netRevenue} bold />
+              {isSummary && (
+                <>
+                  <PLRow label="Jumpstart" value={data.jumpstart.netRevenue} indent />
+                  <PLRow label="Kickstart" value={data.kickstart.netRevenue} indent />
+                </>
+              )}
+
+              {(() => {
+                const jsInvPurchases = (data?.loadCost || 0) + (data?.loadFreight || 0)
+                const ksInvPurchases = data?.sourcing || 0
+                const totalInvPurchases = jsInvPurchases + ksInvPurchases
+
+                const invPurchases = channel === 'Jumpstart' ? jsInvPurchases
+                  : channel === 'Kickstart' ? ksInvPurchases
+                  : totalInvPurchases
+
+                // Venmo is now categorized as INVENTORY (not PAYROLL), no deduction needed
+                const cashflowPayroll = (data?.totalPayroll || 0)
+
+                const cashflow = isSummary
+                  ? stats.netRevenue - totalInvPurchases - (data?.totalOpex || 0) - cashflowPayroll
+                  : stats.netRevenue - invPurchases
+
+                return (
+                  <>
+                    <PLRow label="Inventory Purchases" value={-invPurchases} bold />
+                    {isSummary && (
+                      <>
+                        <PLRow label="Jumpstart" value={-jsInvPurchases} indent />
+                        <PLRow label="Kickstart" value={-ksInvPurchases} indent />
+                      </>
+                    )}
+                    {channel === 'Jumpstart' && (
+                      <>
+                        <PLRow label="Load Costs" value={-(data?.loadCost || 0)} indent />
+                        <PLRow label="Freight" value={-(data?.loadFreight || 0)} indent />
+                      </>
+                    )}
+                    {channel === 'Kickstart' && (
+                      <>
+                        <PLRow label="Sourcing" value={-(data?.sourcing || 0)} indent />
+                      </>
+                    )}
+
+                    {isSummary && (
+                      <>
+                        <PLRow label="OpEx" value={-(data?.totalOpex || 0)} />
+                        <PLRow label="Payroll" value={-cashflowPayroll} />
+                      </>
+                    )}
+
+                    <div className="border-t border-white/[0.1] mt-2 pt-2">
+                      <PLRow label="Cashflow" value={cashflow} bold accent />
+                    </div>
+                  </>
+                )
+              })()}
             </div>
           </div>
 

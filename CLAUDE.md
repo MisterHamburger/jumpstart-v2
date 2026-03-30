@@ -133,7 +133,11 @@ netlify/functions/
 - `jumpstart_bundle_scans` has: id, box_number, barcode, scanned_at
 
 **`loads`** — Inventory load purchases
+
 **`expenses`** — Business expenses
+- id, date, description, amount, category, created_at
+- **Categories:** `OPEX` (operating expenses), `PAYROLL` (Intuit payroll only), `INVENTORY` (Venmo payments for Kickstart sourcing), `SOURCING` (direct Kickstart sourcing purchases)
+- **⚠️ Venmo payments are category INVENTORY, NOT PAYROLL.** Venmo is used to pay Kickstart sourcing workers (thrift store pickers), not payroll employees. This was re-categorized 2026-03-30. When importing new expenses, Venmo transactions must be categorized as INVENTORY.
 
 ### Views (read-only)
 
