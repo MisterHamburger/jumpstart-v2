@@ -20,30 +20,13 @@ Jumpstart is a livestream liquidation business that buys retail inventory loads 
 - **Barcode scanning:** Html5-qrcode library (in-browser camera)
 - **External scanner:** CodeREADr (for sort scanning)
 
-### Environment Variables
-
-**Frontend (.env file):**
-```
-VITE_SUPABASE_URL=https://dqilknhyevkecjnmnumx.supabase.co
-VITE_SUPABASE_ANON_KEY=<key>
-```
-
-**Netlify Functions (set in Netlify dashboard):**
-```
-ANTHROPIC_API_KEY=<key>
-SUPABASE_URL=<same as above>
-SUPABASE_ANON_KEY=<same as above>
-```
-
----
-
 ## Deploy Command
 
 ```bash
-cd ~/Downloads/jumpstart-v2 && npm run build && echo '/* /index.html 200' > dist/_redirects && npx netlify deploy --prod --dir=dist --functions=netlify/functions
+cd ~/Desktop/jumpstart-v2 && npm run build && echo '/* /index.html 200' > dist/_redirects && npx netlify deploy --prod --dir=dist --functions=netlify/functions
 ```
 
-Always add the `_redirects` file — it enables client-side routing.
+Always include the `_redirects` file — required for SPA client-side routing.
 
 ---
 
@@ -63,266 +46,106 @@ Channel-aware barcode filtering prevents cross-contamination during scanning.
 
 ---
 
-## File Structure
-
-```
-src/
-├── App.jsx                    # Routes
-├── main.jsx                   # Entry point
-├── lib/
-│   ├── supabase.js            # Supabase client init
-│   ├── barcodes.js            # normalizeBarcode(), isLiquidatorBarcode()
-│   └── fees.js                # calculateFees(), calculateProfit()
-├── pages/
-│   ├── Home.jsx               # Homepage with navigation
-│   ├── SortingSelect.jsx      # Choose sort type
-│   ├── GeneralSort.jsx        # Jumpstart sort scanner
-│   ├── KickstartSort.jsx      # Kickstart intake: bin→brand→photo→qty→save
-│   ├── BundleSort.jsx         # Bundle scanning
-│   ├── SalesSetup.jsx         # Pick show to scan for sales
-│   ├── SalesScanner.jsx       # Live show barcode scanning
-│   └── Admin.jsx              # Admin panel router
-├── components/
-│   ├── Admin.jsx              # Admin layout/nav
-│   ├── AdminDashboard.jsx     # Dashboard overview
-│   ├── AdminInputs.jsx        # Data input management
-│   ├── AdminInventory.jsx     # Inventory views
-│   ├── AdminProfitability.jsx # Profitability analysis
-│   └── AdminScans.jsx         # Scan monitoring
-└── components/files/          # Legacy/unused components
-    ├── Admin.jsx
-    ├── AdminInputs.jsx
-    ├── AdminInventory.jsx
-    ├── App.jsx
-    └── migrate.js
-
-netlify/functions/
-├── enrich-kickstart.js        # AI tag photo enrichment
-└── read-tags.js               # Legacy/unused
-```
-
----
-
 ## Database Tables (Supabase)
 
-### Core Tables
+### Critical Table Rules
 
-**`shows`** — Each Whatnot live show
-- id, name, date, channel (Jumpstart/Kickstart), total_items, status
-
-**`show_items`** — Items assigned to a show
-- id, show_id, listing_number, barcode, status (valid/invalid)
-
-**`jumpstart_manifest`** — J.Crew/Madewell inventory from load manifests
-- barcode, description, category, cost, msrp, etc.
-- **⚠️ ALWAYS has duplicate barcodes** — multiple physical items share the same barcode. Any JOIN to this table MUST use `DISTINCT ON (barcode)` or a subquery with `LIMIT 1` to avoid row multiplication.
-
-**`kickstart_intake`** — Free People/UO/Anthro inventory
-- id, upc, style_number, brand, description, color, size, msrp, cost, photo_data, status (pending_enrichment/enriched/needs_manual/enrichment_failed)
-
-**`jumpstart_sold_scans`** — Barcodes scanned during Jumpstart shows
-- id, show_id, barcode, listing_number, scanned_at
-
-**`kickstart_sold_scans`** — Barcodes scanned during Kickstart shows
-- id, show_id, barcode, listing_number, scanned_at, intake_id
-
-**`jumpstart_sort_log`** — Sort scanner results
-- id, barcode, zone, timestamp
-
-**`jumpstart_bundle_boxes`** / **`jumpstart_bundle_scans`** — Bundle tracking
-- `jumpstart_bundle_scans` has: id, box_number, barcode, scanned_at
-
-**`loads`** — Inventory load purchases
-
-**`expenses`** — Business expenses
-- id, date, description, amount, category, created_at
-- **Categories:** `OPEX` (operating expenses), `PAYROLL` (Intuit payroll only), `INVENTORY` (Venmo payments for Kickstart sourcing), `SOURCING` (direct Kickstart sourcing purchases)
-- **⚠️ Venmo payments are category INVENTORY, NOT PAYROLL.** Venmo is used to pay Kickstart sourcing workers (thrift store pickers), not payroll employees. This was re-categorized 2026-03-30. When importing new expenses, Venmo transactions must be categorized as INVENTORY.
-
-### Views (read-only)
-
-- `dashboard_summary` — Aggregated dashboard stats
-- `load_summary` — Load-level summaries
-- `profitability` — Item-level profitability joining scans + manifest + show data
-- `profitability_summary` — Show-level profitability aggregation
-- `unique_items` — Deduplicated inventory
-- `bundle_manifest` — Joins `jumpstart_bundle_scans` to `jumpstart_manifest` via `DISTINCT ON (barcode)` to show enriched bundle data (description, color, style, size, category, vendor, MSRP, cost) without row duplication
-
-### Database Triggers
-
-**Universal barcode normalization** — A single function `normalize_barcode_universal()` strips leading zeros via `LTRIM(barcode, '0')`. This trigger is applied on BOTH INSERT and UPDATE to ALL barcode tables:
-
-- `jumpstart_bundle_scans`
-- `jumpstart_sold_scans`
-- `jumpstart_sort_log`
-- `kickstart_sold_scans`
-
-This prevents the recurring issue where 099-prefix barcodes don't match the manifest (which stores them as 99-prefix).
-
-### RLS (Row Level Security)
-
-All tables have RLS enabled with "Allow all" policies. This is a private app with no public users — RLS policies grant full access to the anon key.
-
----
-
-## Barcode Normalization (CRITICAL)
-
-⚠️ **This is the #1 recurring issue in the system.** Barcodes from liquidator loads start with `099` prefix. The manifest stores them normalized (no leading zeros: `99107871955`). If barcodes aren't normalized before saving, JOINs fail and data shows as NULL.
-
-### Three layers of protection (all must remain in place):
-
-**1. Client-side:** `normalizeBarcode()` in `src/lib/barcodes.js` strips leading zeros, quotes, whitespace. This is the first line of defense.
-
-**2. Database triggers:** `normalize_barcode_universal()` function with triggers on ALL barcode tables (jumpstart_bundle_scans, jumpstart_sold_scans, jumpstart_sort_log, kickstart_sold_scans). Fires on INSERT and UPDATE. This catches anything the client misses (e.g., cached old app versions, direct API inserts, CodeREADr imports).
-
-**3. Emergency fix SQL:** If NULL/unmatched data appears despite the above, run:
+**`jumpstart_manifest`** — ⚠️ ALWAYS has duplicate barcodes. Any JOIN MUST use `DISTINCT ON (barcode)`:
 ```sql
-UPDATE jumpstart_bundle_scans SET barcode = LTRIM(barcode, '0') WHERE barcode LIKE '0%';
-UPDATE jumpstart_sold_scans SET barcode = LTRIM(barcode, '0') WHERE barcode LIKE '0%';
-UPDATE jumpstart_sort_log SET barcode = LTRIM(barcode, '0') WHERE barcode LIKE '0%';
-UPDATE kickstart_sold_scans SET barcode = LTRIM(barcode, '0') WHERE barcode LIKE '0%';
+LEFT JOIN (
+  SELECT DISTINCT ON (barcode) * FROM jumpstart_manifest ORDER BY barcode, id
+) m ON m.barcode = t.barcode
+-- NEVER: LEFT JOIN jumpstart_manifest m ON m.barcode = t.barcode  (multiplies rows)
 ```
 
-### When adding new tables with barcode columns:
+**`expenses`** — Categories: `OPEX`, `PAYROLL` (Intuit only), `INVENTORY` (Venmo sourcing payments), `SOURCING` (direct sourcing)
+- **⚠️ Venmo = INVENTORY, NOT PAYROLL.** When importing expenses, Venmo transactions must be `INVENTORY`. Dashboard RPC sums `category = 'PAYROLL'` for payroll and `category IN ('SOURCING', 'INVENTORY')` for Kickstart sourcing.
 
-ALWAYS add the normalization trigger:
+### Barcode Normalization (CRITICAL — #1 recurring issue)
+
+Jumpstart barcodes start with `099`; the manifest stores them without leading zeros (`99...`). Mismatches cause NULL joins.
+
+**Three layers of protection:**
+1. `normalizeBarcode()` in `src/lib/barcodes.js` — client-side, first line of defense
+2. `normalize_barcode_universal()` DB trigger on ALL barcode tables (jumpstart_bundle_scans, jumpstart_sold_scans, jumpstart_sort_log, kickstart_sold_scans) — fires on INSERT and UPDATE
+3. Emergency fix: `UPDATE <table> SET barcode = LTRIM(barcode, '0') WHERE barcode LIKE '0%'`
+
+**New tables with barcode columns** must get the trigger:
 ```sql
 CREATE TRIGGER normalize_barcode_trigger
-BEFORE INSERT OR UPDATE ON <new_table_name>
+BEFORE INSERT OR UPDATE ON <table>
 FOR EACH ROW EXECUTE FUNCTION normalize_barcode_universal();
-```
-
-### Manifest duplicate barcodes:
-
-`jumpstart_manifest` ALWAYS has duplicate barcodes — multiple physical items share the same barcode. This is expected and will happen on every future load. Any query that JOINs to `jumpstart_manifest` MUST deduplicate:
-
-```sql
--- CORRECT: Use DISTINCT ON in a subquery
-LEFT JOIN (
-  SELECT DISTINCT ON (barcode) *
-  FROM jumpstart_manifest
-  ORDER BY barcode, id
-) m ON m.barcode = bs.barcode
-
--- WRONG: Direct join (will multiply rows)
-LEFT JOIN jumpstart_manifest m ON m.barcode = bs.barcode
 ```
 
 ---
 
 ## Key Workflows
 
-### 1. Kickstart Intake (KickstartSort.jsx)
+### Profitability
+- Whatnot fees: 8% commission + 2.9% + $0.30 processing
+- Sold item count = `show_items WHERE status='valid'`, NOT from scans table
+- "Bad Barcode" = scan doesn't match any manifest entry (barcode normalization issue)
 
-**Flow:** Select bin price → Select brand (FP/UO/Anthro) → Take photo of tag → Set quantity → Save
+### Kickstart Intake (v1 — KickstartSort.jsx)
+- Saves to `kickstart_intake`, auto-triggers `enrich-kickstart.js`
+- Style numbers: OB, C, or CS prefixes only (not V vendor codes)
+- MSRP: USD price when both USD and CAD on tag; UPC blank for UO items (no printed digits)
+- Manual trigger: `curl -s https://jumpstartscanner.netlify.app/.netlify/functions/enrich-kickstart`
 
-- Photos are compressed client-side (max 1200px wide, 70% JPEG quality) before saving
-- Saves to `kickstart_intake` with status `pending_enrichment`
-- Immediately after save, fires `fetch('/.netlify/functions/enrich-kickstart')` to trigger AI enrichment
-- Enrichment reads the tag photo via Claude API and extracts: UPC, style_number, brand, description, color, size, MSRP
-- Brand is set by user selection, not AI detection (AI fallback to "Free People" if empty)
-- Cost per item is the bin price selected
+### Kickstart Sourcing Trips (v2 — KickstartBuyer.jsx)
+- Separate from v1. Saves to `kickstart_trips` / `kickstart_tag_photos` / `kickstart_receipt_items`
+- Receipt parsed via `parse-receipt.js`, tags matched via `match-kickstart-trip.js`
+- Enrichment via `enrich-kickstart-v2.js`
 
-### 2. Sales Scanning (SalesScanner.jsx)
+### Dashboard RPC
+- `get_dashboard_summary(date_cutoff, date_end)` — Payroll = `category = 'PAYROLL'`; Sourcing = `category IN ('SOURCING', 'INVENTORY')` excluding UPS/Pirate Ship
 
-**Flow:** Select show → Scan barcode → Enter yellow sticker number → Save → Next
-
-- Camera-based barcode scanning using html5-qrcode
-- Channel-aware: filters barcodes by prefix (099=Jumpstart, 198=Kickstart)
-- Barcodes normalized (leading zeros stripped) before saving
-- Duplicate listing numbers prevented per show
-- "No Barcode" button for items without scannable barcodes (manual text entry)
-- "Scans" button opens modal showing all scans with delete capability
-- Scans persist in Supabase — refreshing the page doesn't lose data
-- Header shows: Scanned (green) / Total (white) → Remaining (violet)
-- Auto-completion detection when scanned count reaches total
-- Multi-device support: polls scanned count every 5 seconds
-
-### 3. Profitability (AdminProfitability.jsx)
-
-- Joins sold scans → manifest to calculate per-item profit
-- Whatnot fees: 7.2% commission + 2.9% + $0.30 processing
-- Sticky table headers (requires overflow-auto container with max-height)
-- Filters by show, date range, search
-- "Bad Barcode" = scan barcode doesn't match any manifest entry (usually a normalization issue)
-- Profitability calculation: sold items = COUNT from show_items WHERE status='valid', NOT from scans table
-
-### 4. AI Tag Enrichment (enrich-kickstart.js)
-
-- Netlify serverless function
-- Fetches items with `status = 'pending_enrichment'` from `kickstart_intake`
-- Sends photo_data (base64) to Claude API (claude-sonnet-4-20250514)
-- Extracts: UPC, brand, style_number, description, color, size, MSRP
-- Prompt is tuned for Free People, Urban Outfitters, and Anthropologie tags
-- Style numbers: look for OB, C, or CS prefixes (NOT V vendor codes or S codes)
-- MSRP: uses USD price when both USD and CAD are on tag
-- UPC: reads digits below barcode lines; returns empty if not visible
-- Processes 5 items per invocation to avoid Netlify timeout
-- Auto-triggered after each Kickstart save; can also be triggered manually via curl
-
-### 5. Bundle Manifest (bundle_manifest view)
-
-- Database view that joins `jumpstart_bundle_scans` to `jumpstart_manifest`
-- Uses `DISTINCT ON (barcode)` to prevent row multiplication from manifest duplicates
-- Automatically enriches bundle scans with item details (description, color, style, size, category, vendor, MSRP, cost)
-- No maintenance needed — new scans auto-populate when queried
-- Query by box: `SELECT * FROM bundle_manifest WHERE box_number = 11 ORDER BY scanned_at;`
+### Kickstart COGS vs Jumpstart COGS
+- **Jumpstart:** uses `cost_freight` (cost + $0.45/item freight) from `jumpstart_manifest`
+- **Kickstart:** uses `true_cost` = cost + $1 sourcing fee + $1.50 shipping + 10% sales tax. Shipping already in COGS — do NOT also count UPS/Pirate Ship expenses or it double-counts
 
 ---
 
 ## UI Design
 
-- Dark theme with glassmorphism (gradients, backdrop-blur, border-white/10)
-- Fuchsia/pink gradient accents for Kickstart
-- Cyan/teal accents for dashboard
-- Emerald for success states
-- Mobile-first design (scanners used on iPad/phone)
-- Cache-busting meta tags in index.html to prevent stale versions
+Match the patterns in `src/pages/Home.jsx` and `src/index.css` exactly. Key rules:
+
+**Fonts:** `font-heading` (Cabinet Grotesk) for headings, Satoshi for body — both loaded via `index.css`
+
+**Cards:** `glass-card rounded-3xl p-6` — the `.glass-card` class is defined in `index.css` (blur, border, dark bg)
+
+**Buttons:**
+- Jumpstart action: `bg-cyan-600 text-white hover:bg-cyan-500 hover:scale-105 active:scale-95 rounded-2xl font-bold shadow-lg shadow-cyan-600/30`
+- Kickstart action: `bg-pink-500 text-white hover:bg-pink-400 hover:scale-105 active:scale-95 rounded-2xl font-bold shadow-lg shadow-pink-500/30 glow-magenta`
+- Secondary/neutral: `glass-card hover:bg-white/10 hover:scale-[1.02] active:scale-[0.98] rounded-3xl`
+
+**Icons:** Iconify via `<iconify-icon icon="lucide:name">`. Icon containers: `w-10 h-10 rounded-xl bg-cyan-500/10 border border-cyan-500/20`
+
+**Colors:**
+- Jumpstart accent: `cyan-400 / cyan-600`
+- Kickstart accent: `pink-500` + `glow-magenta`
+- Success: `emerald`
+- Muted text: `text-slate-500`
+- Borders: `border-white/10`
+
+**Background:** `bg-blob-cyan` + `bg-blob-magenta` fixed blobs (defined in `index.css`). Content sits in `relative z-10`.
+
+**Layout:** `max-w-md` centered column, `space-y-4` between cards, mobile-first.
 
 ---
 
 ## Development Conventions
 
-- **File editing:** Use `python3 << 'EOF'` scripts with pathlib for reliable string replacements. Avoid sed/heredoc due to quote escaping issues.
-- **Git:** Commit frequently with descriptive messages. Always `git push` after committing.
-- **Multi-machine:** Jer works on Mac Mini (home) and MacBook Air (office). Always `git pull` when switching machines.
-- **Deploy:** Always deploy before testing. The deploy command includes the _redirects file for SPA routing.
-- **Testing:** Test on actual mobile devices — scanner features require camera access.
-- **Handoffs:** When hitting message limits, provide a summary of what was done and what's pending.
+- **Git:** Commit with descriptive messages. Always `git push` after committing.
+- **Deploy:** Always deploy before testing. See deploy command above.
 
 ---
 
-## Common Issues & Fixes
+## Common Issues
 
 | Issue | Cause | Fix |
 |---|---|---|
-| NULL data in views/joins | Leading zeros on barcodes (099 vs 99) | Check triggers exist; run emergency LTRIM SQL on all barcode tables |
-| Duplicate rows in query results | Joining directly to jumpstart_manifest | Use DISTINCT ON (barcode) subquery — manifest ALWAYS has duplicate barcodes |
-| "Bad Barcode" in profitability | Leading zeros in scans | Run SQL: `UPDATE jumpstart_sold_scans SET barcode = LTRIM(barcode, '0') WHERE barcode LIKE '0%';` |
-| Scans list empty after refresh | Old code used React state | Now loads from Supabase; should persist |
-| Enrichment not running | Items stuck in pending_enrichment | `curl -s https://jumpstartscanner.netlify.app/.netlify/functions/enrich-kickstart` |
-| Build fails with JSX error | Bad string replacement | Check the file for duplicate lines or syntax issues |
-| Camera stuck on mobile | Browser camera lock | Refresh the page; scans persist |
-| Sticky headers not working | Parent has overflow-hidden | Table wrapper needs `overflow-auto` + `max-height` |
-| Old version cached on device | Browser cache | Hard refresh or scan QR code for fresh load |
-| New table has barcode column | Missing normalization trigger | Add trigger: `CREATE TRIGGER normalize_barcode_trigger BEFORE INSERT OR UPDATE ON <table> FOR EACH ROW EXECUTE FUNCTION normalize_barcode_universal();` |
-
----
-
-## Current TODOs
-
-- [ ] Profitability page: fix 1000-item display limit (need server-side aggregation via `get_profitability_summary()`)
-- [ ] Remove left-border UI accent from all pages
-- [ ] Zone assignments based on MSRP thresholds
-- [ ] Kickstart enrichment: UO tags have unreadable barcodes (no printed UPC digits) — UPC will be blank for UO items
-- [ ] AdminScans.jsx needs to be verified in git
-
----
-
-## Key People
-
-- **Josh** — Owner
-- **Wesley** — Co-owner
-- **Jer** (Jeremy Carter) — Operations consultant, manages tech infrastructure
-- **Laura** — Scanning operations
-- **Bri** — Scanner operator (uses iPad)
+| NULL data in joins | Leading zeros on barcodes (099 vs 99) | Check triggers exist; run `UPDATE <table> SET barcode = LTRIM(barcode, '0') WHERE barcode LIKE '0%'` on all barcode tables |
+| Duplicate rows in results | Direct JOIN to jumpstart_manifest | Use DISTINCT ON (barcode) subquery — manifest always has duplicate barcodes |
+| "Bad Barcode" in profitability | Leading zeros in scans | Run LTRIM fix on jumpstart_sold_scans |
+| New table has barcode column | Missing normalization trigger | `CREATE TRIGGER normalize_barcode_trigger BEFORE INSERT OR UPDATE ON <table> FOR EACH ROW EXECUTE FUNCTION normalize_barcode_universal();` |
