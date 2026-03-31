@@ -101,8 +101,9 @@ FOR EACH ROW EXECUTE FUNCTION normalize_barcode_universal();
 - `get_dashboard_summary(date_cutoff, date_end)` — Payroll = `category = 'PAYROLL'`; Sourcing = `category IN ('SOURCING', 'INVENTORY')` excluding UPS/Pirate Ship
 
 ### Kickstart COGS vs Jumpstart COGS
-- **Jumpstart:** uses `cost_freight` (cost + $0.45/item freight) from `jumpstart_manifest`
+- **Jumpstart:** uses `cost_freight` from `jumpstart_manifest`. When importing a load manifest, set `cost_freight` = COGS directly from the liquidator's spreadsheet — freight is already baked into their COGS formula. `cost` is left NULL. Do NOT add $0.45 or any additional freight on top.
 - **Kickstart:** uses `true_cost` = cost + $1 sourcing fee + $1.50 shipping + 10% sales tax. Shipping already in COGS — do NOT also count UPS/Pirate Ship expenses or it double-counts
+- **RDM (Load 5):** Random mystery lot — no manifest, no barcodes. Profitability view uses hardcoded cost of $3.41 for RDM items.
 
 ---
 

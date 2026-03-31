@@ -91,7 +91,8 @@ function parseDollar(val) {
 function getField(row, ...names) {
   for (const name of names) {
     if (row[name] !== undefined && row[name] !== '') return row[name]
-    const key = Object.keys(row).find(k => k.trim().toLowerCase() === name.toLowerCase())
+    const norm = name.toLowerCase().replace(/[_ ]/g, '')
+    const key = Object.keys(row).find(k => k.trim().toLowerCase().replace(/[_ ]/g, '') === norm)
     if (key && row[key] !== undefined && row[key] !== '') return row[key]
   }
   return null
@@ -196,7 +197,7 @@ function ManifestUpload() {
             vendor: getField(row, 'Vendor', 'Brand') || '',
             part_number: getField(row, 'Part Number', 'Item') || '',
             msrp, cost_freight: cogs,
-            zone: zoneStr || null,
+            zone: zoneStr.replace(/^Zone(\d)/i, 'Zone $1').trim() || null,
             bundle_number: getField(row, 'Bundle #', 'Bundle') || null,
             load_id: loadId
           }
@@ -506,7 +507,7 @@ function ShowUpload() {
         return !s || (s !== 'failed' && s !== 'cancelled')
       }) || listingRows[0]
 
-      const soldPrice = parseDollar(getField(bestRow, 'sold price', 'Sold Price'))
+      const soldPrice = parseDollar(getField(bestRow, 'sold price', 'Sold Price', 'original item price', 'Original Item Price'))
       const couponAmt = parseDollar(getField(bestRow, 'coupon price', 'Coupon Amount'))
 
       showItems.push({
@@ -940,10 +941,19 @@ function ExpenseUpload() {
           description: getField(row, 'name', 'Description', 'Vendor') || '',
           amount: parseFloat((getField(row, 'amount', 'Amount') || '0').toString().replace(/[$,]/g, '')) || 0,
           category: (getField(row, 'category', 'Category') || '').toUpperCase()
-        })).filter(e => e.date && e.amount && (e.category === 'OPEX' || e.category === 'PAYROLL'))
+        })).filter(e => e.date && e.amount && (e.category === 'OPEX' || e.category === 'PAYROLL' || e.category === 'SOURCING' || e.category === 'INVENTORY'))
+        .map(e => {
+          // Convert known Kickstart sourcing vendors from INVENTORY to SOURCING
+          if (e.category === 'INVENTORY') {
+            const desc = e.description.toLowerCase()
+            const isKickstartSourcing = desc.includes('reclectic') || desc.includes('businessrsor') || desc.includes('dick')
+            return isKickstartSourcing ? { ...e, category: 'SOURCING' } : null
+          }
+          return e
+        }).filter(Boolean)
 
         if (parsed.length === 0) {
-          setStatus('⚠️ No OPEX or PAYROLL rows found')
+          setStatus('⚠️ No OPEX, PAYROLL, SOURCING, or INVENTORY rows found')
           return
         }
 
