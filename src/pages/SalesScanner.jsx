@@ -1239,15 +1239,15 @@ export default function SalesScanner() {
 
             <div className="flex-1 flex flex-col justify-between">
               <div>
-                <label className="block text-base font-semibold text-white/90 mb-2 text-center">
+                <label className="block text-base [@media(max-height:700px)]:text-sm font-semibold text-white/90 mb-2 [@media(max-height:700px)]:mb-1 text-center">
                   Yellow Sticker Number
                 </label>
-                <div className="text-6xl font-bold text-white text-center mb-4 flex items-center justify-center">
+                <div className="text-6xl [@media(max-height:700px)]:text-4xl font-bold text-white text-center mb-4 [@media(max-height:700px)]:mb-1 flex items-center justify-center">
                   {listingNumber || '_'}
                 </div>
               </div>
               
-              <div className="grid grid-cols-5 gap-2 mb-3">
+              <div className="grid grid-cols-5 gap-2 [@media(max-height:700px)]:gap-1.5 mb-3 [@media(max-height:700px)]:mb-2">
                 {[1,2,3,4,5,6,7,8,9,0].map(num => (
                   <button
                     key={num}
@@ -1256,7 +1256,7 @@ export default function SalesScanner() {
                       setListingNumber(prev => { const next = prev + num.toString(); return String(parseInt(next, 10)); })
                       setShowWarning(null)
                     }}
-                    className={`py-3 text-2xl font-semibold bg-gradient-to-br ${isKickstart ? 'from-fuchsia-500 to-pink-500 border-fuchsia-400/50 shadow-fuchsia-500/30' : 'from-teal-500 to-cyan-500 border-cyan-400/50 shadow-teal-500/30'} text-white border-2 rounded-xl hover:scale-105 transition-all shadow-xl`}
+                    className={`py-3 [@media(max-height:700px)]:py-1.5 text-2xl [@media(max-height:700px)]:text-xl font-semibold bg-gradient-to-br ${isKickstart ? 'from-fuchsia-500 to-pink-500 border-fuchsia-400/50 shadow-fuchsia-500/30' : 'from-teal-500 to-cyan-500 border-cyan-400/50 shadow-teal-500/30'} text-white border-2 rounded-xl hover:scale-105 transition-all shadow-xl`}
                   >
                     {num}
                   </button>
@@ -1267,7 +1267,7 @@ export default function SalesScanner() {
                     setListingNumber(prev => prev.slice(0, -1))
                     setShowWarning(null)
                   }}
-                  className="py-3 text-xl font-semibold bg-gradient-to-br from-amber-400 to-orange-500 text-white border-2 border-amber-400/50 rounded-xl hover:scale-105 transition-all shadow-xl shadow-amber-500/40"
+                  className="py-3 [@media(max-height:700px)]:py-1.5 text-xl [@media(max-height:700px)]:text-lg font-semibold bg-gradient-to-br from-amber-400 to-orange-500 text-white border-2 border-amber-400/50 rounded-xl hover:scale-105 transition-all shadow-xl shadow-amber-500/40"
                 >
                   ←
                 </button>
@@ -1287,7 +1287,7 @@ export default function SalesScanner() {
                       await startScanner()
                     }
                   }}
-                  className="flex-1 py-4 px-6 rounded-2xl bg-gradient-to-r from-pink-500 to-rose-500 border-2 border-pink-400/60 text-white font-bold text-lg
+                  className="flex-1 py-4 [@media(max-height:700px)]:py-2.5 px-6 rounded-2xl bg-gradient-to-r from-pink-500 to-rose-500 border-2 border-pink-400/60 text-white font-bold text-lg [@media(max-height:700px)]:text-base
                              hover:scale-105 transition-all shadow-xl shadow-pink-500/40"
                 >
                   Cancel
@@ -1306,7 +1306,7 @@ export default function SalesScanner() {
                     }
                   } : handleSubmit}
                   disabled={showWarning ? false : (!listingNumber || submitting)}
-                  className={`flex-1 py-4 px-6 rounded-2xl font-bold text-lg transition-all ${
+                  className={`flex-1 py-4 [@media(max-height:700px)]:py-2.5 px-6 rounded-2xl font-bold text-lg [@media(max-height:700px)]:text-base transition-all ${
                     showWarning || (listingNumber && !submitting)
                       ? `bg-gradient-to-r ${gradientFrom} ${gradientTo} border-2 ${isKickstart ? 'border-fuchsia-400/60' : 'border-cyan-400/60'} text-white shadow-2xl ${shadowColor} hover:scale-105`
                       : 'bg-white/5 border-2 border-white/10 text-white/30 cursor-not-allowed'
