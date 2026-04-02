@@ -1137,9 +1137,9 @@ export default function SalesScanner() {
           </div>
         </div>
         ) : (
-          <div className="relative z-10 flex-1 min-h-0 flex flex-col">
+          <div className="relative z-10 flex-1 min-h-0">
           {isHardwareScanner ? (
-            <div className="flex-1 flex flex-col items-center justify-center bg-slate-900 px-4 relative"
+            <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-900 px-4"
               onClick={() => hardwareInputRef.current?.focus()}
             >
               <iconify-icon icon="lucide:scan-barcode" class="text-cyan-400" width="64" height="64"></iconify-icon>
@@ -1173,7 +1173,7 @@ export default function SalesScanner() {
               />
             </div>
           ) : cameraError ? (
-            <div className="flex-1 flex items-center justify-center bg-slate-900">
+            <div className="absolute inset-0 flex items-center justify-center bg-slate-900">
               <div className="text-center">
                 <p className="text-red-400 mb-4">Camera Error: {cameraError}</p>
                 <button
@@ -1185,7 +1185,7 @@ export default function SalesScanner() {
               </div>
             </div>
           ) : (
-            <div className="flex-1 min-h-0 overflow-hidden flex items-center justify-center bg-slate-900 px-4 py-2 relative" style={{ maxHeight: 'calc(100dvh - 200px)' }}>
+            <div className="absolute inset-0 overflow-hidden flex items-center justify-center bg-slate-900 px-4 py-2">
               <div
                 key={scannerKey}
                 id="sales-reader"
