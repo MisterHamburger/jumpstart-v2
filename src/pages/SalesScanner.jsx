@@ -108,6 +108,7 @@ export default function SalesScanner() {
   const [hardwareInput, setHardwareInput] = useState('')
   const hardwareInputRef = useRef(null)
   const hardwareTimerRef = useRef(null)
+  const isHardwareScanner = /Zebra|TC[0-9]/i.test(navigator.userAgent)
 
   const totalItems = showData?.totalItems || 0
   const scannedCount = realScannedCount
@@ -151,9 +152,9 @@ export default function SalesScanner() {
     return () => { stopScanner() }
   }, [showExcludedModal, showData?.channel])
 
-  // Re-focus hardware input when scanner is active
+  // Re-focus hardware input when scanner is active (or always for hardware scanner devices)
   useEffect(() => {
-    if (!scannedBarcode && isScanning) setTimeout(() => hardwareInputRef.current?.focus(), 400)
+    if (!scannedBarcode && (isScanning || isHardwareScanner)) setTimeout(() => hardwareInputRef.current?.focus(), 400)
   }, [scannedBarcode, isScanning])
 
   // Poll for real scanned count (multi-device support)
@@ -284,6 +285,7 @@ export default function SalesScanner() {
   }
 
   const startScanner = async () => {
+    if (isHardwareScanner) { hardwareInputRef.current?.focus(); return } // Zebra: no camera needed
     if (scannerStartingRef.current) return // Prevent concurrent starts
     scannerStartingRef.current = true
     try {
@@ -1136,7 +1138,41 @@ export default function SalesScanner() {
         </div>
         ) : (
           <div className="relative z-10 flex-1 min-h-0 flex flex-col">
-          {cameraError ? (
+          {isHardwareScanner ? (
+            <div className="flex-1 flex flex-col items-center justify-center bg-slate-900 px-4 relative"
+              onClick={() => hardwareInputRef.current?.focus()}
+            >
+              <iconify-icon icon="lucide:scan-barcode" class="text-cyan-400" width="64" height="64"></iconify-icon>
+              <p className="text-white font-bold text-xl mt-4 font-heading">Ready to Scan</p>
+              <p className="text-slate-400 text-sm mt-1">Pull trigger to scan barcode</p>
+              <input
+                ref={hardwareInputRef}
+                value={hardwareInput}
+                onChange={e => {
+                  const val = e.target.value
+                  setHardwareInput(val)
+                  clearTimeout(hardwareTimerRef.current)
+                  hardwareTimerRef.current = setTimeout(() => {
+                    const trimmed = val.trim()
+                    setHardwareInput('')
+                    if (trimmed.length > 5) onScanSuccessRef.current?.(trimmed)
+                  }, 50)
+                }}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') {
+                    clearTimeout(hardwareTimerRef.current)
+                    const val = hardwareInput.trim()
+                    setHardwareInput('')
+                    if (val.length > 5) onScanSuccessRef.current?.(val)
+                  }
+                }}
+                className="absolute opacity-0 w-px h-px top-0 left-0"
+                autoComplete="off"
+                inputMode="none"
+                autoFocus
+              />
+            </div>
+          ) : cameraError ? (
             <div className="flex-1 flex items-center justify-center bg-slate-900">
               <div className="text-center">
                 <p className="text-red-400 mb-4">Camera Error: {cameraError}</p>
@@ -1155,7 +1191,7 @@ export default function SalesScanner() {
                 id="sales-reader"
                 className="w-full max-w-lg rounded-3xl overflow-hidden" style={{ maxHeight: "100%", height: "100%" }}
               ></div>
-              {/* Hardware scanner input (Zebra) */}
+              {/* Hardware scanner input (fallback for non-Zebra devices with keyboards) */}
               <input
                 ref={hardwareInputRef}
                 value={hardwareInput}
