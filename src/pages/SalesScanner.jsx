@@ -1135,7 +1135,7 @@ export default function SalesScanner() {
           </div>
         </div>
         ) : (
-          <div className="relative z-10 flex-1 flex flex-col">
+          <div className="relative z-10 flex-1 min-h-0 flex flex-col">
           {cameraError ? (
             <div className="flex-1 flex items-center justify-center bg-slate-900">
               <div className="text-center">
