@@ -106,6 +106,10 @@ export default function BundleSort() {
   const html5QrcodeRef = useRef(null)
   const processingRef = useRef(false)
   const scanCountRef = useRef(0)
+  const onScanSuccessRef = useRef(null)
+  const [hardwareInput, setHardwareInput] = useState('')
+  const hardwareInputRef = useRef(null)
+  const hardwareTimerRef = useRef(null)
 
   const isKickstart = channel === 'Kickstart'
 
@@ -169,16 +173,9 @@ export default function BundleSort() {
           .select('*')
           .order('box_number', { ascending: false })
 
-        const { data: scanRows } = await supabase
-          .from('jumpstart_bundle_scans')
-          .select('*')
-          .order('scanned_at')
-
-        const scansByBox = {}
-        ;(scanRows || []).forEach(s => {
-          if (!scansByBox[s.box_number]) scansByBox[s.box_number] = []
-          scansByBox[s.box_number].push(s)
-        })
+        const { data: countRows } = await supabase.rpc('get_bundle_scan_counts')
+        const scanCountByBox = {}
+        ;(countRows || []).forEach(r => { scanCountByBox[r.box_number] = Number(r.scan_count) })
 
         const merged = (boxRows || []).map(b => ({
           boxNumber: b.box_number,
@@ -192,12 +189,8 @@ export default function BundleSort() {
           priceOverride: b.price_override || null,
           costOverride: b.cost_override || null,
           targetQuantity: b.target_quantity,
-          itemCount: (scansByBox[b.box_number] || []).length,
-          items: (scansByBox[b.box_number] || []).map(s => ({
-            barcode: s.barcode,
-            timestamp: s.scanned_at,
-            id: s.id
-          }))
+          itemCount: scanCountByBox[b.box_number] || 0,
+          items: []
         }))
 
         setBoxes(merged)
@@ -325,10 +318,15 @@ export default function BundleSort() {
       setScanCount(items.length)
       scanCountRef.current = items.length
     } else {
-      const allBoxes = await fetchBoxes()
-      const box = allBoxes.find(b => b.boxNumber === activeBox)
-      setActiveBoxItems(box?.items || [])
-      setScanCount(box?.itemCount || scanCount)
+      const { data: scans } = await supabase
+        .from('jumpstart_bundle_scans')
+        .select('id, barcode, scanned_at')
+        .eq('box_number', activeBox)
+        .order('scanned_at', { ascending: false })
+      const items = (scans || []).map(s => ({ id: s.id, barcode: s.barcode, timestamp: s.scanned_at }))
+      setActiveBoxItems(items)
+      setScanCount(items.length)
+      scanCountRef.current = items.length
     }
   }
 
@@ -343,6 +341,11 @@ export default function BundleSort() {
       return () => { clearTimeout(timer); stopScanner() }
     }
   }, [activeBox, noBarcodeStep])
+
+  // Re-focus hardware input when active box is set
+  useEffect(() => {
+    if (activeBox) setTimeout(() => hardwareInputRef.current?.focus(), 400)
+  }, [activeBox])
 
   const startScanner = async () => {
     try {
@@ -449,8 +452,13 @@ export default function BundleSort() {
       }
     }
   }
+  onScanSuccessRef.current = onScanSuccess
 
-  const handleNext = () => { processingRef.current = false; setLastScan(null) }
+  const handleNext = () => {
+    processingRef.current = false
+    setLastScan(null)
+    setTimeout(() => hardwareInputRef.current?.focus(), 100)
+  }
 
   // === No Barcode picker (Kickstart only) ===
   const handleNoBarcode = async () => {
@@ -1406,6 +1414,32 @@ export default function BundleSort() {
                 <h2 className="text-2xl font-bold text-white mb-1 font-heading">Scan Barcode</h2>
               </div>
               <div id="nb-qr-reader" className="w-full max-w-lg rounded-3xl overflow-hidden shadow-2xl shadow-cyan-500/20 border-2 border-cyan-400/30" style={{ maxHeight: '50vh' }}></div>
+              {/* Hardware scanner input (Zebra) */}
+              <input
+                ref={hardwareInputRef}
+                value={hardwareInput}
+                onChange={e => {
+                  const val = e.target.value
+                  setHardwareInput(val)
+                  clearTimeout(hardwareTimerRef.current)
+                  hardwareTimerRef.current = setTimeout(() => {
+                    const trimmed = val.trim()
+                    setHardwareInput('')
+                    if (trimmed.length > 5) onScanSuccessRef.current?.(trimmed)
+                  }, 50)
+                }}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') {
+                    clearTimeout(hardwareTimerRef.current)
+                    const val = hardwareInput.trim()
+                    setHardwareInput('')
+                    if (val.length > 5) onScanSuccessRef.current?.(val)
+                  }
+                }}
+                className="absolute opacity-0 w-px h-px top-0 left-0"
+                autoComplete="off"
+                inputMode="none"
+              />
               {cameraError && <p className="text-red-400 mt-3 text-sm">{cameraError}</p>}
 
               {/* Scan result overlay */}
@@ -1499,7 +1533,7 @@ export default function BundleSort() {
         customerPrice = manifestItems.reduce((sum, item) => {
           if (item.price_override != null) return sum + item.price_override
           return sum + getItemCost(item) * (1 + pricingParam / 100)
-        }, 0)
+        }, 30)
       } else {
         customerPrice = totalCost * (1 + pricingParam / 100)
       }

@@ -5,3 +5,6 @@ dist
 
 # Local Netlify folder
 .netlify
+
+# MCP config (contains access tokens)
+.mcp.json

@@ -9,13 +9,24 @@ export default function GeneralSort() {
   const [scannedItem, setScannedItem] = useState(null)
   const [isScanning, setIsScanning] = useState(false)
   const [cameraError, setCameraError] = useState(null)
+  const [hardwareInput, setHardwareInput] = useState('')
+  const hardwareInputRef = useRef(null)
+  const hardwareTimerRef = useRef(null)
   const html5QrcodeRef = useRef(null)
   const processingRef = useRef(false)
+  const onScanSuccessRef = useRef(null)
 
   useEffect(() => {
     startScanner()
     return () => { stopScanner() }
   }, [])
+
+  // Keep hardware input focused on Android (Zebra) — skip on iOS to avoid camera interference
+  useEffect(() => {
+    if (/android/i.test(navigator.userAgent)) {
+      setTimeout(() => hardwareInputRef.current?.focus(), 100)
+    }
+  }, [scannedItem])
 
   const startScanner = async () => {
     try {
@@ -117,11 +128,15 @@ export default function GeneralSort() {
       })
     }
   }
+  onScanSuccessRef.current = onScanSuccess
 
   const handleNext = async () => {
     processingRef.current = false
     setScannedItem(null)
-    setTimeout(() => startScanner(), 300)
+    setTimeout(() => {
+      startScanner()
+      hardwareInputRef.current?.focus()
+    }, 300)
   }
 
   const getZoneDisplay = () => {
@@ -167,6 +182,39 @@ export default function GeneralSort() {
         <h1 className="ml-3 text-lg font-semibold text-white font-heading">Sort</h1>
       </div>
 
+      {/* Hardware scanner input (Zebra) — always mounted so yellow trigger works while zone is showing */}
+      <input
+        ref={hardwareInputRef}
+        value={hardwareInput}
+        onChange={e => {
+          const val = e.target.value
+          setHardwareInput(val)
+          clearTimeout(hardwareTimerRef.current)
+          hardwareTimerRef.current = setTimeout(() => {
+            const trimmed = val.trim()
+            setHardwareInput('')
+            if (trimmed.length > 5) {
+              processingRef.current = false
+              onScanSuccessRef.current?.(trimmed)
+            }
+          }, 50)
+        }}
+        onKeyDown={e => {
+          if (e.key === 'Enter') {
+            clearTimeout(hardwareTimerRef.current)
+            const val = hardwareInput.trim()
+            setHardwareInput('')
+            if (val.length > 5) {
+              processingRef.current = false
+              onScanSuccessRef.current?.(val)
+            }
+          }
+        }}
+        className="absolute opacity-0 w-px h-px top-0 left-0 z-50"
+        autoComplete="off"
+        inputMode="none"
+      />
+
       {/* Scanner - minimal top padding */}
       <div className={`relative z-10 flex-1 flex flex-col items-center pt-2 px-4 ${scannedItem ? 'hidden' : ''}`}>
         <div className="mb-2 text-center">
@@ -180,24 +228,22 @@ export default function GeneralSort() {
         />
       </div>
 
-      {/* Zone Display - full screen takeover */}
+      {/* Zone Display - full screen takeover, tap anywhere to scan next */}
       {scannedItem && (
-        <div className={`relative z-10 flex-1 flex flex-col items-center justify-center p-4 bg-gradient-to-br ${zoneDisplay.gradient}`}>
+        <div
+          onClick={handleNext}
+          className={`relative z-10 flex-1 flex flex-col items-center justify-center p-4 bg-gradient-to-br ${zoneDisplay.gradient} cursor-pointer select-none`}
+        >
           <div className={`absolute inset-0 ${zoneDisplay.glow} shadow-[0_0_120px_40px] opacity-30`} />
-          
-          <div className="relative text-center mb-8">
+
+          <div className="relative text-center">
             <h2 className="text-8xl font-black text-white tracking-tight drop-shadow-lg font-heading">
               {zoneDisplay.text}
             </h2>
+            <p className="mt-6 text-white/50 text-sm font-medium tracking-widest uppercase">
+              {/android/i.test(navigator.userAgent) ? 'Press yellow button to scan' : 'Tap to scan next'}
+            </p>
           </div>
-
-          <button
-            onClick={handleNext}
-            className="relative bg-white hover:bg-white/95 text-slate-900 font-bold text-xl px-16 py-4 rounded-2xl
-                       shadow-2xl shadow-black/30 hover:scale-[1.03] active:scale-[0.98] transition-all"
-          >
-            Next Scan
-          </button>
         </div>
       )}
     </div>

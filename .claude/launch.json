@@ -3,14 +3,14 @@
   "configurations": [
     {
       "name": "dev",
-      "runtimeExecutable": "npm",
+      "runtimeExecutable": "/usr/local/lib/node_modules/npm/bin/npm",
       "runtimeArgs": ["run", "dev"],
       "port": 5173
     },
     {
       "name": "sketch",
-      "runtimeExecutable": "python3",
-      "runtimeArgs": ["-m", "http.server", "4322"],
+      "runtimeExecutable": "/usr/local/bin/node",
+      "runtimeArgs": ["serve-sketch.cjs"],
       "port": 4322
     }
   ]

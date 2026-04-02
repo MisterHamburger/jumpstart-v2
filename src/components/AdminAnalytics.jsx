@@ -175,22 +175,21 @@ export default function AdminAnalytics() {
 
   async function loadLoadROIData() {
     setLoadROILoading(true)
-    const [manifestData, loadsData, soldData] = await Promise.all([
+    // Fetch everything self-contained — no dependency on `items` state
+    const [manifestData, loadsData, soldData, profitData] = await Promise.all([
       fetchAllRows('jumpstart_manifest', 'barcode,cost_freight,load_id'),
       supabase.from('loads').select('id,date,vendor,notes,total_cost,quantity').then(r => r.data || []),
       getSoldBarcodes(),
+      fetchAllRows('profitability', 'barcode,buyer_paid,profit', [{ type: 'eq', col: 'channel', val: 'Jumpstart' }]),
     ])
 
     // Count items per load and total cost per load from manifest
     const loadManifest = {}
     manifestData.forEach(item => {
       const lid = item.load_id || 'Unknown'
-      if (!loadManifest[lid]) loadManifest[lid] = { items: 0, totalCost: 0, barcodes: {} }
+      if (!loadManifest[lid]) loadManifest[lid] = { items: 0, totalCost: 0 }
       loadManifest[lid].items++
       loadManifest[lid].totalCost += Number(item.cost_freight) || 0
-      if (!loadManifest[lid].barcodes[item.barcode]) {
-        loadManifest[lid].barcodes[item.barcode] = true
-      }
     })
 
     // Build barcode → load_id mapping (from manifest, first load wins per barcode)
@@ -213,9 +212,9 @@ export default function AdminAnalytics() {
       loadSold[lid] += count
     }
 
-    // Map profitability items to loads via barcode (for revenue/profit data)
+    // Map profitability items to loads via barcode (includes bundles)
     const loadProfit = {}
-    items.forEach(item => {
+    profitData.forEach(item => {
       const lid = barcodeToLoad[item.barcode]
       if (!lid) return
       if (!loadProfit[lid]) loadProfit[lid] = { revenue: 0, profit: 0, soldWithProfit: 0 }

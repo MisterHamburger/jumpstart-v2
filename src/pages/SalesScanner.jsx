@@ -104,6 +104,10 @@ export default function SalesScanner() {
   const html5QrcodeRef = useRef(null)
   const scannerStartingRef = useRef(false)
   const initialScannedRef = useRef(null)
+  const onScanSuccessRef = useRef(null)
+  const [hardwareInput, setHardwareInput] = useState('')
+  const hardwareInputRef = useRef(null)
+  const hardwareTimerRef = useRef(null)
 
   const totalItems = showData?.totalItems || 0
   const scannedCount = realScannedCount
@@ -146,6 +150,11 @@ export default function SalesScanner() {
     }
     return () => { stopScanner() }
   }, [showExcludedModal, showData?.channel])
+
+  // Re-focus hardware input when scanner is active
+  useEffect(() => {
+    if (!scannedBarcode && isScanning) setTimeout(() => hardwareInputRef.current?.focus(), 400)
+  }, [scannedBarcode, isScanning])
 
   // Poll for real scanned count (multi-device support)
   useEffect(() => {
@@ -330,6 +339,7 @@ export default function SalesScanner() {
     setScannedBarcode(normalizeBarcode(decodedText))
     await stopScanner()
   }
+  onScanSuccessRef.current = onScanSuccess
 
   // Bulk-save all remaining unscanned valid show_items as RDM, then mark show complete
   const handleSaveAllRemainingAsRdm = async () => {
@@ -1139,12 +1149,38 @@ export default function SalesScanner() {
               </div>
             </div>
           ) : (
-            <div className="flex-1 min-h-0 flex items-center justify-center bg-slate-900 px-4 py-2">
+            <div className="flex-1 min-h-0 flex items-center justify-center bg-slate-900 px-4 py-2 relative">
               <div
                 key={scannerKey}
                 id="sales-reader"
                 className="w-full max-w-lg rounded-3xl overflow-hidden" style={{ maxHeight: "100%", height: "100%" }}
               ></div>
+              {/* Hardware scanner input (Zebra) */}
+              <input
+                ref={hardwareInputRef}
+                value={hardwareInput}
+                onChange={e => {
+                  const val = e.target.value
+                  setHardwareInput(val)
+                  clearTimeout(hardwareTimerRef.current)
+                  hardwareTimerRef.current = setTimeout(() => {
+                    const trimmed = val.trim()
+                    setHardwareInput('')
+                    if (trimmed.length > 5) onScanSuccessRef.current?.(trimmed)
+                  }, 50)
+                }}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') {
+                    clearTimeout(hardwareTimerRef.current)
+                    const val = hardwareInput.trim()
+                    setHardwareInput('')
+                    if (val.length > 5) onScanSuccessRef.current?.(val)
+                  }
+                }}
+                className="absolute opacity-0 w-px h-px top-0 left-0"
+                autoComplete="off"
+                inputMode="none"
+              />
             </div>
           )}
 
