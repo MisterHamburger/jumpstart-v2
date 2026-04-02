@@ -1149,7 +1149,7 @@ export default function SalesScanner() {
               </div>
             </div>
           ) : (
-            <div className="flex-1 min-h-0 flex items-center justify-center bg-slate-900 px-4 py-2 relative">
+            <div className="flex-1 min-h-0 overflow-hidden flex items-center justify-center bg-slate-900 px-4 py-2 relative">
               <div
                 key={scannerKey}
                 id="sales-reader"
