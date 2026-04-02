@@ -51,7 +51,7 @@ export default function Home() {
   }
 
   return (
-    <div className="h-screen flex flex-col items-center justify-start px-4 py-6 [@media(max-height:700px)]:py-3 bg-navy overflow-y-auto relative">
+    <div className="min-h-screen flex flex-col items-center justify-start px-4 py-6 [@media(max-height:700px)]:py-3 bg-navy relative">
       {/* Background blobs */}
       <div className="bg-blob-cyan" />
       <div className="bg-blob-magenta" />
