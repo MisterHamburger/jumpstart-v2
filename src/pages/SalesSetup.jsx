@@ -110,7 +110,7 @@ export default function SalesSetup() {
         </div>
 
         {/* Content */}
-        <div className="relative z-10 flex-1 flex flex-col items-center pt-8 px-4">
+        <div className="relative z-10 flex-1 flex flex-col items-center pt-8 [@media(max-height:700px)]:pt-4 px-4">
           <h2 className="text-xl font-bold font-heading text-white mb-1 tracking-tight">Select Channel</h2>
           <p className="text-slate-500 mb-6 text-sm">Which inventory are you scanning?</p>
 

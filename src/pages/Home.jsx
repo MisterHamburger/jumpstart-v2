@@ -51,14 +51,14 @@ export default function Home() {
   }
 
   return (
-    <div className="h-screen flex flex-col items-center justify-start px-4 py-6 bg-navy overflow-hidden relative">
+    <div className="h-screen flex flex-col items-center justify-start px-4 py-6 [@media(max-height:700px)]:py-3 bg-navy overflow-y-auto relative">
       {/* Background blobs */}
       <div className="bg-blob-cyan" />
       <div className="bg-blob-magenta" />
 
       <div className="w-full max-w-md flex flex-col items-center relative z-10">
         {/* Logo / Header — long press to open Item Lookup */}
-        <div className="mb-8 text-center">
+        <div className="mb-8 [@media(max-height:700px)]:mb-3 text-center">
           <h1
             className="text-5xl font-extrabold font-heading text-white mb-1 tracking-tight select-none cursor-default"
             onTouchStart={handleTitleTouchStart}
@@ -71,13 +71,13 @@ export default function Home() {
           <p className="text-slate-500 text-sm font-medium">Inventory Management</p>
         </div>
 
-        <div className="w-full space-y-4">
+        <div className="w-full space-y-4 [@media(max-height:700px)]:space-y-2">
           {actions.map((action) => (
             <div
               key={action.title}
-              className="glass-card w-full p-6 rounded-3xl"
+              className="glass-card w-full p-6 [@media(max-height:700px)]:p-4 rounded-3xl"
             >
-              <div className="flex items-center gap-3 mb-4">
+              <div className="flex items-center gap-3 mb-4 [@media(max-height:700px)]:mb-2">
                 <div className="w-10 h-10 rounded-xl bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center shrink-0">
                   <iconify-icon icon={action.icon} class="text-xl text-cyan-400"></iconify-icon>
                 </div>
@@ -114,7 +114,7 @@ export default function Home() {
           {/* Admin Button */}
           <button
             onClick={() => navigate('/admin')}
-            className="glass-card group w-full p-5 rounded-3xl
+            className="glass-card group w-full p-5 [@media(max-height:700px)]:p-3 rounded-3xl
                        hover:bg-white/10
                        hover:scale-[1.02] active:scale-[0.98] transition-all duration-200"
           >
