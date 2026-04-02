@@ -108,7 +108,7 @@ export default function SalesScanner() {
   const [hardwareInput, setHardwareInput] = useState('')
   const hardwareInputRef = useRef(null)
   const hardwareTimerRef = useRef(null)
-  const isHardwareScanner = /Zebra|TC[0-9]/i.test(navigator.userAgent)
+  const isHardwareScanner = /Zebra|TC[0-9]/i.test(navigator.userAgent) || new URLSearchParams(window.location.search).has('hw')
 
   const totalItems = showData?.totalItems || 0
   const scannedCount = realScannedCount
@@ -1185,7 +1185,7 @@ export default function SalesScanner() {
               </div>
             </div>
           ) : (
-            <div className="flex-1 min-h-0 overflow-hidden flex items-center justify-center bg-slate-900 px-4 py-2 relative">
+            <div className="flex-1 min-h-0 overflow-hidden flex items-center justify-center bg-slate-900 px-4 py-2 relative" style={{ maxHeight: 'calc(100dvh - 200px)' }}>
               <div
                 key={scannerKey}
                 id="sales-reader"
