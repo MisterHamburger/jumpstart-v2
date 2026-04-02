@@ -1119,7 +1119,7 @@ export default function SalesScanner() {
           </div>
 
           {/* Bottom buttons: Remaining + Scans (no Find Item - the whole page is for finding items) */}
-          <div className="relative z-10 px-4 pt-3 flex gap-2 backdrop-blur-xl shrink-0" style={{ paddingBottom: 'calc(12px + env(safe-area-inset-bottom, 12px))' }}>
+          <div className="fixed bottom-0 left-0 right-0 z-50 px-4 pt-3 flex gap-2 backdrop-blur-xl bg-slate-900/80" style={{ paddingBottom: 'calc(12px + env(safe-area-inset-bottom, 12px))' }}>
             <button
               onClick={() => { loadRemainingItems(); setShowRemainingModal(true); }}
               className="flex-1 py-3 rounded-2xl font-bold text-sm bg-gradient-to-r from-indigo-500 to-blue-500 text-white shadow-lg shadow-indigo-500/30 border border-indigo-400/50 active:scale-[0.97] transition-all"
@@ -1185,7 +1185,7 @@ export default function SalesScanner() {
           )}
 
           {/* Bottom buttons: No Barcode + RDM + Remaining + Scans */}
-          <div className="relative z-10 px-4 pt-3 flex gap-2 backdrop-blur-xl shrink-0" style={{ paddingBottom: 'calc(12px + env(safe-area-inset-bottom, 12px))' }}>
+          <div className="fixed bottom-0 left-0 right-0 z-50 px-4 pt-3 flex gap-2 backdrop-blur-xl bg-slate-900/80" style={{ paddingBottom: 'calc(12px + env(safe-area-inset-bottom, 12px))' }}>
             <button
               onClick={handleNoBarcode}
               className="flex-1 py-3 rounded-2xl font-bold text-xs bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow-lg shadow-amber-500/30 border border-amber-400/50 active:scale-[0.97] transition-all"
