@@ -1,0 +1,6 @@
+-- Fix: Include bundle shipping_cost in COGS and shipping_charged in revenue
+-- Previously: buyer_paid = sale_price / items, cost_freight = item COGS only
+-- Now: buyer_paid = (sale_price + shipping_charged) / items, cost_freight = item COGS + shipping_cost / items
+-- Applied to both Jumpstart and Kickstart bundle branches in profitability view
+-- This ensures dashboard gross profit matches BundleSort detail view
+-- Applied via Supabase MCP: bake_shipping_cost_into_bundle_cogs
