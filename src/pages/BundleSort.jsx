@@ -100,7 +100,10 @@ export default function BundleSort() {
   // New Box modal state
   const [showNewBoxModal, setShowNewBoxModal] = useState(false)
   const [newBoxTargetQty, setNewBoxTargetQty] = useState(40)
-  const [newBoxUnlimited, setNewBoxUnlimited] = useState(false)
+  const [newBoxMode, setNewBoxMode] = useState('fixed') // 'fixed' | 'unlimited' | 'rdm'
+  const [rdmSalePrice, setRdmSalePrice] = useState('')
+  const [rdmBuyerName, setRdmBuyerName] = useState('')
+  const [rdmBundles, setRdmBundles] = useState([])
   // Active box target quantity (null = unlimited, N = fixed)
   const [activeBoxTarget, setActiveBoxTarget] = useState(40)
   const html5QrcodeRef = useRef(null)
@@ -121,6 +124,7 @@ export default function BundleSort() {
     setShowItemList(false)
     setActiveBoxItems([])
     setNoBarcodeStep(null)
+    setRdmBundles([])
     setLoading(true)
     fetchBoxes()
   }, [channel])
@@ -194,6 +198,13 @@ export default function BundleSort() {
         }))
 
         setBoxes(merged)
+
+        const { data: rdmRows } = await supabase
+          .from('rdm_bundle_sales')
+          .select('*')
+          .order('sold_at', { ascending: false })
+        setRdmBundles(rdmRows || [])
+
         return merged
       }
     } catch (e) {
@@ -603,15 +614,31 @@ export default function BundleSort() {
 
   const createNewBox = () => {
     setNewBoxTargetQty(40)
-    setNewBoxUnlimited(false)
+    setNewBoxMode('fixed')
+    setRdmSalePrice('')
+    setRdmBuyerName('')
     setShowNewBoxModal(true)
   }
 
   const confirmCreateBox = async () => {
+    if (newBoxMode === 'rdm') {
+      const price = parseFloat(rdmSalePrice)
+      if (!price || price <= 0) return
+      await supabase.from('rdm_bundle_sales').insert({
+        quantity: newBoxTargetQty,
+        sale_price: price,
+        buyer_name: rdmBuyerName.trim() || null,
+        sold_at: new Date().toISOString()
+      })
+      setShowNewBoxModal(false)
+      fetchBoxes()
+      return
+    }
+
     const maxBox = boxes.reduce((max, b) => Math.max(max, b.boxNumber), 0)
     const newBoxNum = maxBox + 1
     const table = isKickstart ? 'kickstart_bundle_boxes' : 'jumpstart_bundle_boxes'
-    const targetQty = newBoxUnlimited ? null : newBoxTargetQty
+    const targetQty = newBoxMode === 'unlimited' ? null : newBoxTargetQty
     const newBox = {
       boxNumber: newBoxNum,
       status: 'empty',
@@ -631,6 +658,86 @@ export default function BundleSort() {
       ...(isKickstart ? { markup_percentage: 25 } : {})
     })
     fetchBoxes()
+  }
+
+  const generateRdmInvoice = (bundle) => {
+    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
+    const pageW = doc.internal.pageSize.getWidth()
+    const mx = 20
+    let y = 20
+
+    const TEAL = [32, 178, 170]
+    const DARK = [23, 23, 23]
+    const GRAY4 = [163, 163, 163]
+
+    // Header
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(22)
+    doc.setTextColor(TEAL[0], TEAL[1], TEAL[2])
+    doc.text('Jumpstart', mx, y)
+    doc.setFontSize(10)
+    doc.setFont('helvetica', 'normal')
+    doc.setTextColor(GRAY4[0], GRAY4[1], GRAY4[2])
+    doc.text('INVOICE', pageW - mx, y, { align: 'right' })
+    y += 8
+
+    doc.setDrawColor(TEAL[0], TEAL[1], TEAL[2])
+    doc.setLineWidth(0.5)
+    doc.line(mx, y, pageW - mx, y)
+    y += 10
+
+    // Buyer + date
+    const date = new Date(bundle.sold_at).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(10)
+    doc.setTextColor(GRAY4[0], GRAY4[1], GRAY4[2])
+    doc.text('SOLD TO', mx, y)
+    doc.text('DATE', pageW - mx - 40, y)
+    y += 5
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(12)
+    doc.setTextColor(DARK[0], DARK[1], DARK[2])
+    doc.text(bundle.buyer_name || 'Local Buyer', mx, y)
+    doc.text(date, pageW - mx - 40, y)
+    y += 14
+
+    // Table header
+    doc.setFillColor(245, 245, 245)
+    doc.rect(mx, y - 4, pageW - mx * 2, 10, 'F')
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(9)
+    doc.setTextColor(GRAY4[0], GRAY4[1], GRAY4[2])
+    doc.text('DESCRIPTION', mx + 2, y + 2)
+    doc.text('QTY', pageW - mx - 60, y + 2, { align: 'right' })
+    doc.text('UNIT PRICE', pageW - mx - 30, y + 2, { align: 'right' })
+    doc.text('TOTAL', pageW - mx, y + 2, { align: 'right' })
+    y += 12
+
+    // Line item
+    const unitPrice = bundle.sale_price / bundle.quantity
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(11)
+    doc.setTextColor(DARK[0], DARK[1], DARK[2])
+    doc.text('RDM Items (Damaged / Salvage)', mx + 2, y)
+    doc.text(`${bundle.quantity}`, pageW - mx - 60, y, { align: 'right' })
+    doc.text(`$${unitPrice.toFixed(2)}`, pageW - mx - 30, y, { align: 'right' })
+    doc.text(`$${bundle.sale_price.toFixed(2)}`, pageW - mx, y, { align: 'right' })
+    y += 10
+
+    doc.setDrawColor(220, 220, 220)
+    doc.setLineWidth(0.3)
+    doc.line(mx, y, pageW - mx, y)
+    y += 10
+
+    // Total
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(13)
+    doc.setTextColor(DARK[0], DARK[1], DARK[2])
+    doc.text('TOTAL', pageW - mx - 30, y, { align: 'right' })
+    doc.setTextColor(TEAL[0], TEAL[1], TEAL[2])
+    doc.text(`$${bundle.sale_price.toFixed(2)}`, pageW - mx, y, { align: 'right' })
+
+    doc.save(`rdm-invoice-${date}.pdf`)
   }
 
   const saveNote = async (boxNumber) => {
@@ -1978,6 +2085,41 @@ export default function BundleSort() {
             </button>
           </div>
         )}
+        {/* RDM Bundle Sales (Jumpstart only) */}
+        {!isKickstart && rdmBundles.length > 0 && (
+          <>
+            <div className="flex items-center gap-2 mb-2 mt-1">
+              <span className="text-xs font-bold text-purple-400 tracking-widest uppercase">RDM Sales</span>
+              <div className="flex-1 h-px bg-purple-500/20" />
+            </div>
+            {rdmBundles.map(bundle => (
+              <div key={bundle.id} className="rounded-3xl bg-gradient-to-r from-purple-500/20 to-fuchsia-500/20 backdrop-blur-lg border border-purple-400/30 overflow-hidden">
+                <div className="p-4 flex items-center justify-between">
+                  <div>
+                    <div className="flex items-center gap-2 mb-0.5">
+                      <span className="text-white font-bold">RDM Bundle</span>
+                      <span className="text-xs bg-purple-500/30 text-purple-300 px-2 py-0.5 rounded-full font-semibold">RDM</span>
+                    </div>
+                    <p className="text-slate-400 text-sm">
+                      {bundle.quantity} items · <span className="text-emerald-400 font-semibold">${Number(bundle.sale_price).toFixed(2)}</span>
+                      {bundle.buyer_name ? ` · ${bundle.buyer_name}` : ''}
+                    </p>
+                    <p className="text-slate-500 text-xs mt-0.5">{new Date(bundle.sold_at).toLocaleDateString()}</p>
+                  </div>
+                  <button
+                    onClick={() => generateRdmInvoice(bundle)}
+                    className="flex items-center gap-1.5 bg-purple-600/30 hover:bg-purple-600/50 border border-purple-500/30 text-purple-300 text-xs font-semibold px-3 py-2 rounded-xl transition-all active:scale-95"
+                  >
+                    <iconify-icon icon="lucide:file-text" class="text-sm"></iconify-icon>
+                    Invoice
+                  </button>
+                </div>
+              </div>
+            ))}
+            <div className="h-2" />
+          </>
+        )}
+
         {boxes.map(box => {
           const pct = progressPercent(box.itemCount, box.targetQuantity)
           const isSold = box.salePrice != null
@@ -2052,25 +2194,35 @@ export default function BundleSort() {
             {/* Mode toggle */}
             <div className="flex gap-1 bg-white/5 rounded-xl p-1 mb-5">
               <button
-                onClick={() => setNewBoxUnlimited(false)}
+                onClick={() => setNewBoxMode('fixed')}
                 className={`flex-1 py-2.5 rounded-lg text-sm font-semibold transition-all ${
-                  !newBoxUnlimited ? 'bg-cyan-600 text-white shadow-lg' : 'text-slate-400'
+                  newBoxMode === 'fixed' ? 'bg-cyan-600 text-white shadow-lg' : 'text-slate-400'
                 }`}
               >
                 Fixed Qty
               </button>
+              {!isKickstart && (
+                <button
+                  onClick={() => setNewBoxMode('rdm')}
+                  className={`flex-1 py-2.5 rounded-lg text-sm font-semibold transition-all ${
+                    newBoxMode === 'rdm' ? 'bg-purple-600 text-white shadow-lg' : 'text-slate-400'
+                  }`}
+                >
+                  RDM
+                </button>
+              )}
               <button
-                onClick={() => setNewBoxUnlimited(true)}
+                onClick={() => setNewBoxMode('unlimited')}
                 className={`flex-1 py-2.5 rounded-lg text-sm font-semibold transition-all ${
-                  newBoxUnlimited ? 'bg-cyan-600 text-white shadow-lg' : 'text-slate-400'
+                  newBoxMode === 'unlimited' ? 'bg-cyan-600 text-white shadow-lg' : 'text-slate-400'
                 }`}
               >
                 Unlimited
               </button>
             </div>
 
-            {/* Quantity picker (only for fixed mode) */}
-            {!newBoxUnlimited ? (
+            {/* Quantity picker (fixed + rdm modes) */}
+            {newBoxMode !== 'unlimited' ? (
               <div className="flex flex-col items-center mb-6">
                 <p className="text-slate-400 text-sm mb-3">Items per box</p>
                 <div className="flex items-center gap-4">
@@ -2116,6 +2268,35 @@ export default function BundleSort() {
               </div>
             )}
 
+            {/* RDM-specific fields */}
+            {newBoxMode === 'rdm' && (
+              <div className="space-y-3 mb-5">
+                <div>
+                  <p className="text-slate-400 text-sm mb-1.5">Sale price <span className="text-red-400">*</span></p>
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    value={rdmSalePrice}
+                    onChange={e => setRdmSalePrice(e.target.value)}
+                    placeholder="0.00"
+                    className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3 text-white text-lg font-bold focus:outline-none focus:border-purple-500/50 focus:ring-4 focus:ring-purple-500/10 transition-all"
+                    style={{ fontSize: '16px' }}
+                  />
+                </div>
+                <div>
+                  <p className="text-slate-400 text-sm mb-1.5">Buyer name</p>
+                  <input
+                    type="text"
+                    value={rdmBuyerName}
+                    onChange={e => setRdmBuyerName(e.target.value)}
+                    placeholder="Optional"
+                    className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3 text-white focus:outline-none focus:border-purple-500/50 focus:ring-4 focus:ring-purple-500/10 transition-all"
+                    style={{ fontSize: '16px' }}
+                  />
+                </div>
+              </div>
+            )}
+
             <div className="flex gap-3">
               <button
                 onClick={() => setShowNewBoxModal(false)}
@@ -2125,9 +2306,14 @@ export default function BundleSort() {
               </button>
               <button
                 onClick={confirmCreateBox}
-                className="flex-1 bg-cyan-600 hover:bg-cyan-500 py-3 rounded-xl text-white font-bold shadow-lg shadow-cyan-500/25 active:scale-[0.97] transition-all"
+                disabled={newBoxMode === 'rdm' && (!rdmSalePrice || parseFloat(rdmSalePrice) <= 0)}
+                className={`flex-1 py-3 rounded-xl text-white font-bold shadow-lg active:scale-[0.97] transition-all disabled:opacity-40 ${
+                  newBoxMode === 'rdm'
+                    ? 'bg-purple-600 hover:bg-purple-500 shadow-purple-500/25'
+                    : 'bg-cyan-600 hover:bg-cyan-500 shadow-cyan-500/25'
+                }`}
               >
-                Create Box
+                {newBoxMode === 'rdm' ? 'Save RDM Sale' : 'Create Box'}
               </button>
             </div>
           </div>
