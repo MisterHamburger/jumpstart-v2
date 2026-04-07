@@ -165,19 +165,7 @@ export default function KickstartSort() {
     return filtered
   }
 
-  // For restock: group identical items
-  const getGroupedItems = () => {
-    const filtered = getFilteredItems()
-    const groups = new Map()
-    for (const item of filtered) {
-      const key = `${item.brand}||${item.description || ''}||${item.color || ''}||${item.size || ''}||${item.condition || ''}`
-      if (!groups.has(key)) {
-        groups.set(key, { ...item, ids: [] })
-      }
-      groups.get(key).ids.push(item.id)
-    }
-    return Array.from(groups.values()).sort((a, b) => b.ids.length - a.ids.length)
-  }
+  // No grouping — every intake row is its own item
 
   const resetFilters = () => {
     setFilterSize(null)
@@ -197,7 +185,7 @@ export default function KickstartSort() {
     if (!restockItem) return
     setSaving(true)
     try {
-      const sourceId = restockItem.id || restockItem.ids?.[0]
+      const sourceId = restockItem.id
 
       // Fetch photo from original item
       let itemPhotoData = null
@@ -758,7 +746,7 @@ export default function KickstartSort() {
             {itemsLoading ? (
               <div className="text-center py-12"><p className="text-white/50 text-lg">Loading...</p></div>
             ) : (() => {
-              const items = step === 'restock' ? getGroupedItems() : getFilteredItems()
+              const items = getFilteredItems()
               return items.length === 0 ? (
                 <div className="text-center py-12">
                   <p className="text-white/50 text-lg mb-2">No items found</p>
@@ -769,12 +757,12 @@ export default function KickstartSort() {
                   <p className="text-white/40 text-xs mb-1">{items.length} result{items.length !== 1 ? 's' : ''}</p>
                   {items.map((item, i) => (
                     <button
-                      key={item.id || item.ids?.[0] || i}
+                      key={item.id || i}
                       onClick={() => step === 'restock' ? handleRestockSelect(item) : handleEditSelect(item)}
                       className="w-full text-left bg-white/5 border border-white/10 rounded-3xl p-3 hover:bg-pink-500/10 hover:border-pink-500/30 active:scale-[0.98] transition-all"
                     >
                       <div className="flex items-center gap-3">
-                        <LazyPhoto intakeId={item.id || item.ids?.[0]} />
+                        <LazyPhoto intakeId={item.id} />
                         <div className="min-w-0 flex-1">
                           <p className="text-white font-semibold text-sm truncate">
                             {[item.description, item.color].filter(Boolean).join(' — ') || 'Unknown'}
@@ -789,11 +777,7 @@ export default function KickstartSort() {
                             ${parseFloat(item.cost || 0).toFixed(2)}{item.msrp ? ` · MSRP $${parseFloat(item.msrp).toFixed(2)}` : ''}
                           </p>
                         </div>
-                        {item.ids && item.ids.length > 1 && (
-                          <span className="text-pink-300 font-bold text-sm bg-pink-500/20 px-3 py-1 rounded-full shrink-0">
-                            {item.ids.length}
-                          </span>
-                        )}
+                        <span className="text-slate-600 text-xs shrink-0">#{item.id}</span>
                       </div>
                     </button>
                   ))}
@@ -813,7 +797,7 @@ export default function KickstartSort() {
             {/* Photo + summary card */}
             <div className="bg-white/5 border border-white/10 rounded-3xl p-4 mb-4">
               <div className="flex gap-4 mb-3">
-                <LazyPhoto intakeId={restockItem.id || restockItem.ids?.[0]} />
+                <LazyPhoto intakeId={restockItem.id} />
                 <div className="min-w-0 flex-1">
                   <p className="text-white font-semibold text-base">
                     {[restockItem.description, restockItem.color].filter(Boolean).join(' — ') || 'Unknown'}
@@ -832,9 +816,7 @@ export default function KickstartSort() {
                 <div><span className="text-slate-500">Color</span><p className="text-white">{restockItem.color || '—'}</p></div>
                 <div><span className="text-slate-500">Cost</span><p className="text-white">${parseFloat(restockItem.cost || 0).toFixed(2)}</p></div>
                 <div><span className="text-slate-500">MSRP</span><p className="text-white">{restockItem.msrp ? `$${parseFloat(restockItem.msrp).toFixed(2)}` : '—'}</p></div>
-                {restockItem.ids && restockItem.ids.length > 0 && (
-                  <div><span className="text-slate-500">In stock</span><p className="text-white">{restockItem.ids.length}</p></div>
-                )}
+                <div><span className="text-slate-500">Item ID</span><p className="text-white">#{restockItem.id}</p></div>
               </div>
             </div>
 

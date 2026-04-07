@@ -1,0 +1,479 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Jumpstart Insights</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #0f172a;
+    color: #e2e8f0;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    padding: 24px 16px 60px;
+    min-height: 100vh;
+  }
+
+  h1 {
+    text-align: center;
+    font-size: 22px;
+    color: #94a3b8;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    margin-bottom: 8px;
+  }
+  .subtitle {
+    text-align: center;
+    color: #64748b;
+    font-size: 13px;
+    margin-bottom: 32px;
+  }
+
+  /* KPI row */
+  .kpi-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 12px;
+    max-width: 900px;
+    margin: 0 auto 32px;
+  }
+  .kpi {
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 16px;
+    padding: 16px;
+    text-align: center;
+  }
+  .kpi .label { font-size: 11px; color: #64748b; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 4px; }
+  .kpi .value { font-size: 24px; font-weight: 700; }
+  .kpi .sub { font-size: 11px; color: #64748b; margin-top: 2px; }
+  .cyan { color: #22d3ee; }
+  .green { color: #4ade80; }
+  .pink { color: #f472b6; }
+  .amber { color: #fbbf24; }
+  .red { color: #f87171; }
+
+  /* Charts */
+  .chart-section {
+    max-width: 900px;
+    margin: 0 auto 36px;
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 20px;
+    padding: 24px;
+  }
+  .chart-section h2 {
+    font-size: 15px;
+    color: #94a3b8;
+    margin-bottom: 16px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+  .chart-wrap { position: relative; width: 100%; }
+  .chart-wrap canvas { width: 100% !important; }
+
+  /* Channel comparison */
+  .channel-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    max-width: 900px;
+    margin: 0 auto 36px;
+  }
+  .channel-card {
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 20px;
+    padding: 24px;
+  }
+  .channel-card h3 {
+    font-size: 16px;
+    font-weight: 700;
+    margin-bottom: 12px;
+  }
+  .channel-card .stat-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 6px 0;
+    border-bottom: 1px solid rgba(255,255,255,0.04);
+    font-size: 13px;
+  }
+  .channel-card .stat-row:last-child { border-bottom: none; }
+  .stat-label { color: #64748b; }
+
+  /* Top shows table */
+  .shows-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+  }
+  .shows-table th {
+    text-align: left;
+    color: #64748b;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    padding: 8px 6px;
+    border-bottom: 1px solid rgba(255,255,255,0.08);
+  }
+  .shows-table td {
+    padding: 8px 6px;
+    border-bottom: 1px solid rgba(255,255,255,0.04);
+  }
+  .shows-table tr:hover { background: rgba(255,255,255,0.03); }
+  .bar-cell { position: relative; }
+  .bar-bg {
+    position: absolute;
+    left: 0; top: 4px; bottom: 4px;
+    border-radius: 4px;
+    opacity: 0.15;
+  }
+  .bar-val { position: relative; z-index: 1; font-weight: 600; }
+  .rank { color: #475569; font-weight: 600; width: 24px; }
+  .host-badge {
+    display: inline-block;
+    font-size: 10px;
+    padding: 1px 6px;
+    border-radius: 4px;
+    margin-left: 4px;
+  }
+  .host-laura { background: #164e63; color: #22d3ee; }
+  .host-bri { background: #3b1f5e; color: #c084fc; }
+
+  @media (max-width: 600px) {
+    .channel-grid { grid-template-columns: 1fr; }
+    .kpi-row { grid-template-columns: repeat(2, 1fr); }
+    .shows-table { font-size: 11px; }
+  }
+</style>
+</head>
+<body>
+
+<h1>Jumpstart Insights</h1>
+<p class="subtitle">Feb 2 – Mar 31, 2026 &nbsp;·&nbsp; All channels</p>
+
+<!-- KPIs -->
+<div class="kpi-row">
+  <div class="kpi">
+    <div class="label">Total Items</div>
+    <div class="value cyan">12,050</div>
+    <div class="sub">JS: 10,276 · KS: 1,774</div>
+  </div>
+  <div class="kpi">
+    <div class="label">Revenue</div>
+    <div class="value cyan">$218K</div>
+    <div class="sub">$175K + $43K</div>
+  </div>
+  <div class="kpi">
+    <div class="label">Gross Profit</div>
+    <div class="value green">$80.6K</div>
+    <div class="sub">37.0% blended margin</div>
+  </div>
+  <div class="kpi">
+    <div class="label">Whatnot Fees</div>
+    <div class="value red">$22.9K</div>
+    <div class="sub">10.5% of revenue</div>
+  </div>
+  <div class="kpi">
+    <div class="label">JS Margin</div>
+    <div class="value green">43.3%</div>
+    <div class="sub">vs KS 11.2%</div>
+  </div>
+  <div class="kpi">
+    <div class="label">Bundle Profit</div>
+    <div class="value amber">$5.4K</div>
+    <div class="sub">$0 fees · 1,321 items</div>
+  </div>
+</div>
+
+<!-- Weekly Profit Trend -->
+<div class="chart-section">
+  <h2>Weekly Profit Trend</h2>
+  <div class="chart-wrap"><canvas id="weeklyChart" height="260"></canvas></div>
+</div>
+
+<!-- Weekly Margin Trend -->
+<div class="chart-section">
+  <h2>Weekly Margin %</h2>
+  <div class="chart-wrap"><canvas id="marginChart" height="200"></canvas></div>
+</div>
+
+<!-- Channel Comparison -->
+<div class="channel-grid">
+  <div class="channel-card" style="border-color: rgba(34,211,238,0.2);">
+    <h3 class="cyan">Jumpstart</h3>
+    <div class="stat-row"><span class="stat-label">Items Sold</span><span>10,276</span></div>
+    <div class="stat-row"><span class="stat-label">Revenue</span><span>$175,356</span></div>
+    <div class="stat-row"><span class="stat-label">COGS</span><span>$79,635</span></div>
+    <div class="stat-row"><span class="stat-label">Fees</span><span>$19,871</span></div>
+    <div class="stat-row"><span class="stat-label">Profit</span><span class="green">$75,862</span></div>
+    <div class="stat-row"><span class="stat-label">Margin</span><span class="green">43.3%</span></div>
+    <div class="stat-row"><span class="stat-label">Whatnot</span><span>9,556 items · $73.7K profit</span></div>
+    <div class="stat-row"><span class="stat-label">Bundles/RDM</span><span>720 items · $2.1K profit</span></div>
+  </div>
+  <div class="channel-card" style="border-color: rgba(244,114,182,0.2);">
+    <h3 class="pink">Kickstart</h3>
+    <div class="stat-row"><span class="stat-label">Items Sold</span><span>1,774</span></div>
+    <div class="stat-row"><span class="stat-label">Revenue</span><span>$42,693</span></div>
+    <div class="stat-row"><span class="stat-label">COGS</span><span>$34,886</span></div>
+    <div class="stat-row"><span class="stat-label">Fees</span><span>$3,034</span></div>
+    <div class="stat-row"><span class="stat-label">Profit</span><span class="green">$4,775</span></div>
+    <div class="stat-row"><span class="stat-label">Margin</span><span class="amber">11.2%</span></div>
+    <div class="stat-row"><span class="stat-label">Whatnot</span><span>1,173 items · $1.5K profit</span></div>
+    <div class="stat-row"><span class="stat-label">Bundles</span><span>601 items · $3.3K profit</span></div>
+  </div>
+</div>
+
+<!-- Top Shows -->
+<div class="chart-section">
+  <h2>Top 15 Most Profitable Shows</h2>
+  <div style="overflow-x: auto;">
+    <table class="shows-table">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Show</th>
+          <th>Date</th>
+          <th>Items</th>
+          <th>Revenue</th>
+          <th>Profit</th>
+          <th>Margin</th>
+        </tr>
+      </thead>
+      <tbody id="showsBody"></tbody>
+    </table>
+  </div>
+</div>
+
+<div class="chart-section">
+  <h2>Profit by Show (Top 15)</h2>
+  <div class="chart-wrap"><canvas id="showsChart" height="320"></canvas></div>
+</div>
+
+<script>
+const fmt = n => '$' + Number(n).toLocaleString('en-US', {minimumFractionDigits: 0, maximumFractionDigits: 0});
+const fmtK = n => '$' + (Number(n)/1000).toFixed(1) + 'K';
+
+// --- WEEKLY DATA ---
+const weekly = [
+  {week:"2026-02-02",channel:"Jumpstart",items:321,revenue:8175.75,cogs:3343.20,profit:3910.59,margin:47.8},
+  {week:"2026-02-09",channel:"Jumpstart",items:1033,revenue:24259.55,cogs:11568.89,profit:9930.68,margin:40.9},
+  {week:"2026-02-16",channel:"Jumpstart",items:1579,revenue:21008.10,cogs:11066.32,profit:7348.50,margin:35.0},
+  {week:"2026-02-23",channel:"Jumpstart",items:951,revenue:8933.75,cogs:5458.32,profit:2629.91,margin:29.4},
+  {week:"2026-02-23",channel:"Kickstart",items:544,revenue:11878.55,cogs:9472.00,profit:1043.48,margin:8.8},
+  {week:"2026-03-02",channel:"Jumpstart",items:1155,revenue:31466.20,cogs:14585.22,profit:13404.36,margin:42.6},
+  {week:"2026-03-02",channel:"Kickstart",items:299,revenue:4490.45,cogs:4241.00,profit:-293.85,margin:-6.5},
+  {week:"2026-03-09",channel:"Jumpstart",items:1656,revenue:27432.00,cogs:17528.07,profit:7007.46,margin:25.5},
+  {week:"2026-03-09",channel:"Kickstart",items:238,revenue:6872.00,cogs:5697.60,profit:514.85,margin:7.5},
+  {week:"2026-03-16",channel:"Jumpstart",items:1185,revenue:20348.20,cogs:5037.56,profit:12900.71,margin:63.4},
+  {week:"2026-03-16",channel:"Kickstart",items:483,revenue:13980.02,cogs:11031.89,profit:2482.04,margin:17.8},
+  {week:"2026-03-23",channel:"Jumpstart",items:587,revenue:9285.00,cogs:2547.33,profit:5793.41,margin:62.4},
+  {week:"2026-03-23",channel:"Kickstart",items:106,revenue:2899.10,cogs:2339.32,profit:559.78,margin:19.3},
+  {week:"2026-03-30",channel:"Jumpstart",items:1809,revenue:24447.40,cogs:8500.03,profit:12936.62,margin:52.9},
+  {week:"2026-03-30",channel:"Kickstart",items:104,revenue:2572.96,cogs:2104.56,profit:468.40,margin:18.2},
+];
+
+const weeks = [...new Set(weekly.map(w => w.week))].sort();
+const weekLabels = weeks.map(w => {
+  const d = new Date(w + 'T12:00:00');
+  return d.toLocaleDateString('en-US', {month:'short', day:'numeric'});
+});
+
+const jsProfit = weeks.map(w => {
+  const r = weekly.find(d => d.week === w && d.channel === 'Jumpstart');
+  return r ? r.profit : 0;
+});
+const ksProfit = weeks.map(w => {
+  const r = weekly.find(d => d.week === w && d.channel === 'Kickstart');
+  return r ? r.profit : 0;
+});
+const jsMargin = weeks.map(w => {
+  const r = weekly.find(d => d.week === w && d.channel === 'Jumpstart');
+  return r ? r.margin : null;
+});
+const ksMargin = weeks.map(w => {
+  const r = weekly.find(d => d.week === w && d.channel === 'Kickstart');
+  return r ? r.margin : null;
+});
+
+// Weekly profit chart
+new Chart(document.getElementById('weeklyChart'), {
+  type: 'bar',
+  data: {
+    labels: weekLabels,
+    datasets: [
+      {
+        label: 'Jumpstart',
+        data: jsProfit,
+        backgroundColor: 'rgba(34, 211, 238, 0.7)',
+        borderRadius: 6,
+        borderSkipped: false,
+      },
+      {
+        label: 'Kickstart',
+        data: ksProfit,
+        backgroundColor: 'rgba(244, 114, 182, 0.7)',
+        borderRadius: 6,
+        borderSkipped: false,
+      }
+    ]
+  },
+  options: {
+    responsive: true,
+    plugins: {
+      legend: { labels: { color: '#94a3b8', font: { size: 11 } } },
+      tooltip: {
+        callbacks: {
+          label: ctx => ctx.dataset.label + ': ' + fmt(ctx.raw)
+        }
+      }
+    },
+    scales: {
+      x: { stacked: true, ticks: { color: '#64748b', font: { size: 11 } }, grid: { color: 'rgba(255,255,255,0.04)' } },
+      y: {
+        stacked: true,
+        ticks: { color: '#64748b', font: { size: 11 }, callback: v => fmtK(v) },
+        grid: { color: 'rgba(255,255,255,0.04)' }
+      }
+    }
+  }
+});
+
+// Margin chart
+new Chart(document.getElementById('marginChart'), {
+  type: 'line',
+  data: {
+    labels: weekLabels,
+    datasets: [
+      {
+        label: 'Jumpstart Margin',
+        data: jsMargin,
+        borderColor: '#22d3ee',
+        backgroundColor: 'rgba(34, 211, 238, 0.1)',
+        fill: true,
+        tension: 0.3,
+        pointRadius: 4,
+        pointBackgroundColor: '#22d3ee',
+      },
+      {
+        label: 'Kickstart Margin',
+        data: ksMargin,
+        borderColor: '#f472b6',
+        backgroundColor: 'rgba(244, 114, 182, 0.1)',
+        fill: true,
+        tension: 0.3,
+        pointRadius: 4,
+        pointBackgroundColor: '#f472b6',
+        spanGaps: true,
+      }
+    ]
+  },
+  options: {
+    responsive: true,
+    plugins: {
+      legend: { labels: { color: '#94a3b8', font: { size: 11 } } },
+      tooltip: {
+        callbacks: {
+          label: ctx => ctx.dataset.label + ': ' + ctx.raw + '%'
+        }
+      }
+    },
+    scales: {
+      x: { ticks: { color: '#64748b', font: { size: 11 } }, grid: { color: 'rgba(255,255,255,0.04)' } },
+      y: {
+        ticks: { color: '#64748b', font: { size: 11 }, callback: v => v + '%' },
+        grid: { color: 'rgba(255,255,255,0.04)' },
+        suggestedMin: -10,
+        suggestedMax: 70,
+      }
+    }
+  }
+});
+
+// --- TOP SHOWS ---
+const shows = [
+  {name:"03-30 Jumpstart Laura",date:"Mar 30",host:"Laura",items:396,revenue:5664.20,profit:3623.25,margin:64.0},
+  {name:"03-18 Jumpstart Laura",date:"Mar 18",host:"Laura",items:221,revenue:5023.60,profit:3482.82,margin:69.3},
+  {name:"03-31 Jumpstart Laura",date:"Mar 31",host:"Laura",items:352,revenue:4908.60,profit:3107.23,margin:63.3},
+  {name:"03-05 Jumpstart Laura",date:"Mar 5",host:"Laura",items:224,revenue:6504.10,profit:2930.37,margin:45.1},
+  {name:"03-17 Jumpstart Laura",date:"Mar 17",host:"Laura",items:209,revenue:3942.00,profit:2614.03,margin:66.3},
+  {name:"03-05 Jumpstart Bri",date:"Mar 5",host:"Bri",items:138,revenue:4947.10,profit:2415.85,margin:48.8},
+  {name:"03-19 Jumpstart Laura",date:"Mar 19",host:"Laura",items:280,revenue:3987.60,profit:2321.90,margin:58.2},
+  {name:"03-24 Jumpstart Bri",date:"Mar 24",host:"Bri",items:159,revenue:3210.40,profit:2296.37,margin:71.5},
+  {name:"03-06 Jumpstart Laura",date:"Mar 6",host:"Laura",items:207,revenue:5862.70,profit:2261.36,margin:38.6},
+  {name:"03-04 Jumpstart Laura",date:"Mar 4",host:"Laura",items:235,revenue:5411.05,profit:2211.30,margin:40.9},
+  {name:"03-08 Jumpstart Bri",date:"Mar 8",host:"Bri",items:176,revenue:5000.00,profit:2016.81,margin:40.3},
+  {name:"02-07 Jumpstart Eve",date:"Feb 7",host:"Eve",items:175,revenue:4243.95,profit:1993.74,margin:47.0},
+  {name:"02-08 Jumpstart Eve",date:"Feb 8",host:"Eve",items:146,revenue:3931.80,profit:1916.85,margin:48.8},
+  {name:"03-18 Jumpstart Bri",date:"Mar 18",host:"Bri",items:150,revenue:2679.00,profit:1818.76,margin:67.9},
+  {name:"03-23 Jumpstart Bri",date:"Mar 23",host:"Bri",items:149,revenue:2607.00,profit:1790.98,margin:68.7},
+];
+
+const maxProfit = Math.max(...shows.map(s => s.profit));
+const tbody = document.getElementById('showsBody');
+shows.forEach((s, i) => {
+  const hostClass = s.host === 'Laura' ? 'host-laura' : s.host === 'Bri' ? 'host-bri' : '';
+  const barWidth = (s.profit / maxProfit * 100).toFixed(0);
+  const barColor = s.host === 'Laura' ? '#22d3ee' : s.host === 'Bri' ? '#c084fc' : '#fbbf24';
+  tbody.innerHTML += `<tr>
+    <td class="rank">${i + 1}</td>
+    <td>${s.date} <span class="host-badge ${hostClass}">${s.host}</span></td>
+    <td style="color:#64748b">${s.date}</td>
+    <td>${s.items}</td>
+    <td>${fmt(s.revenue)}</td>
+    <td class="bar-cell">
+      <div class="bar-bg" style="width:${barWidth}%;background:${barColor}"></div>
+      <span class="bar-val" style="color:${barColor}">${fmt(s.profit)}</span>
+    </td>
+    <td style="color:${s.margin > 55 ? '#4ade80' : s.margin > 40 ? '#fbbf24' : '#f87171'}">${s.margin}%</td>
+  </tr>`;
+});
+
+// Shows horizontal bar chart
+new Chart(document.getElementById('showsChart'), {
+  type: 'bar',
+  data: {
+    labels: shows.map((s, i) => `#${i+1} ${s.date} ${s.host}`),
+    datasets: [
+      {
+        label: 'Profit',
+        data: shows.map(s => s.profit),
+        backgroundColor: shows.map(s =>
+          s.host === 'Laura' ? 'rgba(34, 211, 238, 0.7)' :
+          s.host === 'Bri' ? 'rgba(192, 132, 252, 0.7)' :
+          'rgba(251, 191, 36, 0.7)'
+        ),
+        borderRadius: 4,
+        borderSkipped: false,
+      },
+    ]
+  },
+  options: {
+    indexAxis: 'y',
+    responsive: true,
+    plugins: {
+      legend: { display: false },
+      tooltip: {
+        callbacks: {
+          label: ctx => 'Profit: ' + fmt(ctx.raw),
+          afterLabel: ctx => 'Margin: ' + shows[ctx.dataIndex].margin + '%'
+        }
+      }
+    },
+    scales: {
+      x: {
+        ticks: { color: '#64748b', font: { size: 11 }, callback: v => fmtK(v) },
+        grid: { color: 'rgba(255,255,255,0.04)' }
+      },
+      y: {
+        ticks: { color: '#94a3b8', font: { size: 10 } },
+        grid: { display: false }
+      }
+    }
+  }
+});
+</script>
+
+</body>
+</html>

@@ -85,30 +85,75 @@ export default function AdminDataCheck() {
 
       // ═══════════════════════════════════════════
       // SECTION 2: MONTH ADDITIVITY
+      // Sum of all monthly buckets should equal All Time
+      // Dynamically discovers months from earliest to latest data
       // ═══════════════════════════════════════════
-      const [febRes, marRes, allRes] = await Promise.all([
-        supabase.rpc('get_dashboard_summary', { date_cutoff: '2026-02-07', date_end: '2026-02-28' }),
-        supabase.rpc('get_dashboard_summary', { date_cutoff: '2026-03-01', date_end: '2026-03-31' }),
-        supabase.rpc('get_dashboard_summary', { date_cutoff: BUSINESS_START, date_end: null }),
-      ])
-      if (febRes.error || marRes.error || allRes.error) {
-        check('Month Additivity', false, 'RPC error')
-      } else {
-        const feb = febRes.data, mar = marRes.data, all = allRes.data
-        let ok = true; const fails = []
-        for (const f of ['revenue', 'fees', 'cogs', 'gross_profit']) {
-          for (const ch of ['jumpstart', 'kickstart']) {
-            const sum = round2((Number(feb[ch]?.[f]) || 0) + (Number(mar[ch]?.[f]) || 0))
-            const tot = round2(Number(all[ch]?.[f]) || 0)
-            if (Math.abs(sum - tot) >= 0.05) { ok = false; fails.push(`${ch}.${f}: ${fmt(sum)} vs ${fmt(tot)}`) }
+      {
+        // Get the latest date across profitability and expenses
+        // to determine how many months to cover
+        const { data: dateRangeMax } = await supabase.from('profitability')
+          .select('show_date').order('show_date', { ascending: false }).limit(1)
+        const { data: expMax } = await supabase.from('expenses')
+          .select('date').order('date', { ascending: false }).limit(1)
+
+        if (!dateRangeMax?.length) {
+          check('Month Additivity', false, 'Could not determine date range')
+        } else {
+          const bsDate = new Date(BUSINESS_START + 'T12:00:00')
+          const profMax = new Date(dateRangeMax[0].show_date + 'T12:00:00')
+          const expMaxDate = expMax?.length ? new Date(expMax[0].date + 'T12:00:00') : profMax
+          const maxDate = profMax > expMaxDate ? profMax : expMaxDate
+
+          // Build monthly buckets aligned to BUSINESS_START
+          // First month starts at BUSINESS_START (not 1st of month)
+          // Last month has no end cap (null) to match All Time
+          const months = []
+          const cursor = new Date(bsDate.getFullYear(), bsDate.getMonth() + 1, 1) // start of next month after BUSINESS_START
+          // First partial month: BUSINESS_START to end of that month
+          const firstEnd = new Date(cursor.getTime() - 86400000).toISOString().slice(0, 10)
+          months.push({ start: BUSINESS_START, end: firstEnd })
+          // Full months in between
+          while (cursor <= maxDate) {
+            const start = cursor.toISOString().slice(0, 10)
+            cursor.setMonth(cursor.getMonth() + 1)
+            if (cursor > maxDate) {
+              // Last month: no end cap (null) to match All Time's unbounded end
+              months.push({ start, end: null })
+            } else {
+              const end = new Date(cursor.getTime() - 86400000).toISOString().slice(0, 10)
+              months.push({ start, end })
+            }
+          }
+
+          // Query all months + All Time in parallel
+          const monthResults = await Promise.all(
+            months.map(m => supabase.rpc('get_dashboard_summary', { date_cutoff: m.start, date_end: m.end }))
+          )
+          const allRes = await supabase.rpc('get_dashboard_summary', { date_cutoff: BUSINESS_START, date_end: null })
+
+          const anyError = monthResults.some(r => r.error) || allRes.error
+          if (anyError) {
+            check('Month Additivity', false, 'RPC error')
+          } else {
+            const all = allRes.data
+            let ok = true; const fails = []
+            for (const f of ['revenue', 'fees', 'cogs', 'gross_profit']) {
+              for (const ch of ['jumpstart', 'kickstart']) {
+                const sum = round2(monthResults.reduce((s, r) => s + (Number(r.data?.[ch]?.[f]) || 0), 0))
+                const tot = round2(Number(all[ch]?.[f]) || 0)
+                if (Math.abs(sum - tot) >= 0.05) { ok = false; fails.push(`${ch}.${f}: ${fmt(sum)} vs ${fmt(tot)}`) }
+              }
+            }
+            for (const f of ['expenses', 'payroll']) {
+              const sum = round2(monthResults.reduce((s, r) => s + (Number(r.data?.[f]) || 0), 0))
+              const tot = round2(Number(all[f]) || 0)
+              if (Math.abs(sum - tot) >= 0.05) { ok = false; fails.push(`${f}: ${fmt(sum)} vs ${fmt(tot)}`) }
+            }
+            const monthLabels = months.map(m => m.start.slice(0, 7)).join(', ')
+            check('Month Additivity (sum of months = All Time)', ok,
+              ok ? `All fields match across ${months.length} months (${monthLabels})` : fails.join(' | '))
           }
         }
-        for (const f of ['expenses', 'payroll']) {
-          const sum = round2((Number(feb[f]) || 0) + (Number(mar[f]) || 0))
-          const tot = round2(Number(all[f]) || 0)
-          if (Math.abs(sum - tot) >= 0.05) { ok = false; fails.push(`${f}: ${fmt(sum)} vs ${fmt(tot)}`) }
-        }
-        check('Month Additivity (Feb + Mar = All Time)', ok, ok ? 'All fields match' : fails.join(' | '))
       }
 
       // ═══════════════════════════════════════════
@@ -232,9 +277,13 @@ export default function AdminDataCheck() {
 
       // ═══════════════════════════════════════════
       // SECTION 10: BUNDLE REVENUE SPLIT
+      // buyer_paid in profitability includes shipping_charged,
+      // so compare against sale_price + shipping_charged.
+      // Rounding tolerance: each item rounds to 2 decimals,
+      // max error = 0.005 per item, so threshold = items * 0.01
       // ═══════════════════════════════════════════
       const { data: bundleBoxes } = await supabase.from('jumpstart_bundle_boxes')
-        .select('box_number,sale_price')
+        .select('box_number,sale_price,shipping_charged')
         .not('sale_price', 'is', null).not('sold_at', 'is', null)
       if (bundleBoxes && bundleBoxes.length > 0) {
         let ok = true; const fails = []
@@ -244,15 +293,17 @@ export default function AdminDataCheck() {
             .eq('listing_number', 'B' + box.box_number).eq('is_bundle', true).eq('channel', 'Jumpstart')
           if (items && items.length > 0) {
             const itemSum = items.reduce((s, i) => s + Number(i.buyer_paid), 0)
-            const diff = Math.abs(itemSum - Number(box.sale_price))
-            if (diff > items.length * 0.02) {
+            const expectedTotal = Number(box.sale_price) + Number(box.shipping_charged || 0)
+            const diff = Math.abs(itemSum - expectedTotal)
+            // Allow rounding tolerance: half-cent per item
+            if (diff > items.length * 0.01) {
               ok = false
-              fails.push(`JS Box ${box.box_number}: items sum ${fmt(itemSum)} vs sale ${fmt(box.sale_price)}`)
+              fails.push(`JS Box ${box.box_number}: items sum ${fmt(itemSum)} vs expected ${fmt(expectedTotal)}`)
             }
           }
         }
         const { data: ksBundleBoxes } = await supabase.from('kickstart_bundle_boxes')
-          .select('box_number,sale_price')
+          .select('box_number,sale_price,shipping_charged')
           .not('sale_price', 'is', null).not('sold_at', 'is', null)
         if (ksBundleBoxes) {
           for (const box of ksBundleBoxes) {
@@ -261,16 +312,17 @@ export default function AdminDataCheck() {
               .eq('listing_number', 'B' + box.box_number).eq('is_bundle', true).eq('channel', 'Kickstart')
             if (items && items.length > 0) {
               const itemSum = items.reduce((s, i) => s + Number(i.buyer_paid), 0)
-              const diff = Math.abs(itemSum - Number(box.sale_price))
-              if (diff > items.length * 0.02) {
+              const expectedTotal = Number(box.sale_price) + Number(box.shipping_charged || 0)
+              const diff = Math.abs(itemSum - expectedTotal)
+              if (diff > items.length * 0.01) {
                 ok = false
-                fails.push(`KS Box ${box.box_number}: items sum ${fmt(itemSum)} vs sale ${fmt(box.sale_price)}`)
+                fails.push(`KS Box ${box.box_number}: items sum ${fmt(itemSum)} vs expected ${fmt(expectedTotal)}`)
               }
             }
           }
         }
         check('Bundle Revenue Split', ok,
-          ok ? `All bundle box totals match sale prices (within rounding)` : fails.join(' | '))
+          ok ? `All bundle box totals match sale prices + shipping (within rounding)` : fails.join(' | '))
       }
 
       // ═══════════════════════════════════════════
@@ -474,18 +526,25 @@ export default function AdminDataCheck() {
 
       // ═══════════════════════════════════════════
       // SECTION 21: RDM ITEMS CONSISTENCY
-      // RDM scans in sold_scans must match RDM items in profitability view
+      // RDM items come from TWO sources:
+      //   1. Whatnot shows: jumpstart_sold_scans WHERE barcode='RDM'
+      //   2. RDM bundle sales: rdm_bundle_sales (expanded by quantity)
+      // Both feed into the profitability view.
       // ═══════════════════════════════════════════
       {
         const { count: scanRdm } = await supabase.from('jumpstart_sold_scans')
           .select('id', { count: 'exact', head: true })
           .eq('barcode', 'RDM')
+        const { data: rdmBundles } = await supabase.from('rdm_bundle_sales')
+          .select('quantity')
+        const rdmBundleItems = (rdmBundles || []).reduce((s, r) => s + (Number(r.quantity) || 0), 0)
+        const expectedTotal = (scanRdm || 0) + rdmBundleItems
         const { count: profRdm } = await supabase.from('profitability')
           .select('scan_id', { count: 'exact', head: true })
           .eq('barcode', 'RDM')
-        const ok = scanRdm === profRdm
-        check('RDM Scans = Profitability RDM Items', ok,
-          `Scans: ${scanRdm} | Profitability: ${profRdm}${ok ? '' : ' — MISMATCH (check show_items join)'}`)
+        const ok = expectedTotal === profRdm
+        check('RDM Items Consistency', ok,
+          `Whatnot RDM scans: ${scanRdm} + RDM bundle items: ${rdmBundleItems} = ${expectedTotal} | Profitability: ${profRdm}${ok ? '' : ' — MISMATCH'}`)
       }
 
       // ═══════════════════════════════════════════

@@ -9,6 +9,7 @@ import SalesSetup from './pages/SalesSetup'
 import SalesScanner from './pages/SalesScanner'
 import Admin from './pages/Admin'
 import ItemLookup from './pages/ItemLookup'
+// import KickstartProducts from './pages/KickstartProducts'
 
 export default function App() {
   return (
@@ -30,6 +31,7 @@ export default function App() {
         <Route path="/admin/data-check" element={<Admin />} />
         <Route path="/admin/kickstart" element={<Admin />} />
         <Route path="/kickstart/buyer" element={<KickstartBuyer />} />
+        {/* <Route path="/kickstart/products" element={<KickstartProducts />} /> */}
         <Route path="/lookup" element={<ItemLookup />} />
       </Routes>
     </div>
