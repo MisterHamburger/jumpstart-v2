@@ -119,6 +119,25 @@ export default function AdminDashboard() {
   const margin = stats && stats.revenue > 0 ? (stats.grossProfit / stats.revenue) * 100 : 0
   const netProfit = stats ? stats.grossProfit - (data?.totalOpex || 0) - (data?.totalPayroll || 0) : 0
 
+  // Calculate calendar days for per-day metrics
+  const calendarDays = (() => {
+    let start, end
+    if (dateRange === 'custom') {
+      start = customStart ? new Date(customStart + 'T00:00:00') : null
+      end = customEnd ? new Date(customEnd + 'T00:00:00') : new Date()
+    } else {
+      const range = getDateRange(dateRange)
+      start = range.start ? new Date(range.start + 'T00:00:00') : new Date('2026-02-07T00:00:00')
+      end = range.end ? new Date(range.end + 'T00:00:00') : new Date()
+    }
+    if (!start) return 1
+    const diff = Math.floor((end - start) / (1000 * 60 * 60 * 24)) + 1
+    return Math.max(diff, 1)
+  })()
+  const revenuePerDay = stats ? stats.netRevenue / calendarDays : 0
+  const profitPerDay = stats ? stats.grossProfit / calendarDays : 0
+  const itemsPerDay = stats ? Math.round(stats.items / calendarDays) : 0
+
   return (
     <div>
       {/* Channel tabs */}
@@ -173,6 +192,13 @@ export default function AdminDashboard() {
               <GradientKPI label="Revenue" value={fmt(stats.netRevenue)}
                 sub="net of fees" />
             )}
+          </div>
+
+          {/* Per-Day KPI Cards */}
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-4">
+            <GradientKPI label="Revenue / Day" value={fmt(revenuePerDay)} sub={`over ${calendarDays} days`} />
+            <GradientKPI label="Profit / Day" value={fmt(profitPerDay)} sub={`over ${calendarDays} days`} negative={profitPerDay < 0} />
+            <GradientKPI label="Items Sold / Day" value={itemsPerDay.toLocaleString()} sub={`over ${calendarDays} days`} />
           </div>
 
           {/* P&L Summary Table */}
