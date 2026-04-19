@@ -153,9 +153,11 @@ export default function AdminProfitability() {
         ;(intakeData || []).forEach(i => { intakeMap[i.id] = i })
       }
 
-      // Hardcoded known-correct data for historical boxes
+      // Hardcoded known-correct data for historical boxes.
+      // Box 2 (wholesale, 215 items) has zero fees at intake by design — no sourcing-team bonus, no sales tax.
+      // Its stored true_cost equals raw cost, which is correct, so the $4607 hardcode matches the formula path.
+      // Box 1's intake data is now verified correct (standard fees applied), so it is computed live.
       const hardcodedBoxes = {
-        1: { totalCost: 689.50, salePrice: 890 },
         2: { totalCost: 4607, salePrice: 5758 },
       }
 
@@ -314,7 +316,7 @@ export default function AdminProfitability() {
           totalCost += cost
           totalProfit += profit
         }
-        const totalMargin = totalHammer > 0 ? (totalProfit / totalHammer) * 100 : 0
+        const totalMargin = totalNet > 0 ? (totalProfit / totalNet) * 100 : 0
         setFullSummary({
           items_sold: n,
           total_profit: totalProfit,
