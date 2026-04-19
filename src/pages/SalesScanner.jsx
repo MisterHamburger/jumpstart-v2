@@ -101,6 +101,15 @@ export default function SalesScanner() {
   const [showItemPicker, setShowItemPicker] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [savingRdm, setSavingRdm] = useState(false)
+  // Custom per-item COGS for Kickstart shows that weren't pre-scanned into intake
+  const [showCogsModal, setShowCogsModal] = useState(false)
+  const [cogsTab, setCogsTab] = useState('show') // 'show' | 'item'
+  const [cogsInput, setCogsInput] = useState('')
+  const [itemCogsListing, setItemCogsListing] = useState('')
+  const [itemCogsInput, setItemCogsInput] = useState('')
+  const [savingCogs, setSavingCogs] = useState(false)
+  const [itemOverrides, setItemOverrides] = useState([])
+  const [itemCogsError, setItemCogsError] = useState(null)
   const html5QrcodeRef = useRef(null)
   const scannerStartingRef = useRef(false)
   const initialScannedRef = useRef(null)
@@ -130,12 +139,37 @@ export default function SalesScanner() {
               totalItems: data.total_items,
               scanned: data.scanned_count || 0,
               channel: data.channel,
-              date: data.date
+              date: data.date,
+              customItemCost: data.custom_item_cost
             })
           }
         })
     }
   }, [showId])
+
+  // Always keep customItemCost in sync with the DB (navigation state may be stale)
+  useEffect(() => {
+    if (!showId) return
+    supabase.from('shows').select('custom_item_cost').eq('id', showId).single()
+      .then(({ data }) => {
+        if (data) setShowData(prev => ({ ...prev, customItemCost: data.custom_item_cost }))
+      })
+  }, [showId])
+
+  // Load existing per-item COGS overrides whenever the COGS modal opens
+  const loadItemOverrides = async () => {
+    if (!showId) return
+    const { data } = await supabase
+      .from('show_items')
+      .select('listing_number, custom_item_cost, product_name')
+      .eq('show_id', showId)
+      .not('custom_item_cost', 'is', null)
+      .order('listing_number', { ascending: true })
+    setItemOverrides(data || [])
+  }
+  useEffect(() => {
+    if (showCogsModal) loadItemOverrides()
+  }, [showCogsModal, showId])
 
   // Start scanner on mount (unless excluded modal is showing)
   // For Kickstart, load item picker instead of scanner
@@ -1120,8 +1154,21 @@ export default function SalesScanner() {
             })()}
           </div>
 
-          {/* Bottom buttons: Remaining + Scans (no Find Item - the whole page is for finding items) */}
+          {/* Bottom buttons: COGS + Remaining + Scans (no Find Item - the whole page is for finding items) */}
           <div className="relative z-10 px-4 pt-3 flex gap-2 bg-slate-900 shrink-0" style={{ paddingBottom: 'calc(12px + env(safe-area-inset-bottom, 12px))' }}>
+            <button
+              onClick={() => {
+                setCogsInput(showData?.customItemCost != null ? String(showData.customItemCost) : '')
+                setShowCogsModal(true)
+              }}
+              className={`flex-1 py-3 rounded-2xl font-bold text-sm active:scale-[0.97] transition-all border ${
+                showData?.customItemCost != null
+                  ? 'bg-gradient-to-r from-fuchsia-500 to-pink-500 text-white shadow-lg shadow-pink-500/30 border-pink-400/50 glow-magenta'
+                  : 'bg-white/5 text-white/70 border-white/20 hover:bg-white/10'
+              }`}
+            >
+              {showData?.customItemCost != null ? `COGS $${Number(showData.customItemCost).toFixed(2)}` : 'Set COGS'}
+            </button>
             <button
               onClick={() => { loadRemainingItems(); setShowRemainingModal(true); }}
               className="flex-1 py-3 rounded-2xl font-bold text-sm bg-gradient-to-r from-indigo-500 to-blue-500 text-white shadow-lg shadow-indigo-500/30 border border-indigo-400/50 active:scale-[0.97] transition-all"
@@ -1504,6 +1551,285 @@ export default function SalesScanner() {
               </button>
             </div>
           )}
+        </div>
+      )}
+
+      {/* Custom COGS Modal (Kickstart only) */}
+      {showCogsModal && (
+        <div className="fixed inset-0 bg-black/90 backdrop-blur-lg z-50 flex flex-col">
+          <div className="glass-card px-6 py-4 flex items-center justify-between border-b border-white/10">
+            <button
+              onClick={() => setShowCogsModal(false)}
+              className="text-white/80 hover:text-white text-3xl transition-colors"
+            >
+              <iconify-icon icon="lucide:chevron-left" class="text-white"></iconify-icon>
+            </button>
+            <div className="text-center">
+              <h3 className="text-xl font-bold text-white font-heading">Custom COGS</h3>
+            </div>
+            <button
+              onClick={() => setShowCogsModal(false)}
+              className="text-white/80 hover:text-white text-3xl transition-colors"
+            >
+              ×
+            </button>
+          </div>
+
+          {/* Tabs */}
+          <div className="px-6 pt-4 bg-slate-900/50 border-b border-white/5">
+            <div className="flex gap-2 max-w-md mx-auto">
+              <button
+                onClick={() => setCogsTab('show')}
+                className={`flex-1 py-3 rounded-t-2xl font-bold text-sm transition-all ${
+                  cogsTab === 'show'
+                    ? 'bg-pink-500/20 text-pink-200 border-t border-x border-pink-500/30'
+                    : 'bg-transparent text-white/50 hover:text-white/80'
+                }`}
+              >
+                Whole show
+              </button>
+              <button
+                onClick={() => setCogsTab('item')}
+                className={`flex-1 py-3 rounded-t-2xl font-bold text-sm transition-all ${
+                  cogsTab === 'item'
+                    ? 'bg-pink-500/20 text-pink-200 border-t border-x border-pink-500/30'
+                    : 'bg-transparent text-white/50 hover:text-white/80'
+                }`}
+              >
+                Single item
+              </button>
+            </div>
+          </div>
+
+          <div className="flex-1 overflow-y-auto p-6 flex items-start justify-center">
+            <div className="w-full max-w-md space-y-5">
+
+              {cogsTab === 'show' && (
+                <>
+                  <div className="glass-card rounded-3xl p-5">
+                    <div className="flex items-start gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-pink-500/10 border border-pink-500/20 flex items-center justify-center shrink-0">
+                        <iconify-icon icon="lucide:dollar-sign" class="text-pink-400" width="20"></iconify-icon>
+                      </div>
+                      <div className="flex-1">
+                        <p className="text-white font-bold mb-1">Per-item COGS estimate</p>
+                        <p className="text-slate-400 text-sm">
+                          Use this when items weren't pre-scanned into intake. Items that already have a known cost keep it — only unknown items will use this value.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-white/70 text-sm font-semibold mb-2">Cost per item</label>
+                    <div className="relative">
+                      <span className="absolute left-4 top-1/2 -translate-y-1/2 text-white/50 text-2xl font-bold pointer-events-none">$</span>
+                      <input
+                        type="number"
+                        inputMode="decimal"
+                        step="0.01"
+                        min="0"
+                        placeholder="0.00"
+                        value={cogsInput}
+                        onChange={(e) => setCogsInput(e.target.value)}
+                        className="w-full pl-10 pr-4 py-4 rounded-2xl bg-white/5 border border-white/10 text-white text-2xl font-bold focus:outline-none focus:border-pink-500/50 focus:ring-4 focus:ring-pink-500/10 transition-all"
+                        autoFocus
+                      />
+                    </div>
+                    {showData?.customItemCost != null && (
+                      <p className="text-slate-500 text-xs mt-2">
+                        Currently set to ${Number(showData.customItemCost).toFixed(2)} per item
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="flex gap-3">
+                    {showData?.customItemCost != null && (
+                      <button
+                        onClick={async () => {
+                          if (savingCogs) return
+                          setSavingCogs(true)
+                          const { error } = await supabase.from('shows')
+                            .update({ custom_item_cost: null })
+                            .eq('id', showId)
+                          if (!error) {
+                            setShowData(prev => ({ ...prev, customItemCost: null }))
+                            setCogsInput('')
+                          } else {
+                            console.error('Error clearing custom COGS:', error)
+                          }
+                          setSavingCogs(false)
+                        }}
+                        disabled={savingCogs}
+                        className="flex-1 py-4 px-6 rounded-2xl bg-white/10 border border-white/20 text-white/80 font-bold hover:bg-white/20 active:scale-[0.98] transition-all disabled:opacity-50"
+                      >
+                        Clear
+                      </button>
+                    )}
+                    <button
+                      onClick={async () => {
+                        const val = parseFloat(cogsInput)
+                        if (!(val > 0) || savingCogs) return
+                        setSavingCogs(true)
+                        const { error } = await supabase.from('shows')
+                          .update({ custom_item_cost: val })
+                          .eq('id', showId)
+                        if (!error) {
+                          setShowData(prev => ({ ...prev, customItemCost: val }))
+                          setShowCogsModal(false)
+                        } else {
+                          console.error('Error saving custom COGS:', error)
+                        }
+                        setSavingCogs(false)
+                      }}
+                      disabled={savingCogs || !(parseFloat(cogsInput) > 0)}
+                      className="flex-1 py-4 px-6 rounded-2xl bg-pink-500 text-white font-bold hover:bg-pink-400 active:scale-[0.98] transition-all shadow-lg shadow-pink-500/30 glow-magenta disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {savingCogs ? 'Saving...' : 'Apply to show'}
+                    </button>
+                  </div>
+                </>
+              )}
+
+              {cogsTab === 'item' && (
+                <>
+                  <div className="glass-card rounded-3xl p-5">
+                    <div className="flex items-start gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-pink-500/10 border border-pink-500/20 flex items-center justify-center shrink-0">
+                        <iconify-icon icon="lucide:tag" class="text-pink-400" width="20"></iconify-icon>
+                      </div>
+                      <div className="flex-1">
+                        <p className="text-white font-bold mb-1">Override for one sticker #</p>
+                        <p className="text-slate-400 text-sm">
+                          Wins over the whole-show estimate. Use for individual high-ticket or oddball items.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-3">
+                    <div>
+                      <label className="block text-white/70 text-sm font-semibold mb-2">Yellow sticker #</label>
+                      <input
+                        type="number"
+                        inputMode="numeric"
+                        placeholder="e.g. 42"
+                        value={itemCogsListing}
+                        onChange={(e) => { setItemCogsListing(e.target.value); setItemCogsError(null) }}
+                        className="w-full px-4 py-3 rounded-2xl bg-white/5 border border-white/10 text-white text-lg font-bold focus:outline-none focus:border-pink-500/50 focus:ring-4 focus:ring-pink-500/10 transition-all"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-white/70 text-sm font-semibold mb-2">Cost for this item</label>
+                      <div className="relative">
+                        <span className="absolute left-4 top-1/2 -translate-y-1/2 text-white/50 text-2xl font-bold pointer-events-none">$</span>
+                        <input
+                          type="number"
+                          inputMode="decimal"
+                          step="0.01"
+                          min="0"
+                          placeholder="0.00"
+                          value={itemCogsInput}
+                          onChange={(e) => { setItemCogsInput(e.target.value); setItemCogsError(null) }}
+                          className="w-full pl-10 pr-4 py-3 rounded-2xl bg-white/5 border border-white/10 text-white text-lg font-bold focus:outline-none focus:border-pink-500/50 focus:ring-4 focus:ring-pink-500/10 transition-all"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {itemCogsError && (
+                    <p className="text-red-400 text-sm text-center">{itemCogsError}</p>
+                  )}
+
+                  <button
+                    onClick={async () => {
+                      const listingNum = parseInt(itemCogsListing, 10)
+                      const val = parseFloat(itemCogsInput)
+                      if (!(listingNum > 0)) { setItemCogsError('Enter a valid sticker number'); return }
+                      if (!(val > 0)) { setItemCogsError('Enter a valid cost'); return }
+                      if (savingCogs) return
+                      setSavingCogs(true)
+                      setItemCogsError(null)
+                      // Verify the listing exists in this show before writing
+                      const { data: exists } = await supabase
+                        .from('show_items')
+                        .select('listing_number')
+                        .eq('show_id', showId)
+                        .eq('listing_number', listingNum)
+                        .limit(1)
+                      if (!exists || exists.length === 0) {
+                        setItemCogsError(`Sticker #${listingNum} not found in this show`)
+                        setSavingCogs(false)
+                        return
+                      }
+                      const { error } = await supabase.from('show_items')
+                        .update({ custom_item_cost: val })
+                        .eq('show_id', showId)
+                        .eq('listing_number', listingNum)
+                      if (!error) {
+                        setItemCogsListing('')
+                        setItemCogsInput('')
+                        await loadItemOverrides()
+                      } else {
+                        console.error('Error saving per-item COGS:', error)
+                        setItemCogsError('Save failed — check console')
+                      }
+                      setSavingCogs(false)
+                    }}
+                    disabled={savingCogs || !itemCogsListing || !itemCogsInput}
+                    className="w-full py-4 px-6 rounded-2xl bg-pink-500 text-white font-bold hover:bg-pink-400 active:scale-[0.98] transition-all shadow-lg shadow-pink-500/30 glow-magenta disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {savingCogs ? 'Saving...' : 'Apply to item'}
+                  </button>
+
+                  {itemOverrides.length > 0 && (
+                    <div>
+                      <p className="text-white/50 text-xs uppercase tracking-wider font-bold mb-2">
+                        {itemOverrides.length} override{itemOverrides.length !== 1 ? 's' : ''} on this show
+                      </p>
+                      <div className="space-y-2">
+                        {itemOverrides.map((o) => (
+                          <div key={o.listing_number} className="glass-card rounded-2xl p-3 flex items-center gap-3">
+                            <div className="w-12 h-12 rounded-xl bg-pink-500/10 border border-pink-500/20 flex items-center justify-center shrink-0">
+                              <span className="text-pink-300 font-black text-base">#{o.listing_number}</span>
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <p className="text-white font-bold text-base">${Number(o.custom_item_cost).toFixed(2)}</p>
+                              {o.product_name && (
+                                <p className="text-slate-400 text-xs truncate">{o.product_name}</p>
+                              )}
+                            </div>
+                            <button
+                              onClick={async () => {
+                                if (savingCogs) return
+                                setSavingCogs(true)
+                                const { error } = await supabase.from('show_items')
+                                  .update({ custom_item_cost: null })
+                                  .eq('show_id', showId)
+                                  .eq('listing_number', o.listing_number)
+                                if (!error) {
+                                  await loadItemOverrides()
+                                } else {
+                                  console.error('Error removing per-item COGS:', error)
+                                }
+                                setSavingCogs(false)
+                              }}
+                              disabled={savingCogs}
+                              className="text-red-400 hover:text-red-300 hover:bg-red-500/20 rounded-lg p-2 transition-all disabled:opacity-50"
+                              aria-label="Remove override"
+                            >
+                              <iconify-icon icon="lucide:trash-2" width="18"></iconify-icon>
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+
+            </div>
+          </div>
         </div>
       )}
     </div>

@@ -39,7 +39,8 @@ export default function SalesSetup() {
         totalItems: s.total_items,
         scanned: s.scanned_count || 0,
         status: s.status,
-        timeOfDay: s.time_of_day
+        timeOfDay: s.time_of_day,
+        customItemCost: s.custom_item_cost
       }))
 
       setShows(formatted)
@@ -187,8 +188,17 @@ export default function SalesSetup() {
                           : 'bg-cyan-500/15 border border-cyan-500/30 text-white shadow-lg glow-cyan'
                         : 'glass-card hover:bg-white/10'
                     }`}>
-                    <div className="font-bold font-heading mb-1">{show.showName}</div>
-                    <div className="text-xs opacity-50">{show.scanned} / {show.totalItems} scanned</div>
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0 flex-1">
+                        <div className="font-bold font-heading mb-1 truncate">{show.showName}</div>
+                        <div className="text-xs opacity-50">{show.scanned} / {show.totalItems} scanned</div>
+                      </div>
+                      {channel === 'Kickstart' && show.customItemCost != null && (
+                        <span className="shrink-0 text-xs font-bold bg-pink-500/20 text-pink-200 border border-pink-500/30 px-2 py-1 rounded-full">
+                          COGS ${Number(show.customItemCost).toFixed(2)}
+                        </span>
+                      )}
+                    </div>
                   </button>
                 ))}
               </div>
