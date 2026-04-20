@@ -417,6 +417,72 @@ export default function SalesScanner() {
     setSavingRdm(false)
   }
 
+  // Kickstart equivalent of handleSaveAllRemainingAsRdm:
+  // Saves (or reuses) whole-show custom COGS, bulk-inserts placeholder scans
+  // for all unscanned valid items, then marks the show complete. Per-item
+  // overrides already on show_items still win via the profitability view.
+  const handleApplyCogsAndFinish = async (customCostValue, { skipConfirm = false } = {}) => {
+    if (savingCogs) return
+    const val = Number(customCostValue)
+    if (!(val > 0)) return
+
+    try {
+      // Count remaining items for the confirm dialog
+      const { data: allItems } = await supabase
+        .from('show_items')
+        .select('listing_number')
+        .eq('show_id', showId)
+        .eq('status', 'valid')
+      const { data: scannedData } = await supabase
+        .from('kickstart_sold_scans')
+        .select('listing_number')
+        .eq('show_id', showId)
+      const scannedSet = new Set((scannedData || []).map(s => String(s.listing_number)))
+      const toInsert = (allItems || [])
+        .filter(item => !scannedSet.has(String(item.listing_number)))
+        .map(item => ({
+          show_id: showId,
+          barcode: 'CUSTOM',
+          listing_number: item.listing_number,
+          scanned_by: 'phone'
+        }))
+      const count = toInsert.length
+
+      if (!skipConfirm) {
+        const msg = count === 0
+          ? `No remaining items. Apply $${val.toFixed(2)} to the show and mark it complete?`
+          : `Apply $${val.toFixed(2)} per item to ${count} remaining item${count !== 1 ? 's' : ''} and mark show complete?`
+        if (!confirm(msg)) return
+      }
+
+      setSavingCogs(true)
+
+      // Save the whole-show custom cost
+      await supabase.from('shows')
+        .update({ custom_item_cost: val })
+        .eq('id', showId)
+
+      // Bulk-insert placeholder scans for remaining items
+      if (count > 0) {
+        await supabase.from('kickstart_sold_scans').insert(toInsert)
+      }
+
+      // Mark complete
+      await supabase.from('shows')
+        .update({ status: 'completed', scanned_count: scannedCount + count })
+        .eq('id', showId)
+
+      setShowData(prev => ({ ...prev, customItemCost: val }))
+      setShowCogsModal(false)
+      setShowRemainingModal(false)
+      setShowCompletion(true)
+    } catch (err) {
+      console.error('Error applying COGS and finishing show:', err)
+      alert('Error saving — try again')
+    }
+    setSavingCogs(false)
+  }
+
   // No Barcode handler
   const handleNoBarcode = async () => {
     await stopScanner()
@@ -1551,6 +1617,17 @@ export default function SalesScanner() {
               </button>
             </div>
           )}
+          {isKickstart && remainingItems.length > 0 && showData?.customItemCost != null && (
+            <div className="px-6 pb-6 pt-3 border-t border-white/[0.06]">
+              <button
+                onClick={() => handleApplyCogsAndFinish(showData.customItemCost)}
+                disabled={savingCogs}
+                className="w-full py-4 rounded-2xl font-bold text-base bg-pink-500 text-white shadow-lg shadow-pink-500/30 glow-magenta active:scale-[0.98] hover:bg-pink-400 transition-all disabled:opacity-50"
+              >
+                {savingCogs ? 'Saving...' : `Apply $${Number(showData.customItemCost).toFixed(2)} COGS to ${remainingItems.length} Remaining`}
+              </button>
+            </div>
+          )}
         </div>
       )}
 
@@ -1643,6 +1720,17 @@ export default function SalesScanner() {
                     )}
                   </div>
 
+                  <button
+                    onClick={() => handleApplyCogsAndFinish(parseFloat(cogsInput))}
+                    disabled={savingCogs || !(parseFloat(cogsInput) > 0)}
+                    className="w-full py-5 px-6 rounded-2xl bg-gradient-to-r from-fuchsia-500 to-pink-500 text-white font-black text-base hover:scale-[1.02] active:scale-[0.98] transition-all shadow-xl shadow-pink-500/40 glow-magenta border-2 border-pink-400/50 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {savingCogs ? 'Applying...' : `Apply to remaining ${remainingCount} & finish show`}
+                  </button>
+                  <p className="text-slate-500 text-xs text-center -mt-2">
+                    Saves COGS, fills in every unscanned item, and marks the show complete.
+                  </p>
+
                   <div className="flex gap-3">
                     {showData?.customItemCost != null && (
                       <button
@@ -1683,9 +1771,9 @@ export default function SalesScanner() {
                         setSavingCogs(false)
                       }}
                       disabled={savingCogs || !(parseFloat(cogsInput) > 0)}
-                      className="flex-1 py-4 px-6 rounded-2xl bg-pink-500 text-white font-bold hover:bg-pink-400 active:scale-[0.98] transition-all shadow-lg shadow-pink-500/30 glow-magenta disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="flex-1 py-3 px-6 rounded-2xl bg-white/10 border border-white/20 text-white/80 font-bold hover:bg-white/20 active:scale-[0.98] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                     >
-                      {savingCogs ? 'Saving...' : 'Apply to show'}
+                      {savingCogs ? 'Saving...' : 'Save COGS only'}
                     </button>
                   </div>
                 </>
