@@ -912,12 +912,74 @@ function ScannerFeed({ title, subtitle, scans, timeAgo, isActive, isRecent, colo
 }
 
 // ── EXPENSE UPLOAD ────────────────────────────────
+
+// Normalize expense description so trivial formatting differences between feeds
+// collide in the dedupe check. Examples:
+//   "Amazon.com*by6029c62"  →  "amazon.com"
+//   "Same Day Ach Fee  "    →  "same day ach fee"
+//   "Netlify"               →  "netlify"
+// Does NOT try to match cross-feed variations like "Ups" vs "Ups Uis-us" —
+// those are surfaced in the Potential Duplicates review section below.
+function normalizeExpenseDesc(s) {
+  if (!s) return ''
+  return String(s)
+    .toLowerCase()
+    .replace(/\*[a-z0-9]+/gi, '')    // strip transaction codes like *by6029c62
+    .replace(/[.,;:\-_\/\\]+$/g, '') // strip trailing punctuation
+    .replace(/\s+/g, ' ')            // collapse whitespace
+    .trim()
+}
+
 function ExpenseUpload() {
   const [status, setStatus] = useState('')
   const [uploadLog, setUploadLog] = useState([])
   const [logLoading, setLogLoading] = useState(true)
+  const [dupeGroups, setDupeGroups] = useState([])
+  const [dupeLoading, setDupeLoading] = useState(true)
+  const [dupeRange, setDupeRange] = useState('90') // days
+  const [deleting, setDeleting] = useState(null) // row id being deleted
 
   useEffect(() => { fetchLog() }, [])
+  useEffect(() => { fetchDupes() }, [dupeRange])
+
+  const fetchDupes = async () => {
+    setDupeLoading(true)
+    // Pull all expenses in the selected window
+    const cutoff = new Date()
+    cutoff.setDate(cutoff.getDate() - parseInt(dupeRange, 10))
+    const cutoffStr = cutoff.toISOString().slice(0, 10)
+    const { data } = await supabase
+      .from('expenses')
+      .select('id, date, description, amount, category, created_at')
+      .gte('date', cutoffStr)
+      .order('date', { ascending: false })
+    // Group by (date, amount) — any group with ≥2 rows is a potential dupe cluster.
+    // Rows that already share normalized description would have been deduped on
+    // import; the leftovers here are cross-feed variations that need human review.
+    const groups = {}
+    for (const r of data || []) {
+      const k = `${r.date}|${Number(r.amount).toFixed(2)}`
+      if (!groups[k]) groups[k] = []
+      groups[k].push(r)
+    }
+    const list = Object.entries(groups)
+      .filter(([, rows]) => rows.length >= 2)
+      .map(([k, rows]) => ({ key: k, date: rows[0].date, amount: rows[0].amount, rows }))
+      .sort((a, b) => (a.date < b.date ? 1 : -1))
+    setDupeGroups(list)
+    setDupeLoading(false)
+  }
+
+  const deleteRow = async (id) => {
+    setDeleting(id)
+    const { error } = await supabase.from('expenses').delete().eq('id', id)
+    if (error) {
+      alert(`Delete failed: ${error.message}`)
+    } else {
+      await fetchDupes()
+    }
+    setDeleting(null)
+  }
 
   const fetchLog = async () => {
     const { data } = await supabase
@@ -959,13 +1021,14 @@ function ExpenseUpload() {
 
         setStatus(`Found ${parsed.length} expense/payroll rows. Checking for duplicates...`)
 
-        // Fetch all existing records to deduplicate (date + description + amount)
+        // Fetch all existing records to deduplicate.
+        // Key uses normalized description so trivial formatting differences between
+        // feeds (transaction codes, whitespace, trailing punctuation) still collide.
         const existing = await fetchAll(() => supabase.from('expenses').select('date, description, amount'))
-        const existingKeys = new Set(
-          existing.map(e => `${e.date}|${e.description}|${e.amount}`)
-        )
+        const keyFor = (e) => `${e.date}|${normalizeExpenseDesc(e.description)}|${Number(e.amount).toFixed(2)}`
+        const existingKeys = new Set(existing.map(keyFor))
 
-        const newRows = parsed.filter(e => !existingKeys.has(`${e.date}|${e.description}|${e.amount}`))
+        const newRows = parsed.filter(e => !existingKeys.has(keyFor(e)))
 
         if (newRows.length === 0) {
           setStatus(`✅ All ${parsed.length} rows already exist — nothing to upload`)
@@ -1031,6 +1094,62 @@ function ExpenseUpload() {
                   {log.rows_added > 0 && log.rows_skipped > 0 && <span className="text-slate-600 mx-1">·</span>}
                   {log.rows_skipped > 0 && <span className="text-slate-500">{log.rows_skipped} skipped</span>}
                   {log.rows_added === 0 && log.rows_skipped === 0 && <span className="text-slate-500">empty</span>}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Potential duplicates review */}
+      <div className="mt-6 pt-4 border-t border-white/10">
+        <div className="flex items-center justify-between mb-2 gap-3">
+          <div>
+            <h4 className="text-sm font-semibold text-white/90">Potential Duplicates</h4>
+            <p className="text-xs text-slate-500">Same date + same amount across feeds. Cross-check descriptions and delete dupes one-by-one.</p>
+          </div>
+          <select
+            value={dupeRange}
+            onChange={(e) => setDupeRange(e.target.value)}
+            className="text-xs bg-white/5 border border-white/10 text-white rounded-lg px-2 py-1 focus:outline-none focus:border-pink-500/50"
+          >
+            <option value="30">Last 30 days</option>
+            <option value="90">Last 90 days</option>
+            <option value="180">Last 180 days</option>
+            <option value="365">Last 365 days</option>
+          </select>
+        </div>
+        {dupeLoading ? (
+          <p className="text-xs text-slate-500">Loading...</p>
+        ) : dupeGroups.length === 0 ? (
+          <p className="text-xs text-emerald-400/80">✓ No suspected duplicates in this window.</p>
+        ) : (
+          <div className="space-y-2 max-h-96 overflow-y-auto pr-1">
+            {dupeGroups.map(group => (
+              <div key={group.key} className="bg-white/[0.03] rounded-2xl p-3 border border-white/5">
+                <div className="flex items-center justify-between mb-2 text-xs">
+                  <span className="text-slate-400">{group.date}</span>
+                  <span className="font-mono text-amber-300 font-bold">${Number(group.amount).toFixed(2)}</span>
+                  <span className="text-slate-500">{group.rows.length} rows</span>
+                </div>
+                <div className="space-y-1">
+                  {group.rows.map(r => (
+                    <div key={r.id} className="flex items-center gap-2 text-xs">
+                      <span className="text-white/70 truncate flex-1">{r.description}</span>
+                      <span className="text-slate-600 shrink-0">{r.category}</span>
+                      <button
+                        onClick={() => {
+                          if (!window.confirm(`Delete this row?\n\n${r.date} · $${Number(r.amount).toFixed(2)}\n${r.description}`)) return
+                          deleteRow(r.id)
+                        }}
+                        disabled={deleting === r.id}
+                        className="text-red-400/70 hover:text-red-300 hover:bg-red-500/10 rounded px-1.5 py-0.5 text-xs transition-colors disabled:opacity-50"
+                        aria-label="Delete"
+                      >
+                        {deleting === r.id ? '…' : '×'}
+                      </button>
+                    </div>
+                  ))}
                 </div>
               </div>
             ))}
