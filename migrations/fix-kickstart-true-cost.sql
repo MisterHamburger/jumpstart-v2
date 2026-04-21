@@ -340,7 +340,7 @@ BEGIN
   SELECT COALESCE(SUM(amount), 0)
   INTO total_expenses
   FROM expenses
-  WHERE category = 'EXPENSES'
+  WHERE category = 'OPEX'
     AND (date_cutoff IS NULL OR date >= date_cutoff)
     AND (date_end IS NULL OR date <= date_end);
 

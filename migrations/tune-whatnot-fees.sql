@@ -317,10 +317,14 @@ BEGIN
     AND (date_cutoff IS NULL OR show_date >= date_cutoff)
     AND (date_end IS NULL OR show_date <= date_end);
 
+  -- OpEx filter must stay 'OPEX' (the real category). Earlier migrations
+  -- had 'EXPENSES' which silently zeroed out the OpEx line on the dashboard.
+  -- See migrations/fix-opex-category-filter.sql for the original bug write-up
+  -- and memory/project_dashboard_rpc_filters.md.
   SELECT COALESCE(SUM(amount), 0)
   INTO total_expenses
   FROM expenses
-  WHERE category = 'EXPENSES'
+  WHERE category = 'OPEX'
     AND (date_cutoff IS NULL OR date >= date_cutoff)
     AND (date_end IS NULL OR date <= date_end);
 

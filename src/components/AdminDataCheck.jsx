@@ -173,6 +173,11 @@ export default function AdminDataCheck() {
 
       // ═══════════════════════════════════════════
       // SECTION 4: FEE FORMULA VERIFICATION
+      // Reconciled against Whatnot's March 2026 statement:
+      //   Commission 7.2% (Premier Shop) + Payment processing 5.1%
+      //   = 12.3% of hammer. Processing is 5.1% (not 2.9%) because
+      //   Whatnot assesses it on buyer total (hammer + shipping + tax),
+      //   which runs ~1.75× hammer. Applied directly to hammer here.
       // ═══════════════════════════════════════════
       const { data: feeSample } = await supabase.from('profitability')
         .select('buyer_paid,commission,processing_fee,total_fees,net_payout,is_bundle')
@@ -182,15 +187,15 @@ export default function AdminDataCheck() {
         for (const r of feeSample) {
           const bp = Number(r.buyer_paid) || 0
           const expComm = round2(bp * 0.072)
-          const expProc = round2(bp * 0.029 + 0.30)
-          const expTotal = round2(expComm + expProc)
+          const expProc = round2(bp * 0.051)
+          const expTotal = round2(bp * 0.123)
           const expNet = round2(bp - expTotal)
           if (Math.abs(expComm - Number(r.commission)) > 0.02) { bad++; if (errors.length < 3) errors.push(`commission ${r.commission} != ${expComm} on ${fmt(bp)} item`) }
           if (Math.abs(expProc - Number(r.processing_fee)) > 0.02) { bad++; if (errors.length < 3) errors.push(`processing ${r.processing_fee} != ${expProc} on ${fmt(bp)} item`) }
           if (Math.abs(expTotal - Number(r.total_fees)) > 0.02) { bad++; if (errors.length < 3) errors.push(`total_fees ${r.total_fees} != ${expTotal} on ${fmt(bp)} item`) }
           if (Math.abs(expNet - Number(r.net_payout)) > 0.02) { bad++; if (errors.length < 3) errors.push(`net_payout ${r.net_payout} != ${expNet} on ${fmt(bp)} item`) }
         }
-        check('Fee Formulas (7.2% + 2.9% + $0.30)', bad === 0,
+        check('Fee Formulas (7.2% + 5.1%)', bad === 0,
           bad === 0 ? `All ${feeSample.length} sampled items have correct fee math` : `${bad} errors in ${feeSample.length} items: ${errors.join('; ')}`)
       }
 
