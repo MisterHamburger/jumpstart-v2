@@ -7,17 +7,21 @@ import AdminProfitability from '../components/AdminProfitability'
 import AdminScans from '../components/AdminScans'
 import AdminDataCheck from '../components/AdminDataCheck'
 import AdminAnalytics from '../components/AdminAnalytics'
+import AdminTargets from '../components/AdminTargets'
+import AdminStatements from '../components/AdminStatements'
 
 const ADMIN_PW_KEY = 'jumpstart_admin_auth'
 const ADMIN_PW = 'MichaelGaryScott'
 
 const TABS = [
   { id: 'dashboard', path: '/admin', label: 'Dashboard', icon: 'lucide:layout-dashboard' },
+  { id: 'targets', path: '/admin/targets', label: 'Targets', icon: 'lucide:target' },
   { id: 'inputs', path: '/admin/inputs', label: 'Inputs', icon: 'lucide:upload' },
   { id: 'inventory', path: '/admin/inventory', label: 'Inventory', icon: 'lucide:package' },
   { id: 'profitability', path: '/admin/profitability', label: 'Profitability', icon: 'lucide:trending-up' },
   { id: 'analytics', path: '/admin/analytics', label: 'Analytics', icon: 'lucide:bar-chart-3' },
   { id: 'scans', path: '/admin/scans', label: 'Scans', icon: 'lucide:scan-line' },
+  { id: 'statements', path: '/admin/statements', label: 'Statements', icon: 'lucide:file-text' },
   { id: 'datacheck', path: '/admin/data-check', label: 'Data Check', icon: 'lucide:check-square' },
 ]
 
@@ -149,11 +153,13 @@ export default function Admin() {
       {/* Main content */}
       <main className="flex-1 p-6 md:p-8 overflow-auto relative z-10">
         {activeTab === 'dashboard' && <AdminDashboard />}
+        {activeTab === 'targets' && <AdminTargets />}
         {activeTab === 'inputs' && <AdminInputs />}
         {activeTab === 'inventory' && <AdminInventory />}
         {activeTab === 'profitability' && <AdminProfitability />}
         {activeTab === 'scans' && <AdminScans />}
         {activeTab === 'analytics' && <AdminAnalytics />}
+        {activeTab === 'statements' && <AdminStatements />}
         {activeTab === 'datacheck' && <AdminDataCheck />}
       </main>
     </div>

@@ -23,11 +23,13 @@ export default function App() {
         <Route path="/sales" element={<SalesSetup />} />
         <Route path="/sales/:showId" element={<SalesScanner />} />
         <Route path="/admin" element={<Admin />} />
+        <Route path="/admin/targets" element={<Admin />} />
         <Route path="/admin/inputs" element={<Admin />} />
         <Route path="/admin/inventory" element={<Admin />} />
         <Route path="/admin/profitability" element={<Admin />} />
         <Route path="/admin/scans" element={<Admin />} />
         <Route path="/admin/analytics" element={<Admin />} />
+        <Route path="/admin/statements" element={<Admin />} />
         <Route path="/admin/data-check" element={<Admin />} />
         <Route path="/admin/kickstart" element={<Admin />} />
         <Route path="/kickstart/buyer" element={<KickstartBuyer />} />
