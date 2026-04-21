@@ -82,9 +82,10 @@ FOR EACH ROW EXECUTE FUNCTION normalize_barcode_universal();
 ## Key Workflows
 
 ### Profitability
-- Whatnot fees: 8% commission + 2.9% + $0.30 processing
+- Whatnot fees (estimate formula in `profitability` view): **7.2% commission (Premier Shop) + 5.1% payment processing = 12.3% total of hammer.** Reconciled against Whatnot's March 2026 financial statement. Processing is 5.1% (not Whatnot's published 2.9%) because Whatnot assesses it on buyer total (hammer + shipping + tax), ~1.75× the hammer. Bundle branches use 0% fees (sold outside Whatnot).
 - Sold item count = `show_items WHERE status='valid'`, NOT from scans table
 - "Bad Barcode" = scan doesn't match any manifest entry (barcode normalization issue)
+- Dashboard numbers are *estimates*. Authoritative monthly P&L comes from Whatnot statement PDFs uploaded to the Statements tab → `whatnot_statements` table.
 
 ### Kickstart Intake (v1 — KickstartSort.jsx)
 - Saves to `kickstart_intake`, auto-triggers `enrich-kickstart.js`
