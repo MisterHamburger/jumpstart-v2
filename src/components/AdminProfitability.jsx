@@ -325,7 +325,11 @@ export default function AdminProfitability() {
           avg_net: totalNet / n,
           avg_profit_per_item: totalProfit / n,
           avg_margin: totalMargin,
-          avg_cost_per_item: avgCost,
+          // True avg cost per item (matches profit/item denominator so
+          // net/item − cost/item = profit/item reconciles on the card).
+          avg_cost_per_item: totalCost / n,
+          // Matched-only avg, used as WAC fallback for bad-barcode items.
+          avg_matched_cost: avgCost,
         })
       } else {
         setFullSummary(null)
@@ -581,7 +585,7 @@ export default function AdminProfitability() {
                 <tbody>
                   {items.map((item, i) => {
                     const isExp = expanded === i
-                    const showWac = showWacMap[item.show_name] || Number(s?.avg_cost_per_item || 0)
+                    const showWac = showWacMap[item.show_name] || Number(s?.avg_matched_cost || 0)
                     const useWac = item.is_bad_barcode && !Number(item.cost_freight)
                     const costFreight = useWac ? showWac : Number(item.cost_freight || 0)
                     const netPayout = Number(item.net_payout)
