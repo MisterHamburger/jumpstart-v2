@@ -100,8 +100,12 @@ export default function AdminDataCheck() {
           check('Month Additivity', false, 'Could not determine date range')
         } else {
           const bsDate = new Date(BUSINESS_START + 'T12:00:00')
-          const profMax = new Date(dateRangeMax[0].show_date + 'T12:00:00')
-          const expMaxDate = expMax?.length ? new Date(expMax[0].date + 'T12:00:00') : profMax
+          // Cap to today to defend against typo'd future dates (e.g. a TEST
+          // show with date 2099-12-31 would otherwise generate ~880 buckets).
+          const todayCap = new Date()
+          const clamp = d => (d > todayCap ? todayCap : d)
+          const profMax = clamp(new Date(dateRangeMax[0].show_date + 'T12:00:00'))
+          const expMaxDate = expMax?.length ? clamp(new Date(expMax[0].date + 'T12:00:00')) : profMax
           const maxDate = profMax > expMaxDate ? profMax : expMaxDate
 
           // Build monthly buckets aligned to BUSINESS_START
@@ -158,10 +162,15 @@ export default function AdminDataCheck() {
 
       // ═══════════════════════════════════════════
       // SECTION 3: ITEM COUNTS
+      // Filter by BUSINESS_START to mirror dashboard RPC exactly; without
+      // the filter, live shows in progress can add rows between the RPC
+      // and the count query and produce false MISMATCHes.
       // ═══════════════════════════════════════════
       const [jsC, ksC] = await Promise.all([
-        supabase.from('profitability').select('scan_id', { count: 'exact', head: true }).eq('channel', 'Jumpstart'),
-        supabase.from('profitability').select('scan_id', { count: 'exact', head: true }).eq('channel', 'Kickstart'),
+        supabase.from('profitability').select('scan_id', { count: 'exact', head: true })
+          .eq('channel', 'Jumpstart').gte('show_date', BUSINESS_START),
+        supabase.from('profitability').select('scan_id', { count: 'exact', head: true })
+          .eq('channel', 'Kickstart').gte('show_date', BUSINESS_START),
       ])
       if (jsC.error || ksC.error) {
         check('Item Counts', false, `Query error: ${jsC.error?.message || ksC.error?.message}`)
@@ -417,13 +426,13 @@ export default function AdminDataCheck() {
 
       // ═══════════════════════════════════════════
       // SECTION 16: ANALYTICS — SOLD COUNT MATCHES DASHBOARD
-      // Compare sold scans count to dashboard item count
+      // Compare sold scans count to dashboard item count. Both filtered
+      // by BUSINESS_START so a live show mid-test doesn't desync them.
       // ═══════════════════════════════════════════
       {
-        // Dashboard items sold = from profitability view (JS non-bundle + JS bundle)
         const { count: profJsCount } = await supabase.from('profitability')
           .select('scan_id', { count: 'exact', head: true })
-          .eq('channel', 'Jumpstart')
+          .eq('channel', 'Jumpstart').gte('show_date', BUSINESS_START)
         const dashItems = data.jumpstart.items
         const ok = profJsCount === dashItems
         check('Analytics Sold = Dashboard Items (JS)', ok,
@@ -435,12 +444,18 @@ export default function AdminDataCheck() {
       // Sum of profit in profitability view = Dashboard gross profit
       // ═══════════════════════════════════════════
       {
+        // PostgREST .range() pagination over a UNION ALL view is non-deterministic
+        // without an explicit order — different calls can shuffle rows across
+        // pages and produce duplicated/skipped rows. Order by scan_id so each
+        // page is stable.
         const PAGE = 1000
         let totalProfit = 0, offset = 0
         while (true) {
           const { data: rows } = await supabase.from('profitability')
             .select('profit')
             .eq('channel', 'Jumpstart')
+            .gte('show_date', BUSINESS_START)
+            .order('scan_id')
             .range(offset, offset + PAGE - 1)
           if (!rows || rows.length === 0) break
           for (const r of rows) totalProfit += Number(r.profit) || 0
@@ -497,16 +512,19 @@ export default function AdminDataCheck() {
           if (bp.length < PAGE) break
           bOff += PAGE
         }
-        const agingSold = (soldScansCount || 0) + bundleSold
-        // Profitability sold count (Jumpstart, all items including bundles)
+        // RDM bundle sales also live in profitability (one virtual row per quantity)
+        // — include them in the aging-side total so they aren't counted as a gap.
+        const { data: rdmAgg } = await supabase.from('rdm_bundle_sales').select('quantity')
+        const rdmBundleItems = (rdmAgg || []).reduce((s, r) => s + (Number(r.quantity) || 0), 0)
+        const agingSold = (soldScansCount || 0) + bundleSold + rdmBundleItems
         const { count: profSold } = await supabase.from('profitability')
           .select('scan_id', { count: 'exact', head: true })
-          .eq('channel', 'Jumpstart')
+          .eq('channel', 'Jumpstart').gte('show_date', BUSINESS_START)
         const diff = Math.abs(agingSold - (profSold || 0))
         const threshold = Math.max(50, Math.round((profSold || 1) * 0.05))
         const ok = diff <= threshold
         check('Cross-Page: Aging Sold vs Profitability Sold (JS)', ok,
-          `Aging (scans+bundles): ${agingSold} | Profitability: ${profSold} | Diff: ${diff} (threshold: ${threshold})${ok ? '' : ' — INVESTIGATE'}`)
+          `Aging (scans+bundles+RDM bundles): ${agingSold} | Profitability: ${profSold} | Diff: ${diff} (threshold: ${threshold})${ok ? '' : ' — INVESTIGATE'}`)
       }
 
       // ═══════════════════════════════════════════
@@ -518,10 +536,12 @@ export default function AdminDataCheck() {
           .select('scan_id', { count: 'exact', head: true })
           .eq('channel', 'Jumpstart')
           .eq('is_bundle', false)
+          .gte('show_date', BUSINESS_START)
         const { count: bundleCount } = await supabase.from('profitability')
           .select('scan_id', { count: 'exact', head: true })
           .eq('channel', 'Jumpstart')
           .eq('is_bundle', true)
+          .gte('show_date', BUSINESS_START)
         const combined = (nonBundleCount || 0) + (bundleCount || 0)
         const dashItems = data.jumpstart.items
         const ok = combined === dashItems
@@ -590,7 +610,7 @@ export default function AdminDataCheck() {
           <p className="text-slate-500 text-sm mt-1">Automated verification of every calculation in the system</p>
         </div>
         <button
-          onClick={() => dashData ? runChecks(dashData) : loadAndRun()}
+          onClick={() => loadAndRun()}
           disabled={running}
           className="px-5 py-2.5 rounded-xl text-sm font-semibold bg-cyan-600 text-white shadow-lg shadow-cyan-600/30 hover:bg-cyan-500 hover:scale-105 active:scale-95 transition-all disabled:opacity-50"
         >
