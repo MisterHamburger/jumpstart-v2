@@ -68,6 +68,20 @@ function groupKey(intake) {
 }
 
 /**
+ * Title format: "Free People Cardi - M - $128 MSRP". Size and MSRP are
+ * appended so buyers see them on Whatnot at a glance and the streamer can
+ * read them off without opening the listing. Size suffix is dropped for
+ * "One Size"; MSRP suffix is dropped when missing or 0.
+ */
+function buildTitle(intake) {
+  const baseTitle = intake.title || 'Free People'
+  const sizeSuffix = intake.size && intake.size !== 'One Size' ? ` - ${intake.size}` : ''
+  const msrp = Number(intake.msrp || 0)
+  const msrpSuffix = msrp > 0 ? ` - $${msrp.toFixed(0)} MSRP` : ''
+  return `${baseTitle}${sizeSuffix}${msrpSuffix}`
+}
+
+/**
  * Build one CSV row (array of strings) for a group of identical intakes.
  * The first intake's id becomes the SKU (representative); Quantity = group size.
  */
@@ -75,14 +89,7 @@ function buildRow(group) {
   const first = group[0]
   const mapping = CATEGORY_MAP[first.description]
   const condition = CONDITION_MAP[first.condition]
-
-  // Append size to title (e.g. "Free People Cardi - M") so buyers see it on
-  // Whatnot and the streamer can quickly read off the size from the title when
-  // updating the Size field manually post-import. Skip if size is missing or
-  // "One Size" (no actionable info).
-  const baseTitle = first.title || 'Free People'
-  const sizeSuffix = first.size && first.size !== 'One Size' ? ` - ${first.size}` : ''
-  const title = `${baseTitle}${sizeSuffix}`
+  const title = buildTitle(first)
 
   return [
     mapping.category,                                  // Category (parent group)
@@ -131,11 +138,9 @@ export function generateWhatnotCsv(intakeRows) {
     const sku = String(group[0].id)
     for (const u of group) skuByIntakeId.set(u.id, sku)
     const first = group[0]
-    const baseTitle = first.title || 'Free People'
-    const sizeSuffix = first.size && first.size !== 'One Size' ? ` - ${first.size}` : ''
     listings.push({
       sku,
-      title: `${baseTitle}${sizeSuffix}`,
+      title: buildTitle(first),
       brand: first.brand || '',
       size: first.size || '',
       condition: first.condition || '',
