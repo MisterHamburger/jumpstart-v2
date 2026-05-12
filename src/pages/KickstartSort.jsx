@@ -1,7 +1,9 @@
 import { useState, useRef, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase, fetchAll } from '../lib/supabase'
-import { compressPhoto, toBase64 } from '../lib/photos'
+import { compressPhoto, toBase64, uploadKickstartPhoto } from '../lib/photos'
+import { generateWhatnotCsv, downloadCsv } from '../lib/whatnotCsv'
+import { downloadStickerPdf } from '../lib/whatnotStickers'
 
 // Lazy-loading photo thumbnail — tap to expand
 function LazyPhoto({ intakeId }) {
@@ -20,10 +22,13 @@ function LazyPhoto({ intakeId }) {
     const observer = new IntersectionObserver(([entry]) => {
       if (entry.isIntersecting && !loaded) {
         setLoaded(true)
-        supabase.from('kickstart_intake').select('item_photo_data, photo_data').eq('id', intakeId).single()
+        supabase.from('kickstart_intake').select('photo_url, item_photo_data, photo_data').eq('id', intakeId).single()
           .then(({ data }) => {
-            const photo = data?.item_photo_data || data?.photo_data
-            if (photo) setSrc(`data:image/jpeg;base64,${photo}`)
+            if (data?.photo_url) setSrc(data.photo_url)
+            else {
+              const photo = data?.item_photo_data || data?.photo_data
+              if (photo) setSrc(`data:image/jpeg;base64,${photo}`)
+            }
           })
       }
     }, { rootMargin: '200px' })
@@ -58,20 +63,17 @@ function LazyPhoto({ intakeId }) {
   )
 }
 
-const PRICE_BINS = [3.41, 10, 15, 20, 25, 29, 30, 35, 40]
+const PRICE_BINS = [2, 5, 10, 15, 20, 25, 30, 40]
 const CATEGORIES = [
-  'Accessories - Bags', 'Accessories - Belts', 'Accessories - Jewelry',
-  'Accessories - Other', 'Accessories - Socks', 'Dresses', 'Hoodies',
-  'Jumpsuits', 'Leggings', 'Long Sleeve Tops', 'Outerwear/Jackets',
-  'Pants', 'Rompers', 'Sets', 'Shorts', 'Short Sleeve Tops', 'Skirts',
-  'Sleeveless Tops'
+  'Accessories', 'Bags', 'Bottoms', 'Dresses', 'Jewelry',
+  'Jumpsuits', 'Outerwear', 'Sets', 'Sweaters', 'Tops'
 ]
 const COLOR_GROUPS = [
   { label: 'Core Colors', colors: ['Blue', 'Dark Blue', 'Green', 'Light Blue', 'Orange', 'Pink', 'Purple', 'Red', 'Yellow'] },
   { label: 'Neutrals', colors: ['Black', 'Brown', 'Burgundy', 'Denim', 'Gray', 'Ivory / Cream', 'Navy', 'Olive', 'Tan', 'White'] },
   { label: 'Patterns', colors: ['Multi-Color', 'Other Pattern', 'Plaid', 'Stripe'] },
 ]
-const SIZES = ['XS', 'S', 'M', 'L', 'XL', 'XXL', 'One Size']
+const SIZES = ['XXS', 'XS', 'S', 'M', 'L', 'XL', 'XXL', 'One Size', 'XS/S', 'M/L', 'L/XL']
 const CONDITIONS = ['NWT', 'NWOT', 'Pre-loved/Nuuly']
 
 export default function KickstartSort() {
@@ -85,21 +87,17 @@ export default function KickstartSort() {
   const [description, setDescription] = useState('')
   const [condition, setCondition] = useState('')
   const [color, setColor] = useState('')
-  const [size, setSize] = useState('')
-  const [quantity, setQuantity] = useState(1)
+  const [sizeQuantities, setSizeQuantities] = useState({})
   const [saving, setSaving] = useState(false)
   const [showSaved, setShowSaved] = useState(false)
+  const [cloneSizePickerOpen, setCloneSizePickerOpen] = useState(false)
+  const [lastSavedCount, setLastSavedCount] = useState(0)
   const [sessionCount, setSessionCount] = useState(0)
+  const [title, setTitle] = useState('')
   const [notes, setNotes] = useState('')
   const [msrp, setMsrp] = useState('')
   const itemPhotoRef = useRef(null)
-
-  // AI garment identification state
-  const [identifying, setIdentifying] = useState(false)
-  const [identifyResult, setIdentifyResult] = useState(null)
-  const [identifyError, setIdentifyError] = useState(null)
-  const identifyPhotoRef = useRef(null)
-  const identifyLibraryRef = useRef(null)
+  const itemLibraryRef = useRef(null)
 
   // Restock + Edit shared state
   const [allItems, setAllItems] = useState([])
@@ -115,16 +113,27 @@ export default function KickstartSort() {
   const [restockQty, setRestockQty] = useState(1)
 
   // --- Load all items (shared by restock + edit) — same pattern as SalesScanner ---
-  const loadAllItems = async () => {
+  const loadAllItems = async (liveOnly = false) => {
     setItemsLoading(true)
     try {
-      const items = await fetchAll(() => supabase
+      let items = await fetchAll(() => supabase
         .from('kickstart_intake')
-        .select('id, description, brand, color, size, condition, msrp, cost, notes, status, created_at')
+        .select('id, description, brand, color, size, condition, msrp, cost, true_cost, title, notes, status, photo_url, whatnot_listed_at, whatnot_sku, created_at')
         .neq('description', 'Manual entry')
         .not('color', 'is', null)
         .not('size', 'is', null)
         .order('created_at', { ascending: false }))
+
+      if (liveOnly) {
+        const [bundled, sold] = await Promise.all([
+          fetchAll(() => supabase.from('kickstart_bundle_scans').select('intake_id').not('intake_id', 'is', null)),
+          fetchAll(() => supabase.from('kickstart_sold_scans').select('intake_id').not('intake_id', 'is', null)),
+        ])
+        const skip = new Set([...bundled.map(b => b.intake_id), ...sold.map(s => s.intake_id)])
+        items = items.filter(i =>
+          (i.status === 'enriched' || i.status === 'pending_enrichment') && !skip.has(i.id)
+        )
+      }
 
       // Extract unique categories with counts
       const catCounts = {}
@@ -149,6 +158,144 @@ export default function KickstartSort() {
     setItemsLoading(false)
   }
 
+  // Export current filtered inventory to a Whatnot bulk-listing CSV.
+  // By default, items already exported (whatnot_listed_at set) are excluded —
+  // this prevents accidental duplicate listings on Whatnot. Toggle the
+  // includeListed checkbox to re-export everything (e.g. after deleting
+  // listings on the Whatnot side).
+  const [exporting, setExporting] = useState(false)
+  const [includeListed, setIncludeListed] = useState(false)
+  const handleExportWhatnotCsv = async () => {
+    if (exporting) return
+    setExporting(true)
+    try {
+      let items = getFilteredItems()
+      if (!includeListed) items = items.filter(i => !i.whatnot_listed_at)
+      const { csv, included, skipped, groups, skuByIntakeId } = generateWhatnotCsv(items)
+      if (included === 0) {
+        alert(includeListed
+          ? 'No exportable items in the current view.'
+          : 'No unlisted items in the current view. Check "Include already-listed" to re-export.')
+        return
+      }
+
+      // Download first, then mark as listed. If user cancels the save dialog,
+      // the items are already exported — we mark anyway since the CSV is in
+      // their hands.
+      const stamp = new Date().toISOString().slice(0, 10)
+      downloadCsv(csv, `whatnot-listings-${stamp}.csv`)
+
+      // Batch-update whatnot_listed_at + whatnot_sku. Each unit in a group
+      // shares the group's SKU so sticker scans during the live show find
+      // the right Whatnot listing.
+      const ids = items
+        .filter(i => CATEGORY_MAP_KEYS.has(i.description) && CONDITION_KEYS.has(i.condition))
+        .map(i => i.id)
+      const now = new Date().toISOString()
+      // Group ids by their SKU so we can do one UPDATE ... IN (...) per SKU
+      // rather than a per-row update. Items keep their existing whatnot_sku if
+      // re-exporting (skuByIntakeId is deterministic per group, so this is
+      // idempotent — same group → same first-id → same SKU).
+      const idsBySku = new Map()
+      for (const id of ids) {
+        const sku = skuByIntakeId.get(id)
+        if (!sku) continue
+        if (!idsBySku.has(sku)) idsBySku.set(sku, [])
+        idsBySku.get(sku).push(id)
+      }
+      let updateFailed = false
+      for (const [sku, skuIds] of idsBySku) {
+        for (let i = 0; i < skuIds.length; i += 500) {
+          const batch = skuIds.slice(i, i + 500)
+          const { error: updateErr } = await supabase
+            .from('kickstart_intake')
+            .update({ whatnot_listed_at: now, whatnot_sku: sku })
+            .in('id', batch)
+          if (updateErr) {
+            console.error('Failed to mark items as listed:', updateErr)
+            updateFailed = true
+            break
+          }
+        }
+        if (updateFailed) break
+      }
+      if (updateFailed) {
+        alert('CSV exported, but failed to flag some items as listed. They may re-appear in future exports.')
+      } else {
+        // Update local state so the UI immediately reflects listed + sku
+        setAllItems(prev => prev.map(i => {
+          const sku = skuByIntakeId.get(i.id)
+          if (!sku) return i
+          return { ...i, whatnot_listed_at: now, whatnot_sku: sku }
+        }))
+      }
+
+      const skippedNote = skipped > 0 ? `\nSkipped ${skipped} units (missing or unmapped category/condition).` : ''
+      alert(`Exported ${groups} listings covering ${included} units.${skippedNote}`)
+    } catch (err) {
+      console.error('Whatnot CSV export error:', err)
+      alert('Export failed: ' + (err?.message || err))
+    } finally {
+      setExporting(false)
+    }
+  }
+
+  // Print barcode stickers (2"x1" thermal) for items in the current filtered
+  // view that have a whatnot_sku — one sticker per individual intake unit, all
+  // units in the same listing group share the same barcode.
+  const [printing, setPrinting] = useState(false)
+  const handlePrintStickers = async () => {
+    if (printing) return
+    setPrinting(true)
+    try {
+      const filtered = getFilteredItems()
+      const withSku = filtered.filter(i => i.whatnot_sku)
+      if (withSku.length === 0) {
+        alert('No items in the current view have been exported to Whatnot yet. Run Export Whatnot CSV first.')
+        return
+      }
+      const units = withSku.map(i => ({
+        sku: i.whatnot_sku,
+        brand: i.brand,
+        size: i.size,
+        condition: i.condition,
+      }))
+      const stamp = new Date().toISOString().slice(0, 10)
+      downloadStickerPdf(units, `whatnot-stickers-${stamp}.pdf`)
+    } catch (err) {
+      console.error('Sticker print error:', err)
+      alert('Sticker print failed: ' + (err?.message || err))
+    } finally {
+      setPrinting(false)
+    }
+  }
+
+  // Categories and conditions that map cleanly to Whatnot — used to filter
+  // which intake rows get flagged as listed (skip unmappable rows).
+  const CATEGORY_MAP_KEYS = new Set([
+    'Tops','Bottoms','Sweaters','Outerwear','Dresses','Jumpsuits','Sets',
+    'Accessories','Bags','Jewelry'
+  ])
+  const CONDITION_KEYS = new Set(['NWT','NWOT','Pre-loved/Nuuly'])
+
+  // Reset whatnot_listed_at on a set of intake ids (used when Whatnot listings
+  // are deleted out-of-band and admin needs to allow re-export).
+  const handleResetListed = async (ids) => {
+    if (!ids?.length) return
+    const { error } = await supabase
+      .from('kickstart_intake')
+      .update({ whatnot_listed_at: null, whatnot_sku: null })
+      .in('id', ids)
+    if (error) {
+      console.error('Failed to reset listed status:', error)
+      alert('Failed to reset: ' + error.message)
+      return
+    }
+    setAllItems(prev => prev.map(i =>
+      ids.includes(i.id) ? { ...i, whatnot_listed_at: null, whatnot_sku: null } : i
+    ))
+  }
+
   // Client-side filtering
   const getFilteredItems = () => {
     let filtered = allItems
@@ -158,14 +305,35 @@ export default function KickstartSort() {
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase()
       filtered = filtered.filter(i => {
-        const searchable = [i.brand, i.description, i.color, i.condition, i.notes].filter(Boolean).join(' ').toLowerCase()
+        const searchable = [i.brand, i.description, i.color, i.condition, i.title, i.notes].filter(Boolean).join(' ').toLowerCase()
         return searchable.includes(q)
       })
     }
     return filtered
   }
 
-  // No grouping — every intake row is its own item
+  // Group filtered items by variant (description + size + color + brand + condition)
+  // for the Inventory view. Picks the most-recent item as the variant rep.
+  const getGroupedItems = () => {
+    const filtered = getFilteredItems()
+    const groups = new Map()
+    for (const item of filtered) {
+      const key = [
+        item.description || '',
+        item.size || '',
+        item.color || '',
+        item.brand || '',
+        item.condition || '',
+      ].join('||')
+      if (!groups.has(key)) {
+        groups.set(key, { rep: item, ids: [], listedIds: [], cost: item.cost, msrp: item.msrp })
+      }
+      const g = groups.get(key)
+      g.ids.push(item.id)
+      if (item.whatnot_listed_at) g.listedIds.push(item.id)
+    }
+    return Array.from(groups.values()).sort((a, b) => b.ids.length - a.ids.length)
+  }
 
   const resetFilters = () => {
     setFilterSize(null)
@@ -207,13 +375,25 @@ export default function KickstartSort() {
         condition: restockItem.condition || null,
         msrp: restockItem.msrp ? parseFloat(restockItem.msrp) : null,
         item_photo_data: itemPhotoData,
-        notes: restockItem.notes || null,
+        title: restockItem.title || restockItem.notes || 'Free People',
+        notes: restockItem.notes || restockItem.title || 'Free People',
         status: 'enriched',
       }
 
       const rows = Array.from({ length: restockQty }, () => ({ ...baseRow }))
-      const { error } = await supabase.from('kickstart_intake').insert(rows)
+      const { data: inserted, error } = await supabase.from('kickstart_intake').insert(rows).select('id')
       if (error) throw error
+
+      if (itemPhotoData && inserted?.length) {
+        await Promise.all(inserted.map(async (row) => {
+          try {
+            const url = await uploadKickstartPhoto(supabase, row.id, itemPhotoData)
+            await supabase.from('kickstart_intake').update({ photo_url: url }).eq('id', row.id)
+          } catch (uploadErr) {
+            console.error(`Photo upload failed for intake ${row.id}:`, uploadErr)
+          }
+        }))
+      }
 
       setSessionCount(prev => prev + restockQty)
       setShowSaved(true)
@@ -234,11 +414,26 @@ export default function KickstartSort() {
     setStep('editItem')
   }
 
+  // Open the edit screen for a whole variant (group of items).
+  // Carries _ids for bulk update + delete, _qty/_origQty for the qty selector,
+  // and _cloneSizes for spawning new variants of other sizes (e.g. found a few S of an M variant).
+  const handleEditVariant = (group) => {
+    setEditingItem({
+      ...group.rep,
+      _ids: [...group.ids],
+      _origQty: group.ids.length,
+      _qty: group.ids.length,
+      _cloneSizes: [],
+    })
+    setCloneSizePickerOpen(false)
+    setStep('editItem')
+  }
+
   const handleEditSave = async () => {
     if (!editingItem) return
     setSaving(true)
     try {
-      const { error } = await supabase.from('kickstart_intake').update({
+      const fields = {
         cost: editingItem.cost ? parseFloat(editingItem.cost) : null,
         brand: editingItem.brand || null,
         description: editingItem.description || null,
@@ -246,9 +441,80 @@ export default function KickstartSort() {
         size: editingItem.size || null,
         condition: editingItem.condition || null,
         msrp: editingItem.msrp ? parseFloat(editingItem.msrp) : null,
-        notes: editingItem.notes || null,
-      }).eq('id', editingItem.id)
-      if (error) throw error
+        title: editingItem.title || editingItem.notes || 'Free People',
+        notes: editingItem.notes || editingItem.title || 'Free People',
+      }
+
+      // Variant mode: bulk-update all ids + handle qty delta + clone-to-other-sizes
+      if (Array.isArray(editingItem._ids)) {
+        const ids = [...editingItem._ids]
+        const newQty = Math.max(0, parseInt(editingItem._qty, 10) || 0)
+        const origQty = editingItem._origQty
+        const cloneSizes = (editingItem._cloneSizes || []).filter(c => c.size && (parseInt(c.qty, 10) || 0) > 0)
+        const needsPhoto = newQty > origQty || cloneSizes.length > 0
+
+        const { error: upErr } = await supabase.from('kickstart_intake').update(fields).in('id', ids)
+        if (upErr) throw upErr
+
+        // Fetch the rep photo once if any new rows will be inserted
+        let photo = null
+        if (needsPhoto) {
+          const sourceId = ids[ids.length - 1]
+          const { data: original } = await supabase
+            .from('kickstart_intake')
+            .select('item_photo_data')
+            .eq('id', sourceId)
+            .single()
+          photo = original?.item_photo_data || null
+        }
+
+        if (newQty < origQty) {
+          const toDelete = ids.slice(0, origQty - newQty)
+          const { error: delErr } = await supabase.from('kickstart_intake').delete().in('id', toDelete)
+          if (delErr) throw delErr
+          setAllItems(prev => prev.filter(i => !toDelete.includes(i.id)))
+        } else if (newQty > origQty) {
+          const rows = Array.from({ length: newQty - origQty }, () => ({
+            ...fields, item_photo_data: photo, status: 'enriched',
+          }))
+          const { data: insertedRows, error: insErr } = await supabase.from('kickstart_intake').insert(rows).select('id')
+          if (insErr) throw insErr
+          if (photo && insertedRows?.length) {
+            await Promise.all(insertedRows.map(async (row) => {
+              try {
+                const url = await uploadKickstartPhoto(supabase, row.id, photo)
+                await supabase.from('kickstart_intake').update({ photo_url: url }).eq('id', row.id)
+              } catch (uploadErr) {
+                console.error(`Photo upload failed for intake ${row.id}:`, uploadErr)
+              }
+            }))
+          }
+        }
+
+        // Clone to other sizes — each becomes a fresh variant with this size
+        for (const c of cloneSizes) {
+          const cloneQty = parseInt(c.qty, 10) || 0
+          const rows = Array.from({ length: cloneQty }, () => ({
+            ...fields, size: c.size, item_photo_data: photo, status: 'enriched',
+          }))
+          const { data: clonedRows, error: cloneErr } = await supabase.from('kickstart_intake').insert(rows).select('id')
+          if (cloneErr) throw cloneErr
+          if (photo && clonedRows?.length) {
+            await Promise.all(clonedRows.map(async (row) => {
+              try {
+                const url = await uploadKickstartPhoto(supabase, row.id, photo)
+                await supabase.from('kickstart_intake').update({ photo_url: url }).eq('id', row.id)
+              } catch (uploadErr) {
+                console.error(`Photo upload failed for intake ${row.id}:`, uploadErr)
+              }
+            }))
+          }
+        }
+      } else {
+        const { error } = await supabase.from('kickstart_intake').update(fields).eq('id', editingItem.id)
+        if (error) throw error
+      }
+
       setShowSaved(true)
       setTimeout(() => {
         setShowSaved(false)
@@ -257,6 +523,36 @@ export default function KickstartSort() {
       }, 400)
     } catch (err) {
       alert('Save error: ' + err.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleEditDelete = async () => {
+    if (!editingItem) return
+    const isVariant = Array.isArray(editingItem._ids)
+    const label = [editingItem.description, editingItem.color].filter(Boolean).join(' — ') ||
+      (isVariant ? `${editingItem._origQty} items` : `#${editingItem.id}`)
+    const prompt = isVariant
+      ? `Delete all ${editingItem._origQty} of "${label}"? This cannot be undone.`
+      : `Delete ${label}? This cannot be undone.`
+    if (!confirm(prompt)) return
+    setSaving(true)
+    try {
+      if (isVariant) {
+        const { error } = await supabase.from('kickstart_intake').delete().in('id', editingItem._ids)
+        if (error) throw error
+        const idSet = new Set(editingItem._ids)
+        setAllItems(prev => prev.filter(i => !idSet.has(i.id)))
+      } else {
+        const { error } = await supabase.from('kickstart_intake').delete().eq('id', editingItem.id)
+        if (error) throw error
+        setAllItems(prev => prev.filter(i => i.id !== editingItem.id))
+      }
+      setEditingItem(null)
+      setStep('bin')
+    } catch (err) {
+      alert('Delete error: ' + (err?.message || JSON.stringify(err)))
     } finally {
       setSaving(false)
     }
@@ -304,78 +600,6 @@ export default function KickstartSort() {
     }
   }
 
-  // --- AI Garment Identification ---
-  const handleIdentifyCapture = async (e) => {
-    const file = e.target.files[0]
-    if (!file) return
-
-    setIdentifying(true)
-    setIdentifyResult(null)
-    setIdentifyError(null)
-
-    try {
-      const dataUrl = await compressPhoto(file, { maxWidth: 800, quality: 0.5 })
-      setItemPhoto(dataUrl) // Use identify photo as the item photo
-      const base64 = toBase64(dataUrl)
-
-      // Step 1: Upload image to Supabase storage directly from client (faster than routing through function)
-      const tempFileName = `identify-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.jpg`
-      const imageBytes = Uint8Array.from(atob(base64), c => c.charCodeAt(0))
-
-      const { error: uploadErr } = await supabase.storage
-        .from('temp-identify')
-        .upload(tempFileName, imageBytes, { contentType: 'image/jpeg', upsert: true })
-
-      if (uploadErr) throw new Error('Failed to upload image')
-
-      const { data: { publicUrl } } = supabase.storage
-        .from('temp-identify')
-        .getPublicUrl(tempFileName)
-
-      // Step 2: Call identify function with URL (no image payload — fast)
-      const controller = new AbortController()
-      const timeoutId = setTimeout(() => controller.abort(), 25000)
-
-      const response = await fetch('/.netlify/functions/identify-item', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ imageUrl: publicUrl, brand: selectedBrand }),
-        signal: controller.signal,
-      })
-      clearTimeout(timeoutId)
-
-      // Fire-and-forget cleanup of temp image
-      supabase.storage.from('temp-identify').remove([tempFileName]).catch(() => {})
-
-      if (!response.ok) {
-        const err = await response.json()
-        throw new Error(err.error || 'Identification failed')
-      }
-
-      const result = await response.json()
-      setIdentifyResult(result)
-
-      // Auto-fill fields
-      if (result.product_name) setNotes(result.product_name)
-      if (result.msrp && result.msrp > 0) setMsrp(String(result.msrp))
-      if (result.category && CATEGORIES.includes(result.category)) setDescription(result.category)
-      if (result.color) {
-        const allColors = COLOR_GROUPS.flatMap(g => g.colors)
-        if (allColors.includes(result.color)) setColor(result.color)
-      }
-    } catch (err) {
-      if (err.name === 'AbortError') {
-        setIdentifyError('Timed out — try again or enter manually')
-      } else {
-        setIdentifyError(err.message || 'Identification failed')
-      }
-    } finally {
-      setIdentifying(false)
-      if (identifyPhotoRef.current) identifyPhotoRef.current.value = ''
-      if (identifyLibraryRef.current) identifyLibraryRef.current.value = ''
-    }
-  }
-
   // --- Save ---
   const handleSave = async () => {
     setSaving(true)
@@ -383,25 +607,49 @@ export default function KickstartSort() {
       const cost = getCost()
       const itemPhotoData = itemPhoto ? toBase64(itemPhoto) : null
 
+      // Schema mapping for Whatnot CSV export:
+      //   description column → Whatnot Sub Category (e.g. "Tops")
+      //   title column       → Whatnot Title (product name)
+      //   notes column       → Whatnot Description (free-text)
       const baseRow = {
         cost,
         brand: selectedBrand,
         description: description || null,
         color: color || null,
-        size: size || null,
         condition: condition || null,
         msrp: msrp ? parseFloat(msrp) : null,
         item_photo_data: itemPhotoData,
-        notes: notes || null,
+        title: title || notes || 'Free People',
+        notes: notes || title || 'Free People',
         status: 'enriched',
       }
 
-      const rows = Array.from({ length: quantity }, () => ({ ...baseRow }))
+      const rows = []
+      for (const s of SIZES) {
+        const qty = sizeQuantities[s] || 0
+        for (let i = 0; i < qty; i++) {
+          rows.push({ ...baseRow, size: s })
+        }
+      }
+      const totalQty = rows.length
 
-      let { error } = await supabase.from('kickstart_intake').insert(rows)
+      const { data: inserted, error } = await supabase.from('kickstart_intake').insert(rows).select('id')
       if (error) throw error
 
-      setSessionCount(prev => prev + quantity)
+      // Upload photo to Storage for each new row and write photo_url
+      if (itemPhotoData && inserted?.length) {
+        await Promise.all(inserted.map(async (row) => {
+          try {
+            const url = await uploadKickstartPhoto(supabase, row.id, itemPhotoData)
+            await supabase.from('kickstart_intake').update({ photo_url: url }).eq('id', row.id)
+          } catch (uploadErr) {
+            console.error(`Photo upload failed for intake ${row.id}:`, uploadErr)
+          }
+        }))
+      }
+
+      setSessionCount(prev => prev + totalQty)
+      setLastSavedCount(totalQty)
 
       setShowSaved(true)
       setTimeout(() => {
@@ -419,15 +667,13 @@ export default function KickstartSort() {
   // Keep bin, brand, condition, category — reset item-specific fields
   const resetForNext = () => {
     setColor('')
-    setSize('')
-    setQuantity(1)
+    setSizeQuantities({})
+    setTitle('')
     setNotes('')
     setMsrp('')
     setItemPhoto(null)
-    setIdentifyResult(null)
-    setIdentifyError(null)
     if (itemPhotoRef.current) itemPhotoRef.current.value = ''
-    if (identifyPhotoRef.current) identifyPhotoRef.current.value = ''
+    if (itemLibraryRef.current) itemLibraryRef.current.value = ''
   }
 
   // --- Back navigation ---
@@ -439,16 +685,12 @@ export default function KickstartSort() {
         setDescription('')
         setCondition('')
         setColor('')
-        setSize('')
-        setQuantity(1)
+        setSizeQuantities({})
         setNotes('')
         setMsrp('')
         setItemPhoto(null)
-        setIdentifyResult(null)
-        setIdentifyError(null)
         if (itemPhotoRef.current) itemPhotoRef.current.value = ''
-        if (identifyPhotoRef.current) identifyPhotoRef.current.value = ''
-      if (identifyLibraryRef.current) identifyLibraryRef.current.value = ''
+        if (itemLibraryRef.current) itemLibraryRef.current.value = ''
         setStep('brand')
         break
       case 'restock': setStep('bin'); break
@@ -478,7 +720,7 @@ export default function KickstartSort() {
         <div className="text-center">
           <div className="text-9xl mb-4">✓</div>
           <h2 className="text-5xl font-black text-white mb-2 font-heading">Saved!</h2>
-          <p className="text-xl text-white/80">{quantity > 1 ? `${quantity} items` : '1 item'} added</p>
+          <p className="text-xl text-white/80">{lastSavedCount > 1 ? `${lastSavedCount} items` : '1 item'} added</p>
         </div>
       </div>
     )
@@ -529,12 +771,12 @@ export default function KickstartSort() {
           <h2 className="text-lg font-bold text-white mb-0.5 tracking-tight font-heading">Select Price Bin</h2>
           <p className="text-slate-400 mb-2 text-sm">What did we pay per item?</p>
 
-          <div className="w-full max-w-sm grid grid-cols-3 gap-2 mb-3">
+          <div className="w-full max-w-sm grid grid-cols-6 gap-2 mb-3">
             {PRICE_BINS.map(price => (
               <button
                 key={price}
                 onClick={() => handleBinSelect(price)}
-                className="py-3 rounded-xl bg-gradient-to-br from-pink-500/80 to-pink-600/80 border-2 border-pink-400/40 text-white font-black text-xl shadow-lg shadow-pink-500/20 hover:scale-105 active:scale-95 transition-all"
+                className={`py-3 rounded-xl bg-gradient-to-br from-pink-500/80 to-pink-600/80 border-2 border-pink-400/40 text-white font-black text-xl shadow-lg shadow-pink-500/20 hover:scale-105 active:scale-95 transition-all ${price === 30 || price === 40 ? 'col-span-3' : 'col-span-2'}`}
               >
                 ${price}
               </button>
@@ -578,13 +820,19 @@ export default function KickstartSort() {
             </div>
           )}
 
-          {/* Restock + Edit buttons */}
+          {/* Restock + Inventory + Edit buttons */}
           <div className="w-full max-w-sm flex gap-2 mt-3">
             <button
               onClick={() => { resetFilters(); loadAllItems(); setStep('restock') }}
               className="flex-1 py-3 rounded-3xl bg-cyan-500/20 border border-cyan-500/30 text-cyan-300 font-semibold text-base hover:bg-cyan-500/30 transition-all"
             >
               Restock
+            </button>
+            <button
+              onClick={() => { resetFilters(); loadAllItems(true); setStep('inventory') }}
+              className="flex-1 py-3 rounded-3xl bg-violet-500/20 border border-violet-500/30 text-violet-300 font-semibold text-base hover:bg-violet-500/30 transition-all"
+            >
+              Inventory
             </button>
             <button
               onClick={() => { resetFilters(); loadAllItems(); setStep('editRecent') }}
@@ -616,9 +864,52 @@ export default function KickstartSort() {
         </div>
       )}
 
-      {/* === RESTOCK / EDIT ITEM PICKER (shared UI) === */}
-      {(step === 'restock' || step === 'editRecent') && (
+      {/* === RESTOCK / EDIT / INVENTORY ITEM PICKER (shared UI) === */}
+      {(step === 'restock' || step === 'editRecent' || step === 'inventory') && (
         <div className="relative z-10 flex-1 min-h-0 flex flex-col overflow-hidden">
+          {/* Whatnot CSV export — Inventory mode only */}
+          {step === 'inventory' && (() => {
+            const filtered = getFilteredItems()
+            const listedCount = filtered.filter(i => i.whatnot_listed_at).length
+            const unlistedCount = filtered.length - listedCount
+            const stickerCount = filtered.filter(i => i.whatnot_sku).length
+            return (
+              <div className="px-4 py-2 bg-slate-800/50 border-b border-white/10 flex items-center justify-between gap-3 flex-shrink-0">
+                <div className="flex flex-col text-xs text-slate-400 leading-tight">
+                  <span>{filtered.length} items in view</span>
+                  <span className="text-[10px] text-slate-500">
+                    {unlistedCount} unlisted · {listedCount} on Whatnot
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <label className="flex items-center gap-1.5 text-[11px] text-slate-400 select-none">
+                    <input
+                      type="checkbox"
+                      checked={includeListed}
+                      onChange={e => setIncludeListed(e.target.checked)}
+                      className="w-3.5 h-3.5 accent-pink-500"
+                    />
+                    Include listed
+                  </label>
+                  <button
+                    onClick={handlePrintStickers}
+                    disabled={printing || itemsLoading || stickerCount === 0}
+                    title={stickerCount === 0 ? 'No items in view have a Whatnot SKU yet. Export to Whatnot first.' : `Print ${stickerCount} sticker${stickerCount === 1 ? '' : 's'}`}
+                    className="px-3 py-2 rounded-2xl bg-white/10 text-white font-bold text-sm hover:bg-white/15 active:scale-95 transition-all border border-white/15 disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    {printing ? 'Building PDF…' : `Print Stickers${stickerCount > 0 ? ` (${stickerCount})` : ''}`}
+                  </button>
+                  <button
+                    onClick={handleExportWhatnotCsv}
+                    disabled={exporting || itemsLoading}
+                    className="px-4 py-2 rounded-2xl bg-pink-500 text-white font-bold text-sm hover:bg-pink-400 active:scale-95 transition-all shadow-lg shadow-pink-500/30 glow-magenta disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {exporting ? 'Exporting...' : 'Export Whatnot CSV'}
+                  </button>
+                </div>
+              </div>
+            )
+          })()}
           {/* Filter pills + search */}
           <div className="px-4 py-2 bg-slate-800/50 border-b border-white/10 space-y-2 flex-shrink-0">
             {/* Filter pills row — Size → Category → Condition */}
@@ -745,7 +1036,66 @@ export default function KickstartSort() {
           <div className="flex-1 overflow-y-auto p-4 min-h-0">
             {itemsLoading ? (
               <div className="text-center py-12"><p className="text-white/50 text-lg">Loading...</p></div>
-            ) : (() => {
+            ) : step === 'inventory' ? (() => {
+              const groups = getGroupedItems()
+              return groups.length === 0 ? (
+                <div className="text-center py-12">
+                  <p className="text-white/50 text-lg mb-2">No items found</p>
+                  <button onClick={resetFilters} className="text-pink-400 text-sm underline">Clear filters</button>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {(() => {
+                    const totalItems = groups.reduce((sum, g) => sum + g.ids.length, 0)
+                    return (
+                      <p className="text-white/40 text-xs mb-1">
+                        {totalItems} item{totalItems !== 1 ? 's' : ''} / {groups.length} variant{groups.length !== 1 ? 's' : ''}
+                      </p>
+                    )
+                  })()}
+                  {groups.map((group, i) => {
+                    const item = group.rep
+                    return (
+                      <button
+                        key={i}
+                        onClick={() => handleEditVariant(group)}
+                        className="w-full text-left bg-white/5 border border-white/10 rounded-3xl p-3 hover:bg-violet-500/10 hover:border-violet-500/30 active:scale-[0.98] transition-all"
+                      >
+                        <div className="flex items-center gap-3">
+                          <LazyPhoto intakeId={item.id} />
+                          <div className="min-w-0 flex-1">
+                            <p className="text-white font-semibold text-sm truncate">
+                              {[item.description, item.color].filter(Boolean).join(' — ') || 'Unknown'}
+                            </p>
+                            {item.notes && (
+                              <p className="text-pink-300/70 text-xs truncate">{item.notes}</p>
+                            )}
+                            <p className="text-slate-400 text-xs">
+                              {[item.brand, item.size, item.condition].filter(Boolean).join(' · ')}
+                            </p>
+                            <p className="text-slate-500 text-xs mt-0.5">
+                              ${parseFloat(item.cost || 0).toFixed(2)}{item.msrp ? ` · MSRP $${parseFloat(item.msrp).toFixed(2)}` : ''}
+                            </p>
+                          </div>
+                          <div className="shrink-0 flex flex-col items-end gap-1">
+                            <span className="px-2.5 py-1 rounded-full bg-violet-500/20 border border-violet-500/40 text-violet-200 text-sm font-bold">
+                              ×{group.ids.length}
+                            </span>
+                            {group.listedIds.length > 0 && (
+                              <span className="px-2 py-0.5 rounded-full bg-pink-500/15 border border-pink-500/30 text-pink-300 text-[10px] font-semibold uppercase tracking-wider">
+                                {group.listedIds.length === group.ids.length
+                                  ? 'On Whatnot'
+                                  : `${group.listedIds.length}/${group.ids.length} listed`}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </button>
+                    )
+                  })}
+                </div>
+              )
+            })() : (() => {
               const items = getFilteredItems()
               return items.length === 0 ? (
                 <div className="text-center py-12">
@@ -872,8 +1222,48 @@ export default function KickstartSort() {
       {step === 'editItem' && editingItem && (
         <div className="relative z-10 flex-1 min-h-0 flex flex-col">
           <div className="flex-1 overflow-y-auto p-4">
-            <h2 className="text-lg font-bold text-white mb-3 font-heading">Edit Item #{editingItem.id}</h2>
+            <h2 className="text-lg font-bold text-white mb-3 font-heading">
+              {Array.isArray(editingItem._ids)
+                ? `Edit Variant (${editingItem._origQty} item${editingItem._origQty !== 1 ? 's' : ''})`
+                : `Edit Item #${editingItem.id}`}
+            </h2>
             <div className="flex flex-col items-center">
+
+              {/* Quantity (variant mode only) */}
+              {Array.isArray(editingItem._ids) && (
+                <div className="w-full max-w-sm mb-3">
+                  <label className="text-slate-400 text-xs uppercase tracking-wider mb-2 block">
+                    Quantity {editingItem._qty !== editingItem._origQty && (
+                      <span className="text-violet-300 normal-case tracking-normal ml-1">
+                        ({editingItem._qty > editingItem._origQty ? '+' : ''}{editingItem._qty - editingItem._origQty})
+                      </span>
+                    )}
+                  </label>
+                  <div className="flex items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setEditingItem(prev => ({ ...prev, _qty: Math.max(0, (parseInt(prev._qty, 10) || 0) - 1) }))}
+                      className="w-12 h-12 rounded-2xl bg-white/10 border border-white/20 text-white text-2xl font-bold flex items-center justify-center hover:bg-white/20 active:scale-95 transition-all"
+                    >−</button>
+                    <input
+                      type="number"
+                      min="0"
+                      value={editingItem._qty}
+                      onChange={e => {
+                        const v = parseInt(e.target.value, 10)
+                        setEditingItem(prev => ({ ...prev, _qty: isNaN(v) ? 0 : Math.max(0, v) }))
+                      }}
+                      className="flex-1 text-center bg-white/5 border border-white/10 rounded-2xl py-3 text-2xl font-black text-white focus:outline-none focus:border-violet-500/50 focus:ring-4 focus:ring-violet-500/10 transition-all"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setEditingItem(prev => ({ ...prev, _qty: (parseInt(prev._qty, 10) || 0) + 1 }))}
+                      className="w-12 h-12 rounded-2xl bg-violet-500/20 border border-violet-500/40 text-violet-200 text-2xl font-bold flex items-center justify-center hover:bg-violet-500/30 active:scale-95 transition-all"
+                    >+</button>
+                  </div>
+                  <p className="text-slate-500 text-xs mt-1">Was {editingItem._origQty}. Lowering deletes oldest; raising clones the variant.</p>
+                </div>
+              )}
 
               {/* Cost */}
               <div className="w-full max-w-sm mb-3">
@@ -923,6 +1313,102 @@ export default function KickstartSort() {
                   ))}
                 </div>
               </div>
+
+              {/* Clone to Other Sizes (variant mode only) */}
+              {Array.isArray(editingItem._ids) && (
+                <div className="w-full max-w-sm mb-3">
+                  <label className="text-slate-400 text-xs uppercase tracking-wider mb-2 block">
+                    Clone to Other Sizes
+                    <span className="text-slate-500 normal-case tracking-normal ml-1 text-[11px]">— same details, new variants</span>
+                  </label>
+
+                  {(editingItem._cloneSizes || []).length > 0 && (
+                    <div className="space-y-2 mb-2">
+                      {editingItem._cloneSizes.map((c, idx) => (
+                        <div key={idx} className="flex items-center gap-2 bg-white/5 border border-violet-500/20 rounded-2xl p-2">
+                          <span className="px-3 py-1 rounded-lg bg-violet-500/20 text-violet-200 text-sm font-bold min-w-[3.5rem] text-center">{c.size}</span>
+                          <button
+                            type="button"
+                            onClick={() => setEditingItem(prev => ({
+                              ...prev,
+                              _cloneSizes: prev._cloneSizes.map((x, i) => i === idx ? { ...x, qty: Math.max(1, (parseInt(x.qty, 10) || 1) - 1) } : x)
+                            }))}
+                            className="w-9 h-9 rounded-xl bg-white/10 border border-white/20 text-white text-lg font-bold flex items-center justify-center active:scale-95"
+                          >−</button>
+                          <input
+                            type="number"
+                            min="1"
+                            value={c.qty}
+                            onChange={e => {
+                              const v = parseInt(e.target.value, 10)
+                              setEditingItem(prev => ({
+                                ...prev,
+                                _cloneSizes: prev._cloneSizes.map((x, i) => i === idx ? { ...x, qty: isNaN(v) ? 1 : Math.max(1, v) } : x)
+                              }))
+                            }}
+                            className="flex-1 text-center bg-white/5 border border-white/10 rounded-xl py-1.5 text-base font-bold text-white focus:outline-none focus:border-violet-500/50"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setEditingItem(prev => ({
+                              ...prev,
+                              _cloneSizes: prev._cloneSizes.map((x, i) => i === idx ? { ...x, qty: (parseInt(x.qty, 10) || 1) + 1 } : x)
+                            }))}
+                            className="w-9 h-9 rounded-xl bg-violet-500/20 border border-violet-500/40 text-violet-200 text-lg font-bold flex items-center justify-center active:scale-95"
+                          >+</button>
+                          <button
+                            type="button"
+                            onClick={() => setEditingItem(prev => ({
+                              ...prev,
+                              _cloneSizes: prev._cloneSizes.filter((_, i) => i !== idx)
+                            }))}
+                            className="w-9 h-9 rounded-xl text-slate-400 hover:text-red-400 active:scale-95 text-xl"
+                            aria-label="Remove"
+                          >×</button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {!cloneSizePickerOpen ? (
+                    <button
+                      type="button"
+                      onClick={() => setCloneSizePickerOpen(true)}
+                      className="w-full py-2.5 rounded-xl bg-violet-500/15 border border-dashed border-violet-500/40 text-violet-300 text-sm font-semibold active:scale-[0.98] transition-all"
+                    >
+                      + Add Size
+                    </button>
+                  ) : (
+                    <div className="bg-white/5 border border-white/10 rounded-2xl p-2">
+                      <div className="grid grid-cols-4 gap-2">
+                        {SIZES.filter(s => s !== editingItem.size && !(editingItem._cloneSizes || []).some(c => c.size === s)).map(s => (
+                          <button
+                            key={s}
+                            type="button"
+                            onClick={() => {
+                              setEditingItem(prev => ({
+                                ...prev,
+                                _cloneSizes: [...(prev._cloneSizes || []), { size: s, qty: 1 }],
+                              }))
+                              setCloneSizePickerOpen(false)
+                            }}
+                            className="py-2 rounded-lg text-sm font-bold bg-white/10 border border-white/10 text-white/80 active:scale-95"
+                          >
+                            {s}
+                          </button>
+                        ))}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setCloneSizePickerOpen(false)}
+                        className="w-full mt-2 text-xs text-slate-400 underline"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Category */}
               <div className="w-full max-w-sm mb-3">
@@ -981,9 +1467,20 @@ export default function KickstartSort() {
                 </div>
               </div>
 
-              {/* Notes */}
+              {/* Title */}
               <div className="w-full max-w-sm mb-3">
-                <label className="text-slate-400 text-xs uppercase tracking-wider mb-1 block">Notes</label>
+                <label className="text-slate-400 text-xs uppercase tracking-wider mb-1 block">Title</label>
+                <input
+                  type="text"
+                  value={editingItem.title || ''}
+                  onChange={e => setEditingItem(prev => ({ ...prev, title: e.target.value }))}
+                  className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3 text-white text-sm placeholder-slate-500 focus:outline-none focus:border-cyan-500/50 focus:ring-4 focus:ring-cyan-500/10 transition-all"
+                />
+              </div>
+
+              {/* Description */}
+              <div className="w-full max-w-sm mb-3">
+                <label className="text-slate-400 text-xs uppercase tracking-wider mb-1 block">Description</label>
                 <input
                   type="text"
                   value={editingItem.notes || ''}
@@ -991,15 +1488,51 @@ export default function KickstartSort() {
                   className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3 text-white text-sm placeholder-slate-500 focus:outline-none focus:border-cyan-500/50 focus:ring-4 focus:ring-cyan-500/10 transition-all"
                 />
               </div>
+
+              {/* Reset Whatnot listing status — only when at least one of the
+                  edited rows is currently flagged as listed. */}
+              {(() => {
+                const ids = Array.isArray(editingItem._ids) ? editingItem._ids : [editingItem.id]
+                const listedCount = allItems.filter(i => ids.includes(i.id) && i.whatnot_listed_at).length
+                if (listedCount === 0) return null
+                return (
+                  <div className="w-full max-w-sm mb-3">
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        if (!confirm(`Reset ${listedCount} item${listedCount !== 1 ? 's' : ''} to unlisted? Use this only if you deleted the Whatnot listing — these items will re-appear in your next CSV export.`)) return
+                        await handleResetListed(ids.filter(id => {
+                          const item = allItems.find(i => i.id === id)
+                          return item?.whatnot_listed_at
+                        }))
+                      }}
+                      className="w-full py-2 rounded-2xl bg-pink-500/10 border border-pink-500/30 text-pink-300 text-sm font-semibold hover:bg-pink-500/20 active:scale-[0.98] transition-all"
+                    >
+                      Reset {listedCount} {listedCount === 1 ? 'item' : 'items'} to unlisted
+                    </button>
+                  </div>
+                )
+              })()}
             </div>
           </div>
 
-          {/* Save button */}
-          <div className="shrink-0 p-4 pt-2">
+          {/* Save + Delete buttons */}
+          <div className="shrink-0 p-4 pt-2 flex gap-2">
+            <button
+              onClick={handleEditDelete}
+              disabled={saving}
+              className={`px-5 py-4 rounded-3xl font-bold text-base transition-all shrink-0 ${
+                saving
+                  ? 'bg-white/10 text-white/50 cursor-wait'
+                  : 'bg-red-500/15 border border-red-500/40 text-red-300 hover:bg-red-500/25 active:scale-[0.98]'
+              }`}
+            >
+              Delete
+            </button>
             <button
               onClick={handleEditSave}
               disabled={saving}
-              className={`w-full py-4 rounded-3xl font-bold text-xl transition-all ${
+              className={`flex-1 py-4 rounded-3xl font-bold text-xl transition-all ${
                 saving
                   ? 'bg-white/10 text-white/50 cursor-wait'
                   : 'bg-gradient-to-r from-orange-500 to-orange-600 text-white shadow-2xl shadow-orange-500/30 hover:scale-[1.02] active:scale-[0.98]'
@@ -1017,28 +1550,28 @@ export default function KickstartSort() {
           <div className="flex-1 overflow-y-auto p-4">
             <div className="flex flex-col items-center">
 
-            {/* AI Garment Identification — optional */}
+            {/* Item photo */}
             <div className="w-full max-w-sm mb-4">
               <input
-                ref={identifyPhotoRef}
+                ref={itemPhotoRef}
                 type="file"
                 accept="image/*"
                 capture="environment"
-                onChange={handleIdentifyCapture}
+                onChange={handleItemPhotoCapture}
                 className="hidden"
               />
               <input
-                ref={identifyLibraryRef}
+                ref={itemLibraryRef}
                 type="file"
                 accept="image/*"
-                onChange={handleIdentifyCapture}
+                onChange={handleItemPhotoCapture}
                 className="hidden"
               />
 
-              {!identifying && !identifyResult && !identifyError && !itemPhoto && (
+              {!itemPhoto && (
                 <div className="flex gap-2 w-full">
                   <button
-                    onClick={() => identifyPhotoRef.current?.click()}
+                    onClick={() => itemPhotoRef.current?.click()}
                     className="flex-1 flex items-center justify-center gap-2 bg-pink-500/20 border-2 border-dashed border-pink-400/40 rounded-xl px-3 py-5 text-pink-300 font-semibold hover:bg-pink-500/30 transition-all active:scale-95"
                   >
                     <svg className="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1048,7 +1581,7 @@ export default function KickstartSort() {
                     Take Photo
                   </button>
                   <button
-                    onClick={() => identifyLibraryRef.current?.click()}
+                    onClick={() => itemLibraryRef.current?.click()}
                     className="flex items-center justify-center gap-2 bg-pink-500/10 border-2 border-dashed border-pink-400/20 rounded-xl px-4 py-5 text-pink-300/70 font-semibold hover:bg-pink-500/20 transition-all active:scale-95"
                   >
                     <svg className="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1059,82 +1592,15 @@ export default function KickstartSort() {
                 </div>
               )}
 
-              {identifying && (
-                <div className="w-full flex items-center gap-3 bg-cyan-500/10 border border-cyan-400/20 rounded-xl px-4 py-3">
-                  {itemPhoto && (
+              {itemPhoto && (
+                <div className="w-full rounded-xl px-3 py-3 border bg-emerald-500/10 border-emerald-400/30">
+                  <div className="flex items-center gap-3">
                     <div className="w-14 h-14 rounded-lg overflow-hidden border border-white/20 shrink-0">
                       <img src={itemPhoto} alt="Item" className="w-full h-full object-cover" />
                     </div>
-                  )}
-                  <div className="flex items-center gap-2">
-                    <div className="w-4 h-4 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin" />
-                    <span className="text-cyan-300 font-semibold text-sm">Identifying...</span>
-                  </div>
-                </div>
-              )}
-
-              {identifyResult && (
-                <div className={`w-full rounded-xl px-3 py-3 border ${
-                  identifyResult.confidence === 'high'
-                    ? 'bg-emerald-500/10 border-emerald-400/30'
-                    : identifyResult.confidence === 'none' || !identifyResult.product_name
-                      ? 'bg-red-500/10 border-red-400/30'
-                      : 'bg-amber-500/10 border-amber-400/30'
-                }`}>
-                  {/* Row 1: Photo thumbnail + confidence/MSRP + retake */}
-                  <div className="flex items-center gap-3 mb-2">
-                    {itemPhoto && (
-                      <div className="w-11 h-11 rounded-lg overflow-hidden border border-white/20 shrink-0">
-                        <img src={itemPhoto} alt="Item" className="w-full h-full object-cover" />
-                      </div>
-                    )}
-                    <div className="flex-1 min-w-0">
-                      {identifyResult.product_name ? (
-                        <p className="text-slate-400 text-xs">
-                          {identifyResult.confidence === 'high' ? '✓ High confidence' :
-                           identifyResult.confidence === 'medium' ? '~ Medium — verify' : '? Low — verify'}
-                          {identifyResult.msrp > 0 && ` · MSRP $${identifyResult.msrp}`}
-                        </p>
-                      ) : (
-                        <p className="text-red-300 text-sm font-semibold">Couldn't identify</p>
-                      )}
-                    </div>
+                    <p className="flex-1 text-emerald-300 text-sm font-semibold">Photo saved</p>
                     <button
-                      onClick={() => { setIdentifyResult(null); setIdentifyError(null); setItemPhoto(null) }}
-                      className="text-white/40 hover:text-white/70 text-xs font-semibold shrink-0 px-2 py-1"
-                    >
-                      Retake
-                    </button>
-                  </div>
-                  {/* Row 2: Full-width editable product name */}
-                  {identifyResult.product_name ? (
-                    <input
-                      type="text"
-                      value={notes}
-                      onChange={e => setNotes(e.target.value)}
-                      className="w-full bg-white/5 text-white font-semibold text-sm rounded-lg px-3 py-2 border border-white/10 focus:border-cyan-400/50 focus:outline-none transition-colors"
-                      placeholder="Product name..."
-                    />
-                  ) : (
-                    <p className="text-slate-500 text-xs">Enter details manually below</p>
-                  )}
-                </div>
-              )}
-
-              {identifyError && (
-                <div className={`w-full rounded-xl px-4 py-3 border bg-red-500/10 border-red-400/30`}>
-                  <div className="flex items-start gap-3">
-                    {itemPhoto && (
-                      <div className="w-14 h-14 rounded-lg overflow-hidden border border-white/20 shrink-0">
-                        <img src={itemPhoto} alt="Item" className="w-full h-full object-cover" />
-                      </div>
-                    )}
-                    <div className="min-w-0 flex-1">
-                      <p className="text-red-300 text-sm">{identifyError}</p>
-                      <p className="text-slate-500 text-[11px] mt-1">Photo saved — enter details manually</p>
-                    </div>
-                    <button
-                      onClick={() => { setIdentifyError(null); setItemPhoto(null) }}
+                      onClick={() => setItemPhoto(null)}
                       className="text-white/40 hover:text-white/70 text-xs font-semibold shrink-0 px-2 py-1"
                     >
                       Retake
@@ -1144,23 +1610,65 @@ export default function KickstartSort() {
               )}
             </div>
 
-            {/* Size buttons */}
+            {/* Size buttons (multi-select with per-size quantity) */}
             <div className="w-full max-w-sm mb-4">
               <label className="text-slate-400 text-xs uppercase tracking-wider mb-2 block">Size *</label>
               <div className="grid grid-cols-4 gap-2">
-                {SIZES.map(s => (
-                  <button
-                    key={s}
-                    onClick={() => setSize(size === s ? '' : s)}
-                    className={`py-2.5 rounded-xl text-sm font-bold transition-all active:scale-95 ${
-                      size === s
-                        ? 'bg-pink-500 text-white'
-                        : 'bg-white/10 text-white/60 border border-white/10'
-                    }`}
-                  >
-                    {s}
-                  </button>
-                ))}
+                {SIZES.map(s => {
+                  const qty = sizeQuantities[s] || 0
+                  const selected = qty > 0
+                  return (
+                    <div
+                      key={s}
+                      className={`rounded-xl transition-all ${
+                        selected
+                          ? 'bg-pink-500 p-1.5'
+                          : 'bg-white/10 border border-white/10'
+                      }`}
+                    >
+                      <button
+                        onClick={() =>
+                          setSizeQuantities(prev => {
+                            const next = { ...prev }
+                            if (next[s]) delete next[s]
+                            else next[s] = 1
+                            return next
+                          })
+                        }
+                        className={`w-full text-sm font-bold transition-all active:scale-95 ${
+                          selected ? 'text-white py-0.5' : 'text-white/60 py-2.5'
+                        }`}
+                      >
+                        {s}
+                      </button>
+                      {selected && (
+                        <div className="flex items-center justify-between mt-1 bg-white/20 rounded-lg">
+                          <button
+                            onClick={() =>
+                              setSizeQuantities(prev => {
+                                const cur = prev[s] || 0
+                                if (cur <= 1) return prev
+                                return { ...prev, [s]: cur - 1 }
+                              })
+                            }
+                            className="w-7 h-7 text-white text-lg font-bold flex items-center justify-center active:scale-90"
+                          >
+                            −
+                          </button>
+                          <span className="text-white text-base font-black">{qty}</span>
+                          <button
+                            onClick={() =>
+                              setSizeQuantities(prev => ({ ...prev, [s]: (prev[s] || 0) + 1 }))
+                            }
+                            className="w-7 h-7 text-white text-lg font-bold flex items-center justify-center active:scale-90"
+                          >
+                            +
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
               </div>
             </div>
 
@@ -1228,61 +1736,60 @@ export default function KickstartSort() {
               </div>
             </div>
 
-            {/* Item Description */}
+            {/* Title (Whatnot Title — product name) */}
             <div className="w-full max-w-sm mb-3">
-              <label className="text-slate-400 text-xs uppercase tracking-wider mb-1 block">Item Description (optional)</label>
+              <label className="text-slate-400 text-xs uppercase tracking-wider mb-1 block">Title *</label>
               <input
                 type="text"
-                value={notes}
-                onChange={e => setNotes(e.target.value)}
+                value={title}
+                onChange={e => setTitle(e.target.value)}
                 placeholder="e.g. Teddy Peacoat, Cargo Joggers..."
                 className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3 text-white text-sm placeholder-slate-500 focus:outline-none focus:border-cyan-500/50 focus:ring-4 focus:ring-cyan-500/10 transition-all"
               />
             </div>
 
-            {/* Quantity */}
-            <div className="flex items-center gap-5 mb-4">
-              <button
-                onClick={() => setQuantity(q => Math.max(1, q - 1))}
-                className="w-11 h-11 rounded-full bg-white/10 border border-white/20 text-white text-2xl font-bold flex items-center justify-center hover:bg-white/20 active:scale-95 transition-all"
-              >
-                −
-              </button>
+            {/* Description (Whatnot Description — free-text) */}
+            <div className="w-full max-w-sm mb-3">
+              <label className="text-slate-400 text-xs uppercase tracking-wider mb-1 block">Description *</label>
               <input
-                type="number"
-                value={quantity}
-                onChange={e => { const v = parseInt(e.target.value, 10); setQuantity(v > 0 ? v : 1) }}
-                className="w-20 text-center bg-white/5 border border-white/10 rounded-2xl py-2 text-3xl font-black text-white focus:outline-none focus:border-cyan-500/50 focus:ring-4 focus:ring-cyan-500/10 transition-all"
+                type="text"
+                value={notes}
+                onChange={e => setNotes(e.target.value)}
+                placeholder="Longer description for the listing..."
+                className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3 text-white text-sm placeholder-slate-500 focus:outline-none focus:border-cyan-500/50 focus:ring-4 focus:ring-cyan-500/10 transition-all"
               />
-              <button
-                onClick={() => setQuantity(q => q + 1)}
-                className="w-11 h-11 rounded-full bg-gradient-to-br from-pink-500 to-pink-600 text-white text-2xl font-bold flex items-center justify-center hover:scale-105 active:scale-95 transition-all shadow-lg shadow-pink-500/30"
-              >
-                +
-              </button>
             </div>
 
-            {quantity > 1 && (
-              <p className="text-slate-400 text-sm mb-2">
-                Total: <span className="text-white font-bold">${(getCost() * quantity).toFixed(2)}</span> for {quantity} items
-              </p>
-            )}
+            {(() => {
+              const totalQty = Object.values(sizeQuantities).reduce((s, v) => s + v, 0)
+              return totalQty > 1 ? (
+                <p className="text-slate-400 text-sm mb-2">
+                  Total: <span className="text-white font-bold">${(getCost() * totalQty).toFixed(2)}</span> for {totalQty} items
+                </p>
+              ) : null
+            })()}
           </div>
           </div>
 
           {/* Save button — always visible at bottom */}
           <div className="shrink-0 p-4 pt-2">
+            {(() => {
+              const totalQty = Object.values(sizeQuantities).reduce((s, v) => s + v, 0)
+              const disabled = saving || !itemPhoto || !description || !condition || !color || totalQty === 0 || !msrp || !title.trim() || !notes.trim()
+              return (
             <button
               onClick={handleSave}
-              disabled={saving || !itemPhoto || !description || !condition || !color || !size || !msrp}
+              disabled={disabled}
               className={`w-full py-4 rounded-3xl font-bold text-xl transition-all ${
-                saving || !itemPhoto || !description || !condition || !color || !size || !msrp
+                disabled
                   ? 'bg-white/10 text-white/50 cursor-not-allowed'
                   : 'bg-gradient-to-r from-pink-500 to-pink-600 text-white shadow-2xl shadow-pink-500/30 hover:scale-[1.02] active:scale-[0.98]'
               }`}
             >
-              {saving ? 'Saving...' : quantity > 1 ? `Save ${quantity} Items` : 'Save Item'}
+              {saving ? 'Saving...' : totalQty > 1 ? `Save ${totalQty} Items` : 'Save Item'}
             </button>
+              )
+            })()}
           </div>
         </div>
       )}

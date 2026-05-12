@@ -997,15 +997,22 @@ function ExpenseUpload() {
     Papa.parse(file, {
       header: true, skipEmptyLines: true,
       complete: async (results) => {
-        // Only keep EXPENSES and PAYROLL rows
+        // Only keep EXPENSES, PAYROLL, and sourcing-related rows
+        const normalizeCategory = (raw) => {
+          const c = (raw || '').toUpperCase().trim()
+          // Co-pilot may label sourcing payroll with spaces/dashes — collapse to canonical token
+          if (c === 'PAYROLL - SOURCING FEES' || c === 'PAYROLL-SOURCING FEES' || c === 'PAYROLL SOURCING FEES' || c === 'PAYROLL_SOURCING') return 'PAYROLL_SOURCING'
+          return c
+        }
         const parsed = results.data.map(row => ({
           date: getField(row, 'date', 'Date') || null,
           description: getField(row, 'name', 'Description', 'Vendor') || '',
           amount: parseFloat((getField(row, 'amount', 'Amount') || '0').toString().replace(/[$,]/g, '')) || 0,
-          category: (getField(row, 'category', 'Category') || '').toUpperCase()
-        })).filter(e => e.date && e.amount && (e.category === 'OPEX' || e.category === 'PAYROLL' || e.category === 'SOURCING' || e.category === 'INVENTORY'))
+          category: normalizeCategory(getField(row, 'category', 'Category'))
+        })).filter(e => e.date && e.amount && ['OPEX', 'PAYROLL', 'PAYROLL_SOURCING', 'SOURCING', 'INVENTORY'].includes(e.category))
         .map(e => {
-          // Convert known Kickstart sourcing vendors from INVENTORY to SOURCING
+          // Legacy: convert known Kickstart sourcing vendors from INVENTORY to SOURCING
+          // (kept for backward compat with old Co-pilot exports; new exports should already use the right category)
           if (e.category === 'INVENTORY') {
             const desc = e.description.toLowerCase()
             const isKickstartSourcing = desc.includes('reclectic') || desc.includes('businessrsor') || desc.includes('dick')
@@ -1015,7 +1022,7 @@ function ExpenseUpload() {
         }).filter(Boolean)
 
         if (parsed.length === 0) {
-          setStatus('⚠️ No OPEX, PAYROLL, SOURCING, or INVENTORY rows found')
+          setStatus('⚠️ No OPEX, PAYROLL, PAYROLL_SOURCING, SOURCING, or INVENTORY rows found')
           return
         }
 

@@ -32,3 +32,31 @@ export function compressPhoto(file, { maxWidth = 1200, quality = 0.7 } = {}) {
 export function toBase64(dataUrl) {
   return dataUrl.split(',')[1]
 }
+
+/**
+ * Upload a base64 dataURL or plain base64 string to the Supabase Storage
+ * 'kickstart-photos' bucket and return the public URL.
+ *
+ * Path format: `${intakeId}.jpg`. Uses upsert so a re-upload overwrites.
+ *
+ * @param {object} supabase - Supabase client instance
+ * @param {number} intakeId - kickstart_intake.id, used as the filename
+ * @param {string} input - data URL (data:image/jpeg;base64,...) OR raw base64
+ */
+export async function uploadKickstartPhoto(supabase, intakeId, input) {
+  if (!input) throw new Error('No photo data')
+  const base64 = input.includes(',') ? input.split(',')[1] : input
+  const binary = atob(base64)
+  const bytes = new Uint8Array(binary.length)
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
+  const blob = new Blob([bytes], { type: 'image/jpeg' })
+
+  const path = `${intakeId}.jpg`
+  const { error } = await supabase.storage
+    .from('kickstart-photos')
+    .upload(path, blob, { upsert: true, contentType: 'image/jpeg' })
+  if (error) throw error
+
+  const { data } = supabase.storage.from('kickstart-photos').getPublicUrl(path)
+  return data.publicUrl
+}
