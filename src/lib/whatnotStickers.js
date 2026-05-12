@@ -3,13 +3,13 @@
  *
  * Produces a multi-page PDF sized for 2" x 1" thermal labels (Rollo etc.) —
  * one page per sticker, one sticker per physical intake unit. All units in
- * the same Whatnot listing group share the same SKU/barcode, so e.g. 5 of
- * the same shirt produces 5 identical stickers.
+ * the same Whatnot listing group share the same SKU/barcode.
  *
  * Each sticker:
- *   - Brand + size + condition (small top line)
- *   - Code 128 barcode (center, large)
- *   - Human-readable SKU below barcode
+ *   - Title with size (top, bold) — identifies which listing this is
+ *   - Color · Condition (small second line)
+ *   - Code 128 barcode (center band)
+ *   - Human-readable SKU (bottom)
  */
 
 import { jsPDF } from 'jspdf'
@@ -19,10 +19,8 @@ import bwipjs from 'bwip-js'
 const W = 144
 const H = 72
 const PAD_X = 6
-const PAD_Y = 4
 
 function renderBarcodeDataUrl(sku) {
-  // Render Code 128 barcode to canvas, return as PNG data URL for embedding.
   const canvas = document.createElement('canvas')
   bwipjs.toCanvas(canvas, {
     bcid: 'code128',
@@ -35,42 +33,76 @@ function renderBarcodeDataUrl(sku) {
   return canvas.toDataURL('image/png')
 }
 
+// Shrink font size so the rendered text fits within maxWidth points.
+// Returns the largest size in [minSize, startSize] that fits.
+function fitFontSize(doc, text, startSize, minSize, maxWidth) {
+  for (let s = startSize; s >= minSize; s -= 0.5) {
+    doc.setFontSize(s)
+    if (doc.getTextWidth(text) <= maxWidth) return s
+  }
+  return minSize
+}
+
+function buildTitleLine(u) {
+  return ((u.title || u.brand || '').trim()) || 'Untitled'
+}
+
+function buildSubLine(u) {
+  // Size, color, condition — the trio that disambiguates listings. Size
+  // lives here (not in title) so a long title can truncate without dropping
+  // the most important matching field.
+  const parts = []
+  if (u.size && u.size !== 'One Size') parts.push(u.size)
+  if (u.color) parts.push(u.color)
+  if (u.condition) parts.push(u.condition)
+  return parts.join('  ·  ')
+}
+
 /**
  * Generate the sticker PDF and trigger a browser download.
  *
  * @param {Array} units - one entry per physical sticker to print.
- *   Each: { sku, brand, size, condition }
+ *   Each: { sku, title, brand, size, color, condition }
  * @param {string} filename - PDF filename
  */
 export function downloadStickerPdf(units, filename = 'whatnot-stickers.pdf') {
   if (!units.length) return
 
-  // First page sized to label; subsequent pages added with same size.
   const doc = new jsPDF({ unit: 'pt', format: [W, H], orientation: 'landscape' })
+  const innerW = W - PAD_X * 2
 
   units.forEach((u, i) => {
     if (i > 0) doc.addPage([W, H], 'landscape')
 
-    // Top line: brand · size · condition
-    const topParts = [u.brand, u.size, u.condition].filter(Boolean)
-    if (topParts.length) {
-      doc.setFontSize(7)
-      doc.setFont('helvetica', 'normal')
-      const top = topParts.join('  ·  ')
-      doc.text(top, W / 2, PAD_Y + 6, { align: 'center', baseline: 'middle' })
+    // Title line — bold, shrinks (8 → 6pt) if long, truncates with ellipsis at min size
+    doc.setFont('helvetica', 'bold')
+    let title = buildTitleLine(u)
+    const titleSize = fitFontSize(doc, title, 8, 6, innerW)
+    doc.setFontSize(titleSize)
+    if (doc.getTextWidth(title) > innerW) {
+      while (title.length > 4 && doc.getTextWidth(title + '…') > innerW) title = title.slice(0, -1)
+      title += '…'
+    }
+    doc.text(title, W / 2, 10, { align: 'center', baseline: 'middle' })
+
+    // Sub line — size · color · condition
+    const sub = buildSubLine(u)
+    if (sub) {
+      doc.setFont('helvetica', 'bold')
+      doc.setFontSize(6.5)
+      doc.text(sub, W / 2, 19, { align: 'center', baseline: 'middle' })
     }
 
-    // Barcode (Code 128, centered horizontally, occupies middle band)
+    // Barcode — center band
     const barcodeImg = renderBarcodeDataUrl(u.sku)
-    const bcW = W - PAD_X * 2
-    const bcH = 30
-    const bcY = (H - bcH) / 2 - 2
-    doc.addImage(barcodeImg, 'PNG', PAD_X, bcY, bcW, bcH)
+    const bcH = 28
+    const bcY = 24
+    doc.addImage(barcodeImg, 'PNG', PAD_X, bcY, innerW, bcH)
 
-    // Human-readable SKU under the barcode (large, monospace-feeling)
-    doc.setFontSize(10)
+    // SKU — bottom, bold
+    doc.setFontSize(9)
     doc.setFont('helvetica', 'bold')
-    doc.text(`SKU ${u.sku}`, W / 2, H - PAD_Y - 4, { align: 'center', baseline: 'middle' })
+    doc.text(`SKU ${u.sku}`, W / 2, H - 8, { align: 'center', baseline: 'middle' })
   })
 
   doc.save(filename)

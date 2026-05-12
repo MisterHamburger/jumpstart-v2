@@ -256,8 +256,10 @@ export default function KickstartSort() {
       }
       const units = withSku.map(i => ({
         sku: i.whatnot_sku,
+        title: i.title,
         brand: i.brand,
         size: i.size,
+        color: i.color,
         condition: i.condition,
       }))
       const stamp = new Date().toISOString().slice(0, 10)
