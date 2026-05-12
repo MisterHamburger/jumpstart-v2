@@ -262,10 +262,9 @@ export default function KickstartSort() {
         color: i.color,
         condition: i.condition,
         msrp: i.msrp,
-        photo_url: i.photo_url,
       }))
       const stamp = new Date().toISOString().slice(0, 10)
-      await downloadStickerPdf(units, `whatnot-stickers-${stamp}.pdf`)
+      downloadStickerPdf(units, `whatnot-stickers-${stamp}.pdf`)
     } catch (err) {
       console.error('Sticker print error:', err)
       alert('Sticker print failed: ' + (err?.message || err))
