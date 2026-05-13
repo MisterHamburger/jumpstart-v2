@@ -99,11 +99,17 @@ function groupShowRows(rows, mode) {
   const buckets = new Map()
   for (const row of rows) {
     const productName = getField(row, 'product name', 'Product Name') || ''
-    const match = productName.match(/#(\d+)/)
-    if (!match) continue
+    if (!productName) continue
     const lowerName = productName.toLowerCase()
     if (lowerName.includes('gift card') || lowerName.includes('account credit') || lowerName.includes('store credit')) continue
-    const n = parseInt(match[1])
+    const match = productName.match(/#(\d+)/)
+    // Whatnot omits "#1" when a listing has quantity 1, so a row may have no
+    // #N at all. Jumpstart-style (mode='n') still keys on #N — drop those
+    // rare no-#N rows since live-typed Jumpstart listings always have #N in
+    // practice. Kickstart-style (mode='name') keys on the full product_name
+    // which is already unique without needing #N.
+    const n = match ? parseInt(match[1]) : null
+    if (mode === 'n' && n == null) continue
     const key = mode === 'name' ? productName : String(n)
     if (!buckets.has(key)) buckets.set(key, { key, product_name: productName, n, rows: [] })
     buckets.get(key).rows.push(row)
