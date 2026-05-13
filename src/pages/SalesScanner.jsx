@@ -1597,9 +1597,16 @@ export default function SalesScanner() {
                       }
                     }}
                   >
-                    <div className="flex items-center justify-between">
-                      <p className="text-indigo-300 font-bold text-2xl">#{item.listing_number}</p>
-                      <p className="text-indigo-400/60 text-sm">tap to scan</p>
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="min-w-0 flex-1">
+                        <p className="text-white font-semibold text-base leading-snug break-words">
+                          {item.product_name || `Listing ${item.listing_number}`}
+                        </p>
+                        <p className="text-indigo-400/60 text-xs mt-1">tap to scan</p>
+                      </div>
+                      <span className="text-indigo-300 font-bold text-xs whitespace-nowrap bg-indigo-500/15 px-2 py-1 rounded-lg border border-indigo-500/30">
+                        #{item.listing_number}
+                      </span>
                     </div>
                   </div>
                 ))
