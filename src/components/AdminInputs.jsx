@@ -87,6 +87,30 @@ function parseDollar(val) {
   return parseFloat(val.toString().replace(/[$,]/g, '')) || 0
 }
 
+// ── Shared: Group show-report rows into per-listing buckets ─────
+// mode='n':    group by parsed #N integer. Used for Jumpstart shows where
+//              each product is live-typed and gets a globally-unique #N.
+// mode='name': group by full product_name (including #N). Used for Kickstart
+//              shows where bulk-imported listings let multiple products
+//              share the same #N (each product has its own #1..#K).
+//
+// Returns: [{ key, product_name, n, rows }] in insertion order.
+function groupShowRows(rows, mode) {
+  const buckets = new Map()
+  for (const row of rows) {
+    const productName = getField(row, 'product name', 'Product Name') || ''
+    const match = productName.match(/#(\d+)/)
+    if (!match) continue
+    const lowerName = productName.toLowerCase()
+    if (lowerName.includes('gift card') || lowerName.includes('account credit') || lowerName.includes('store credit')) continue
+    const n = parseInt(match[1])
+    const key = mode === 'name' ? productName : String(n)
+    if (!buckets.has(key)) buckets.set(key, { key, product_name: productName, n, rows: [] })
+    buckets.get(key).rows.push(row)
+  }
+  return Array.from(buckets.values())
+}
+
 // ── Shared: Flexible field getter ─────────────────
 function getField(row, ...names) {
   for (const name of names) {
@@ -424,25 +448,21 @@ function ShowUpload() {
           timeOfDay = 'evening'
         }
 
-        // Group by listing to properly count valid vs failed/cancelled
-        const byListing = {}
-        for (const row of rows) {
-          const productName = getField(row, 'product name', 'Product Name') || ''
-          const match = productName.match(/#(\d+)/)
-          if (!match) continue
-          const lowerName = productName.toLowerCase()
-          if (lowerName.includes('gift card') || lowerName.includes('account credit') || lowerName.includes('store credit')) continue
-          const listing = match[1]
-          if (!byListing[listing]) byListing[listing] = []
-          byListing[listing].push(row)
-        }
+        // Group rows by listing slot.
+        // - Jumpstart: live-typed listings, #N is unique per show → group by #N.
+        // - Kickstart: bulk-imported listings let multiple products share #N
+        //   (each product has its own #1..#K). Group by full product_name
+        //   (including "#N" suffix) so each unique listing slot becomes one
+        //   show_item.
+        const groupingMode = channel === 'Kickstart' ? 'name' : 'n'
+        const groups = groupShowRows(rows, groupingMode)
 
         // Count valid, failed, cancelled
         let validCount = 0
         let failedCount = 0
         let cancelledCount = 0
-        for (const [listing, listingRows] of Object.entries(byListing)) {
-          const statuses = listingRows.map(r => (getField(r, 'cancelled or failed', 'Status') || '').toLowerCase().trim())
+        for (const g of groups) {
+          const statuses = g.rows.map(r => (getField(r, 'cancelled or failed', 'Status') || '').toLowerCase().trim())
           if (statuses.every(s => s === 'cancelled')) cancelledCount++
           else if (statuses.every(s => s === 'failed')) failedCount++
           else validCount++
@@ -479,39 +499,35 @@ function ShowUpload() {
       return
     }
 
-    // Group by listing number
-    const byListing = {}
-    for (const row of rows) {
-      const productName = getField(row, 'product name', 'Product Name') || ''
-      const match = productName.match(/#(\d+)/)
-      if (!match) continue
-      const listingNum = parseInt(match[1])
-      const lowerName = productName.toLowerCase()
-      if (lowerName.includes('gift card') || lowerName.includes('account credit') || lowerName.includes('store credit')) continue
-      if (!byListing[listingNum]) byListing[listingNum] = []
-      byListing[listingNum].push(row)
-    }
+    // Group rows by listing slot (channel-aware — see groupShowRows comment).
+    // For Kickstart we also assign a synthetic sequential listing_number so
+    // bulk-imported listings that share #N across products don't collide on
+    // (show_id, listing_number).
+    const groupingMode = channel === 'Kickstart' ? 'name' : 'n'
+    const groups = groupShowRows(rows, groupingMode)
 
     const showItems = []
+    const skuPerListing = []   // { listing_number, sku, placed_at }
     let validCount = 0
+    let seq = 1
 
-    for (const [listingStr, listingRows] of Object.entries(byListing)) {
-      const listing = parseInt(listingStr)
-      const statuses = listingRows.map(r => (getField(r, 'cancelled or failed', 'Status') || '').toLowerCase().trim())
+    for (const g of groups) {
+      const statuses = g.rows.map(r => (getField(r, 'cancelled or failed', 'Status') || '').toLowerCase().trim())
       let itemStatus = 'valid'
       if (statuses.every(s => s === 'cancelled')) itemStatus = 'cancelled'
       else if (statuses.every(s => s === 'failed')) itemStatus = 'failed'
 
-      const bestRow = listingRows.find(r => {
+      const bestRow = g.rows.find(r => {
         const s = (getField(r, 'cancelled or failed', 'Status') || '').toLowerCase()
         return !s || (s !== 'failed' && s !== 'cancelled')
-      }) || listingRows[0]
+      }) || g.rows[0]
 
       const soldPrice = parseDollar(getField(bestRow, 'sold price', 'Sold Price', 'original item price', 'Original Item Price'))
       const couponAmt = parseDollar(getField(bestRow, 'coupon price', 'Coupon Amount'))
+      const listingNumber = groupingMode === 'name' ? seq++ : g.n
 
       showItems.push({
-        show_id: showData.id, listing_number: listing,
+        show_id: showData.id, listing_number: listingNumber,
         product_name: getField(bestRow, 'product name', 'Product Name') || '',
         buyer_paid: soldPrice, coupon_code: getField(bestRow, 'coupon code', 'Coupon Code') || null,
         coupon_amount: couponAmt, original_hammer: soldPrice + couponAmt,
@@ -519,6 +535,17 @@ function ShowUpload() {
         whatnot_order_id: getField(bestRow, 'order id', 'Order ID') || null
       })
       if (itemStatus === 'valid') validCount++
+
+      if (channel === 'Kickstart' && itemStatus === 'valid') {
+        const sku = (getField(bestRow, 'sku', 'SKU') || '').toString().trim()
+        if (sku && /^\d+$/.test(sku)) {
+          skuPerListing.push({
+            listing_number: listingNumber,
+            sku,
+            placed_at: getField(bestRow, 'placed at', 'Placed At') || null,
+          })
+        }
+      }
     }
 
     for (let i = 0; i < showItems.length; i += 500) {
@@ -527,9 +554,74 @@ function ShowUpload() {
     }
 
     await supabase.from('shows').update({ total_items: validCount }).eq('id', showData.id)
+
+    // Kickstart: auto-link SKU-bearing rows to kickstart_intake by creating
+    // kickstart_sold_scans. The SKU we put in the Whatnot CSV is the
+    // group-representative intake.id; every other intake in that group shares
+    // the same whatnot_sku. For each sold unit we claim one unsold intake
+    // from the group's pool. Anything left unmatched stays as a row the user
+    // can still scan in manually post-show.
+    let autoLinked = 0
+    if (channel === 'Kickstart' && skuPerListing.length > 0) {
+      const skus = Array.from(new Set(skuPerListing.map(s => s.sku)))
+      const { data: candidates } = await supabase
+        .from('kickstart_intake')
+        .select('id, whatnot_sku, upc')
+        .in('whatnot_sku', skus)
+        .order('id', { ascending: true })
+
+      // Filter out intakes already claimed by prior scans (across all shows
+      // so we don't double-assign the same physical unit).
+      const candIds = (candidates || []).map(c => c.id)
+      let claimed = new Set()
+      if (candIds.length > 0) {
+        const { data: priorScans } = await supabase
+          .from('kickstart_sold_scans')
+          .select('intake_id')
+          .in('intake_id', candIds)
+          .not('intake_id', 'is', null)
+        claimed = new Set((priorScans || []).map(s => s.intake_id))
+      }
+      const poolBySku = new Map()
+      for (const c of (candidates || [])) {
+        if (claimed.has(c.id)) continue
+        if (!poolBySku.has(c.whatnot_sku)) poolBySku.set(c.whatnot_sku, [])
+        poolBySku.get(c.whatnot_sku).push(c)
+      }
+
+      const newScans = []
+      for (const s of skuPerListing) {
+        const pool = poolBySku.get(s.sku)
+        if (!pool || pool.length === 0) continue
+        const intake = pool.shift()
+        newScans.push({
+          show_id: showData.id,
+          listing_number: String(s.listing_number),
+          barcode: intake.upc || s.sku,
+          intake_id: intake.id,
+          scanned_at: s.placed_at,
+          scanned_by: 'auto-import',
+        })
+      }
+
+      for (let i = 0; i < newScans.length; i += 500) {
+        const batch = newScans.slice(i, i + 500)
+        const { error } = await supabase.from('kickstart_sold_scans').insert(batch)
+        if (error) {
+          console.error('SKU auto-link failed:', error)
+          break
+        }
+        autoLinked += batch.length
+      }
+      if (autoLinked > 0) {
+        await supabase.from('shows').update({ scanned_count: autoLinked }).eq('id', showData.id)
+      }
+    }
+
     const failed = showItems.filter(i => i.status === 'failed').length
     const cancelled = showItems.filter(i => i.status === 'cancelled').length
-    setStatus(`✅ "${showName}" — ${validCount} scannable, ${failed} failed, ${cancelled} cancelled`)
+    const autoNote = autoLinked > 0 ? `, ${autoLinked} auto-linked from SKU` : ''
+    setStatus(`✅ "${showName}" — ${validCount} scannable, ${failed} failed, ${cancelled} cancelled${autoNote}`)
     setDetected(null)
     setPendingFile(null)
     refreshShows()
