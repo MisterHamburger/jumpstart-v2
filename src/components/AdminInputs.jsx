@@ -639,8 +639,17 @@ function ShowUpload() {
     }
     
     setStatus('Deleting show...')
-    // Delete scans first
-    await supabase.from('jumpstart_sold_scans').delete().eq('show_id', show.id)
+    // Delete scans first — pick the table that matches this show's channel.
+    // Falls back to clearing both when channel is unknown so a stray row in
+    // the wrong table can never block the show delete.
+    if (show.channel === 'Kickstart') {
+      await supabase.from('kickstart_sold_scans').delete().eq('show_id', show.id)
+    } else if (show.channel === 'Jumpstart') {
+      await supabase.from('jumpstart_sold_scans').delete().eq('show_id', show.id)
+    } else {
+      await supabase.from('kickstart_sold_scans').delete().eq('show_id', show.id)
+      await supabase.from('jumpstart_sold_scans').delete().eq('show_id', show.id)
+    }
     // Delete show items
     await supabase.from('show_items').delete().eq('show_id', show.id)
     // Delete the show
