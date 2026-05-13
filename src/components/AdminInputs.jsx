@@ -383,6 +383,97 @@ function ManifestUpload() {
         
         {status && <p className="text-sm text-slate-300 mt-3">{status}</p>}
       </div>
+
+      <PhotoUrlEnricher />
+    </div>
+  )
+}
+
+// ── PHOTO URL ENRICHER (CSV-in / CSV-out, no DB writes) ──
+// Reads a J.Crew / Madewell manifest CSV and fills column "Photo URL"
+// using the vendor's Scene7 image facade pattern. Saves the enriched
+// CSV back to the user's downloads so they can spot-check before we
+// commit to baking this into the manifest import.
+function buildPhotoUrl(vendor, style, color) {
+  const s = (style || '').toString().trim().toUpperCase()
+  const c = (color || '').toString().trim().toUpperCase()
+  if (!s || !c) return ''
+  const v = (vendor || '').toLowerCase()
+  if (v.includes('madewell')) {
+    return `https://www.madewell.com/s7-img-facade/${s}_${c}`
+  }
+  if (v.includes('crew')) {
+    return `https://www.jcrew.com/s7-img-facade/${s}_${c}`
+  }
+  return ''
+}
+
+function PhotoUrlEnricher() {
+  const [status, setStatus] = useState('')
+  const [progress, setProgress] = useState(null)
+
+  function handleFile(file) {
+    setStatus('Parsing CSV…')
+    setProgress(0)
+    Papa.parse(file, {
+      header: true, skipEmptyLines: true,
+      complete: (results) => {
+        const rows = results.data
+        if (rows.length === 0) { setStatus('❌ No rows in CSV.'); return }
+        // Resolve the Photo URL header key as it appears in the source CSV
+        // (might be "Photo URL", "photo url", or absent — append if missing).
+        const sample = rows[0]
+        const photoKey = Object.keys(sample).find(k => k.trim().toLowerCase() === 'photo url') || 'Photo URL'
+        let filled = 0, blank = 0
+        for (const row of rows) {
+          const vendor = getField(row, 'Vendor', 'Brand') || ''
+          const style = getField(row, 'STYLE', 'Style') || ''
+          const color = getField(row, 'COLOR', 'Color') || ''
+          const url = buildPhotoUrl(vendor, style, color)
+          row[photoKey] = url
+          if (url) filled++; else blank++
+        }
+        setProgress(70)
+        // Preserve original column order. Papa.unparse will use the first
+        // row's keys; ensure Photo URL is included by inserting at end if
+        // not already a key.
+        const columns = Object.keys(rows[0])
+        if (!columns.includes(photoKey)) columns.push(photoKey)
+        const csv = Papa.unparse({ fields: columns, data: rows })
+        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        const inName = (file.name || 'manifest').replace(/\.csv$/i, '')
+        a.href = url
+        a.download = `${inName} - with photos.csv`
+        document.body.appendChild(a)
+        a.click()
+        document.body.removeChild(a)
+        setTimeout(() => URL.revokeObjectURL(url), 100)
+        setProgress(100)
+        setStatus(`✅ Enriched ${rows.length} rows — ${filled} URLs filled, ${blank} blank (unknown vendor or missing style/color).`)
+        setTimeout(() => setProgress(null), 1500)
+      }
+    })
+  }
+
+  return (
+    <div className="relative overflow-hidden rounded-3xl glass-card p-5 shadow-xl shadow-black/30">
+      <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent" />
+      <h3 className="font-bold text-lg font-heading mb-1">Photo URL enricher</h3>
+      <p className="text-xs text-slate-500 mb-3">
+        Adds a Photo URL to each row using the vendor's Scene7 CDN pattern
+        (J.Crew / J.Crew Factory / Madewell). CSV in, enriched CSV out — no
+        DB writes. Spot-check the URLs before we bake this into the manifest
+        import.
+      </p>
+      <DropZone onFile={handleFile} label="Drop manifest CSV here or click to browse" />
+      {progress !== null && (
+        <div className="w-full bg-slate-700 rounded-full h-2 mt-3">
+          <div className="bg-cyan-500 h-2 rounded-full transition-all" style={{width: `${progress}%`}} />
+        </div>
+      )}
+      {status && <p className="text-sm text-slate-300 mt-3">{status}</p>}
     </div>
   )
 }
