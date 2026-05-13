@@ -20,6 +20,22 @@ function formatShowName(name) {
   return name
 }
 
+// For Kickstart rows, show_items.product_name is the Whatnot listing title
+// (e.g. "Free People Caravan Coat - S - $1200 MSRP #1"). Strip the trailing
+// "#N" and " - $N MSRP" suffix so the column shows the title + size cleanly.
+// For Jumpstart, item.description is the manifest description (already
+// usable); fall back to it when product_name isn't a Whatnot-style title.
+function formatItemTitle(item) {
+  const isKickstart = item.channel === 'Kickstart'
+  const pn = (item.product_name || '').trim()
+  if (isKickstart && pn) {
+    let t = pn.replace(/\s*#\d+\s*$/, '')
+    t = t.replace(/\s*-\s*\$\d+(?:\.\d+)?\s*MSRP\s*$/i, '')
+    return t.trim() || pn
+  }
+  return item.description || pn || item.category || ''
+}
+
 function formatShowNameFull(name) {
   if (!name) return 'All Shows'
   // New format: 02-19-2026-Jumpstart-Bri
@@ -606,7 +622,7 @@ export default function AdminProfitability() {
                         >
                           <td className="py-4 px-4 max-w-[280px] text-white font-medium">
                             <div className="flex items-center gap-2">
-                              <span className="truncate">{item.description || item.product_name}</span>
+                              <span className="truncate">{formatItemTitle(item)}</span>
                               {item.is_bundle && <span className="shrink-0 text-[10px] px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-400 font-semibold">Bundle</span>}
                               {(item.is_wac_cost || useWac) && <span className="shrink-0 text-[10px] px-1.5 py-0.5 rounded bg-pink-500/20 text-pink-400 font-semibold">WAC</span>}
                             </div>
