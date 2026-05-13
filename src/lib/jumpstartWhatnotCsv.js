@@ -35,7 +35,9 @@ function escapeCsvField(value) {
 // column on those manifests follows "NAME, COLORCODE, SIZE" and the NAME is
 // often truncated to fit the column (e.g. "LUDLOW JAPANESE CHINO J" where the
 // trailing "J" is what's left of "JACKET"). We pull off the last two
-// comma-separated segments and drop any 1-letter trailing fragment.
+// comma-separated segments, drop any 1-letter trailing fragment, and
+// title-case the result so "LUDLOW JAPANESE CHINO" → "Ludlow Japanese Chino"
+// (manifests come in ALL CAPS, which looks shouty on Whatnot).
 export function cleanTitle(description) {
   if (!description) return ''
   const parts = String(description).split(',').map(p => p.trim()).filter(Boolean)
@@ -47,7 +49,17 @@ export function cleanTitle(description) {
   }
   // Drop single-letter trailing word (truncation artifact)
   name = name.replace(/\s+[A-Z]$/i, '').trim()
-  return name
+  return titleCase(name)
+}
+
+// Title-case for ALL-CAPS manifest descriptions. Capitalize the first letter
+// of each whitespace-separated word, lowercase the rest. Punctuation inside
+// a word (slashes, apostrophes) is preserved.
+function titleCase(s) {
+  return s.split(/(\s+)/).map(part => {
+    if (/^\s+$/.test(part) || !part) return part
+    return part.charAt(0).toUpperCase() + part.slice(1).toLowerCase()
+  }).join('')
 }
 
 function pickCategory(row) {
@@ -91,21 +103,22 @@ function buildRow(group) {
 
   const cleanedName = cleanTitle(first.description)
   const brand = brandPrefix(first.vendor)
-  const brandPart = brand ? `${brand} - ` : ''
+  const brandPart = brand ? `${brand} ` : ''
   const sizeStr = (first.size || '').trim()
   const msrp = Number(first.msrp || 0)
   const sizeSuffix = sizeStr ? ` - ${sizeStr}` : ''
   const msrpSuffix = msrp > 0 ? ` - $${msrp.toFixed(0)} MSRP` : ''
   const title = `${brandPart}${cleanedName}${sizeSuffix}${msrpSuffix}`
 
-  // Description column on Whatnot — use cleaned name (with brand) without
+  // Description column on Whatnot — same body as title but without
   // size/MSRP since those are already in the title.
   const longDesc = `${brandPart}${cleanedName}`
 
-  // SKU = the item's UNIVERSAL ID barcode so the streamer can scan the
-  // existing J.Crew / Madewell barcode during a live show to pin the listing.
-  // Falls back to manifest.id only when a row somehow has no barcode.
-  const sku = String(first.barcode || first.barcode_raw || first.id || '')
+  // SKU = the unmodified UPC printed on the tag (barcode_raw, e.g.
+  // "099107632646"). jumpstart_manifest.barcode is normalized for our own
+  // matching (leading zeros stripped to "99107632646"), but the physical
+  // scanner reads the original 12-digit form, so SKU must match that.
+  const sku = String(first.barcode_raw || first.barcode || first.id || '')
 
   return [
     cat.category,
@@ -148,7 +161,7 @@ export function generateJumpstartWhatnotCsv(manifestRows) {
   for (const group of groups.values()) {
     group.sort((a, b) => (a.id || 0) - (b.id || 0))
     const first = group[0]
-    const sku = String(first.barcode || first.barcode_raw || first.id || '')
+    const sku = String(first.barcode_raw || first.barcode || first.id || '')
     for (const u of group) skuByManifestId.set(u.id, sku)
     listings.push({
       sku,
