@@ -56,6 +56,17 @@ function pickCategory(row) {
   return WOMENS
 }
 
+// Brand prefix for the title — "J.Crew Factory" → "Factory" (short for the
+// outlet line), "J Crew" → "J.Crew", "Madewell" → "Madewell". Anything else
+// falls back to the raw vendor string. Returned without the trailing dash.
+function brandPrefix(vendor) {
+  const v = (vendor || '').toLowerCase()
+  if (v.includes('factory')) return 'Factory'
+  if (v.includes('madewell')) return 'Madewell'
+  if (v.includes('crew')) return 'J.Crew'
+  return (vendor || '').trim()
+}
+
 /**
  * Group key: identical manifest units → one Whatnot listing.
  * Manifest rows that lack the basics (description / size) are skipped.
@@ -79,15 +90,22 @@ function buildRow(group) {
   const cat = pickCategory(first)
 
   const cleanedName = cleanTitle(first.description)
+  const brand = brandPrefix(first.vendor)
+  const brandPart = brand ? `${brand} - ` : ''
   const sizeStr = (first.size || '').trim()
   const msrp = Number(first.msrp || 0)
   const sizeSuffix = sizeStr ? ` - ${sizeStr}` : ''
   const msrpSuffix = msrp > 0 ? ` - $${msrp.toFixed(0)} MSRP` : ''
-  const title = `${cleanedName}${sizeSuffix}${msrpSuffix}`
+  const title = `${brandPart}${cleanedName}${sizeSuffix}${msrpSuffix}`
 
-  // Description column on Whatnot — use cleaned name without size/MSRP since
-  // those are already in the title. Buyers see this in the listing body.
-  const longDesc = cleanedName
+  // Description column on Whatnot — use cleaned name (with brand) without
+  // size/MSRP since those are already in the title.
+  const longDesc = `${brandPart}${cleanedName}`
+
+  // SKU = the item's UNIVERSAL ID barcode so the streamer can scan the
+  // existing J.Crew / Madewell barcode during a live show to pin the listing.
+  // Falls back to manifest.id only when a row somehow has no barcode.
+  const sku = String(first.barcode || first.barcode_raw || first.id || '')
 
   return [
     cat.category,
@@ -102,7 +120,7 @@ function buildRow(group) {
     'Not Hazmat',
     CONDITION,
     Number(first.cost_freight || 0).toFixed(2),
-    String(first.id),                                    // SKU = representative manifest.id
+    sku,                                                 // SKU = UNIVERSAL ID
     first.photo_url || '',
     '', '', '', '', '', '', '',
   ]
@@ -129,12 +147,13 @@ export function generateJumpstartWhatnotCsv(manifestRows) {
   const listings = []
   for (const group of groups.values()) {
     group.sort((a, b) => (a.id || 0) - (b.id || 0))
-    const sku = String(group[0].id)
-    for (const u of group) skuByManifestId.set(u.id, sku)
     const first = group[0]
+    const sku = String(first.barcode || first.barcode_raw || first.id || '')
+    for (const u of group) skuByManifestId.set(u.id, sku)
     listings.push({
       sku,
       title: cleanTitle(first.description),
+      brand: brandPrefix(first.vendor),
       size: first.size || '',
       color: first.color || '',
       quantity: group.length,

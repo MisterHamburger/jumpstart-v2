@@ -196,7 +196,7 @@ function ManifestUpload() {
     try {
       const rows = await fetchAll(() => supabase
         .from('jumpstart_manifest')
-        .select('id, description, color, size, vendor, gender, msrp, cost_freight, photo_url')
+        .select('id, barcode, barcode_raw, description, color, size, vendor, gender, msrp, cost_freight, photo_url')
         .eq('load_id', load.id)
         .order('id', { ascending: true }))
       if (!rows || rows.length === 0) {
