@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import Papa from 'papaparse'
 import { supabase, fetchAll } from '../lib/supabase'
 import { normalizeBarcode } from '../lib/barcodes'
+import { generateJumpstartWhatnotCsv } from '../lib/jumpstartWhatnotCsv'
 
 export default function AdminInputs() {
   const [activeSection, setActiveSection] = useState('shows')
@@ -184,6 +185,50 @@ function ManifestUpload() {
     refreshLoads()
   }
 
+  // Export a load's manifest as a Whatnot bulk-listing CSV. Pulls every
+  // jumpstart_manifest row in the load (paginated), groups identical units
+  // per jumpstartWhatnotCsv.groupKey, and downloads the resulting CSV.
+  const [exportingLoadId, setExportingLoadId] = useState(null)
+  async function handleExportLoad(load) {
+    if (exportingLoadId) return
+    setExportingLoadId(load.id)
+    setStatus(`Loading ${load.id} manifest…`)
+    try {
+      const rows = await fetchAll(() => supabase
+        .from('jumpstart_manifest')
+        .select('id, description, color, size, vendor, gender, msrp, cost_freight, photo_url')
+        .eq('load_id', load.id)
+        .order('id', { ascending: true }))
+      if (!rows || rows.length === 0) {
+        setStatus(`⚠️ ${load.id} has no manifest items.`)
+        return
+      }
+      const { csv, included, skipped, groups } = generateJumpstartWhatnotCsv(rows)
+      if (included === 0) {
+        setStatus(`⚠️ No exportable items in ${load.id} (missing description on all rows).`)
+        return
+      }
+      const stamp = new Date().toISOString().slice(0, 10)
+      const safeName = load.id.replace(/[^a-z0-9-]+/gi, '-')
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `whatnot-jumpstart-${safeName}-${stamp}.csv`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      setTimeout(() => URL.revokeObjectURL(url), 100)
+      const skippedNote = skipped > 0 ? ` (skipped ${skipped} rows missing description)` : ''
+      setStatus(`✅ ${load.id}: ${groups} listings covering ${included} units${skippedNote}.`)
+    } catch (err) {
+      console.error('Export load error:', err)
+      setStatus(`❌ Export failed: ${err?.message || err}`)
+    } finally {
+      setExportingLoadId(null)
+    }
+  }
+
   async function deleteLoad(load) {
     if (!confirm(`Are you sure you want to delete Load ${load.id}?\n\nWARNING: This will delete ALL manifest items for this load. This may mess up all of your profitability calculations if these items have been sold.`)) {
       return
@@ -218,18 +263,23 @@ function ManifestUpload() {
           const zoneStr = (getField(row, 'Zone') || '').toString().trim()
           const scanQty = parseInt(getField(row, 'SCAN QUANTITY', 'Scan Quantity', 'Quantity', 'Qty')) || 1
 
+          const vendor = getField(row, 'Vendor', 'Brand') || ''
+          const style = getField(row, 'STYLE', 'Style') || ''
+          const color = getField(row, 'Color', 'COLOR') || ''
           const baseItem = {
             barcode: normalizeBarcode(barcode), barcode_raw: barcode,
             description: getField(row, 'Description', 'Product Name') || '',
             category: getField(row, 'Category (Department)', 'Category') || '',
             subclass: getField(row, 'Subclass') || '',
-            size: getField(row, 'Size') || '', color: getField(row, 'Color') || '',
-            vendor: getField(row, 'Vendor', 'Brand') || '',
+            size: getField(row, 'Size') || '', color,
+            gender: getField(row, 'Gender') || null,
+            vendor,
             part_number: getField(row, 'Part Number', 'Item') || '',
             msrp, cost_freight: cogs,
             zone: zoneStr.replace(/^Zone(\d)/i, 'Zone $1').trim() || null,
             bundle_number: getField(row, 'Bundle #', 'Bundle') || null,
-            load_id: loadId
+            load_id: loadId,
+            photo_url: buildPhotoUrl(vendor, style, color) || null,
           }
           for (let i = 0; i < scanQty; i++) {
             items.push({ ...baseItem })
@@ -344,6 +394,13 @@ function ManifestUpload() {
                       <div className="text-lg font-bold text-slate-300">{(l.item_count || l.quantity || 0).toLocaleString()} items</div>
                       <div className="text-xs text-slate-500">${Number(l.total_cost || l.total_cost_actual || 0).toLocaleString(undefined, {minimumFractionDigits: 2})}</div>
                     </div>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); handleExportLoad(l) }}
+                      disabled={exportingLoadId === l.id}
+                      className="text-slate-400 hover:text-cyan-400 hover:bg-cyan-500/10 px-2 py-1.5 rounded-lg text-xs font-medium transition-colors disabled:opacity-50"
+                    >
+                      {exportingLoadId === l.id ? 'Exporting…' : 'Whatnot CSV'}
+                    </button>
                     <button
                       onClick={(e) => { e.stopPropagation(); deleteLoad(l) }}
                       className="text-slate-500 hover:text-red-400 hover:bg-red-500/10 px-2 py-1.5 rounded-lg text-xs font-medium transition-colors"
