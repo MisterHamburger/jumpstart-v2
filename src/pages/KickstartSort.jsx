@@ -108,6 +108,21 @@ export default function KickstartSort() {
   const [filterCategory, setFilterCategory] = useState(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [openFilter, setOpenFilter] = useState(null) // 'size' | 'category' | 'condition' | null
+
+  // Variant-group selection for "export only these to Whatnot / print stickers".
+  // Keyed on the same composite key that getGroupedItems builds. When the set
+  // is empty, exports fall back to the current filtered view (legacy behavior).
+  // Cleared automatically whenever filters change so stale rows can't leak in.
+  const [selectedGroupKeys, setSelectedGroupKeys] = useState(() => new Set())
+  const toggleGroupSelection = (key) => {
+    setSelectedGroupKeys(prev => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key); else next.add(key)
+      return next
+    })
+  }
+  const clearGroupSelection = () => setSelectedGroupKeys(new Set())
+  useEffect(() => { clearGroupSelection() }, [filterSize, filterCondition, filterCategory, searchQuery])
   const [editingItem, setEditingItem] = useState(null)
   const [restockItem, setRestockItem] = useState(null) // item being restocked (read-only confirm)
   const [restockQty, setRestockQty] = useState(1)
@@ -170,12 +185,24 @@ export default function KickstartSort() {
     setExporting(true)
     try {
       let items = getFilteredItems()
+      // If any variants are checked, narrow to just those — otherwise fall
+      // back to the whole filtered view.
+      if (selectedGroupKeys.size > 0) {
+        items = items.filter(i => {
+          const key = [i.description || '', i.size || '', i.color || '', i.brand || '', i.condition || ''].join('||')
+          return selectedGroupKeys.has(key)
+        })
+      }
       if (!includeListed) items = items.filter(i => !i.whatnot_listed_at)
       const { csv, included, skipped, groups, skuByIntakeId } = generateWhatnotCsv(items)
       if (included === 0) {
         alert(includeListed
-          ? 'No exportable items in the current view.'
-          : 'No unlisted items in the current view. Check "Include already-listed" to re-export.')
+          ? (selectedGroupKeys.size > 0
+              ? 'No exportable items in the current selection.'
+              : 'No exportable items in the current view.')
+          : (selectedGroupKeys.size > 0
+              ? 'All selected variants are already listed. Check "Include listed" to re-export.'
+              : 'No unlisted items in the current view. Check "Include listed" to re-export.'))
         return
       }
 
@@ -248,10 +275,18 @@ export default function KickstartSort() {
     if (printing) return
     setPrinting(true)
     try {
-      const filtered = getFilteredItems()
-      const withSku = filtered.filter(i => i.whatnot_sku)
+      let scope = getFilteredItems()
+      if (selectedGroupKeys.size > 0) {
+        scope = scope.filter(i => {
+          const key = [i.description || '', i.size || '', i.color || '', i.brand || '', i.condition || ''].join('||')
+          return selectedGroupKeys.has(key)
+        })
+      }
+      const withSku = scope.filter(i => i.whatnot_sku)
       if (withSku.length === 0) {
-        alert('No items in the current view have been exported to Whatnot yet. Run Export Whatnot CSV first.')
+        alert(selectedGroupKeys.size > 0
+          ? 'No selected items have been exported to Whatnot yet. Run Export Whatnot CSV first.'
+          : 'No items in the current view have been exported to Whatnot yet. Run Export Whatnot CSV first.')
         return
       }
       const units = withSku.map(i => ({
@@ -317,6 +352,8 @@ export default function KickstartSort() {
 
   // Group filtered items by variant (description + size + color + brand + condition)
   // for the Inventory view. Picks the most-recent item as the variant rep.
+  // The `key` is stable across re-renders and is what the export/sticker
+  // selection state keys on.
   const getGroupedItems = () => {
     const filtered = getFilteredItems()
     const groups = new Map()
@@ -329,7 +366,7 @@ export default function KickstartSort() {
         item.condition || '',
       ].join('||')
       if (!groups.has(key)) {
-        groups.set(key, { rep: item, ids: [], listedIds: [], cost: item.cost, msrp: item.msrp })
+        groups.set(key, { key, rep: item, ids: [], listedIds: [], cost: item.cost, msrp: item.msrp })
       }
       const g = groups.get(key)
       g.ids.push(item.id)
@@ -873,16 +910,44 @@ export default function KickstartSort() {
           {/* Whatnot CSV export — Inventory mode only */}
           {step === 'inventory' && (() => {
             const filtered = getFilteredItems()
-            const listedCount = filtered.filter(i => i.whatnot_listed_at).length
-            const unlistedCount = filtered.length - listedCount
-            const stickerCount = filtered.filter(i => i.whatnot_sku).length
+            const groups = getGroupedItems()
+            const hasSelection = selectedGroupKeys.size > 0
+            const selectedItems = hasSelection
+              ? filtered.filter(i => {
+                  const key = [i.description || '', i.size || '', i.color || '', i.brand || '', i.condition || ''].join('||')
+                  return selectedGroupKeys.has(key)
+                })
+              : filtered
+            const listedCount = selectedItems.filter(i => i.whatnot_listed_at).length
+            const unlistedCount = selectedItems.length - listedCount
+            const stickerCount = selectedItems.filter(i => i.whatnot_sku).length
+            const allSelected = groups.length > 0 && groups.every(g => selectedGroupKeys.has(g.key))
             return (
               <div className="px-4 py-2 bg-slate-800/50 border-b border-white/10 flex items-center justify-between gap-3 flex-shrink-0">
-                <div className="flex flex-col text-xs text-slate-400 leading-tight">
-                  <span>{filtered.length} items in view</span>
-                  <span className="text-[10px] text-slate-500">
-                    {unlistedCount} unlisted · {listedCount} on Whatnot
-                  </span>
+                <div className="flex items-center gap-3 text-xs text-slate-400 leading-tight min-w-0">
+                  <label className="flex items-center gap-1.5 select-none cursor-pointer shrink-0" title="Select all variants currently in view">
+                    <input
+                      type="checkbox"
+                      checked={allSelected}
+                      ref={el => { if (el) el.indeterminate = hasSelection && !allSelected }}
+                      onChange={e => {
+                        if (e.target.checked) setSelectedGroupKeys(new Set(groups.map(g => g.key)))
+                        else clearGroupSelection()
+                      }}
+                      className="w-3.5 h-3.5 accent-pink-500"
+                    />
+                    All
+                  </label>
+                  <div className="flex flex-col min-w-0">
+                    <span className="truncate">
+                      {hasSelection
+                        ? `${selectedGroupKeys.size} variant${selectedGroupKeys.size === 1 ? '' : 's'} selected · ${selectedItems.length} unit${selectedItems.length === 1 ? '' : 's'}`
+                        : `${filtered.length} items in view`}
+                    </span>
+                    <span className="text-[10px] text-slate-500 truncate">
+                      {unlistedCount} unlisted · {listedCount} on Whatnot
+                    </span>
+                  </div>
                 </div>
                 <div className="flex items-center gap-2">
                   <label className="flex items-center gap-1.5 text-[11px] text-slate-400 select-none">
@@ -897,7 +962,7 @@ export default function KickstartSort() {
                   <button
                     onClick={handlePrintStickers}
                     disabled={printing || itemsLoading || stickerCount === 0}
-                    title={stickerCount === 0 ? 'No items in view have a Whatnot SKU yet. Export to Whatnot first.' : `Print ${stickerCount} sticker${stickerCount === 1 ? '' : 's'}`}
+                    title={stickerCount === 0 ? 'No items in selection have a Whatnot SKU yet. Export to Whatnot first.' : `Print ${stickerCount} sticker${stickerCount === 1 ? '' : 's'}`}
                     className="px-3 py-2 rounded-2xl bg-white/10 text-white font-bold text-sm hover:bg-white/15 active:scale-95 transition-all border border-white/15 disabled:opacity-40 disabled:cursor-not-allowed"
                   >
                     {printing ? 'Building PDF…' : `Print Stickers${stickerCount > 0 ? ` (${stickerCount})` : ''}`}
@@ -1058,42 +1123,62 @@ export default function KickstartSort() {
                   })()}
                   {groups.map((group, i) => {
                     const item = group.rep
+                    const isSelected = selectedGroupKeys.has(group.key)
                     return (
-                      <button
+                      <div
                         key={i}
-                        onClick={() => handleEditVariant(group)}
-                        className="w-full text-left bg-white/5 border border-white/10 rounded-3xl p-3 hover:bg-violet-500/10 hover:border-violet-500/30 active:scale-[0.98] transition-all"
+                        className={`w-full bg-white/5 border rounded-3xl pl-3 pr-3 py-3 flex items-center gap-3 transition-all ${
+                          isSelected
+                            ? 'border-pink-500/60 bg-pink-500/10'
+                            : 'border-white/10 hover:bg-violet-500/10 hover:border-violet-500/30'
+                        }`}
                       >
-                        <div className="flex items-center gap-3">
-                          <LazyPhoto intakeId={item.id} />
-                          <div className="min-w-0 flex-1">
-                            <p className="text-white font-semibold text-sm truncate">
-                              {[item.description, item.color].filter(Boolean).join(' — ') || 'Unknown'}
-                            </p>
-                            {item.notes && (
-                              <p className="text-pink-300/70 text-xs truncate">{item.notes}</p>
-                            )}
-                            <p className="text-slate-400 text-xs">
-                              {[item.brand, item.size, item.condition].filter(Boolean).join(' · ')}
-                            </p>
-                            <p className="text-slate-500 text-xs mt-0.5">
-                              ${parseFloat(item.cost || 0).toFixed(2)}{item.msrp ? ` · MSRP $${parseFloat(item.msrp).toFixed(2)}` : ''}
-                            </p>
-                          </div>
-                          <div className="shrink-0 flex flex-col items-end gap-1">
-                            <span className="px-2.5 py-1 rounded-full bg-violet-500/20 border border-violet-500/40 text-violet-200 text-sm font-bold">
-                              ×{group.ids.length}
-                            </span>
-                            {group.listedIds.length > 0 && (
-                              <span className="px-2 py-0.5 rounded-full bg-pink-500/15 border border-pink-500/30 text-pink-300 text-[10px] font-semibold uppercase tracking-wider">
-                                {group.listedIds.length === group.ids.length
-                                  ? 'On Whatnot'
-                                  : `${group.listedIds.length}/${group.ids.length} listed`}
+                        <label
+                          className="shrink-0 cursor-pointer p-1 -m-1"
+                          onClick={e => e.stopPropagation()}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => toggleGroupSelection(group.key)}
+                            className="w-5 h-5 accent-pink-500 cursor-pointer"
+                          />
+                        </label>
+                        <button
+                          onClick={() => handleEditVariant(group)}
+                          className="flex-1 min-w-0 text-left active:scale-[0.98] transition-transform"
+                        >
+                          <div className="flex items-center gap-3">
+                            <LazyPhoto intakeId={item.id} />
+                            <div className="min-w-0 flex-1">
+                              <p className="text-white font-semibold text-sm truncate">
+                                {[item.description, item.color].filter(Boolean).join(' — ') || 'Unknown'}
+                              </p>
+                              {item.notes && (
+                                <p className="text-pink-300/70 text-xs truncate">{item.notes}</p>
+                              )}
+                              <p className="text-slate-400 text-xs">
+                                {[item.brand, item.size, item.condition].filter(Boolean).join(' · ')}
+                              </p>
+                              <p className="text-slate-500 text-xs mt-0.5">
+                                ${parseFloat(item.cost || 0).toFixed(2)}{item.msrp ? ` · MSRP $${parseFloat(item.msrp).toFixed(2)}` : ''}
+                              </p>
+                            </div>
+                            <div className="shrink-0 flex flex-col items-end gap-1">
+                              <span className="px-2.5 py-1 rounded-full bg-violet-500/20 border border-violet-500/40 text-violet-200 text-sm font-bold">
+                                ×{group.ids.length}
                               </span>
-                            )}
+                              {group.listedIds.length > 0 && (
+                                <span className="px-2 py-0.5 rounded-full bg-pink-500/15 border border-pink-500/30 text-pink-300 text-[10px] font-semibold uppercase tracking-wider">
+                                  {group.listedIds.length === group.ids.length
+                                    ? 'On Whatnot'
+                                    : `${group.listedIds.length}/${group.ids.length} listed`}
+                                </span>
+                              )}
+                            </div>
                           </div>
-                        </div>
-                      </button>
+                        </button>
+                      </div>
                     )
                   })}
                 </div>
