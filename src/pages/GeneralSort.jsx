@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { Html5Qrcode } from 'html5-qrcode'
 import { supabase } from '../lib/supabase'
 import { normalizeBarcode } from '../lib/barcodes'
+import JumpstartInventory from '../components/JumpstartInventory'
 
 export default function GeneralSort() {
   const navigate = useNavigate()
@@ -10,6 +11,7 @@ export default function GeneralSort() {
   const [isScanning, setIsScanning] = useState(false)
   const [cameraError, setCameraError] = useState(null)
   const [hardwareInput, setHardwareInput] = useState('')
+  const [mode, setMode] = useState('scan') // 'scan' | 'inventory'
   const hardwareInputRef = useRef(null)
   const hardwareTimerRef = useRef(null)
   const html5QrcodeRef = useRef(null)
@@ -17,9 +19,10 @@ export default function GeneralSort() {
   const onScanSuccessRef = useRef(null)
 
   useEffect(() => {
-    startScanner()
+    if (mode === 'scan') startScanner()
+    else stopScanner()
     return () => { stopScanner() }
-  }, [])
+  }, [mode])
 
   // Keep hardware input focused on Android (Zebra) — skip on iOS to avoid camera interference
   useEffect(() => {
@@ -172,7 +175,7 @@ export default function GeneralSort() {
       
       {/* Header - compact */}
       <div className="relative z-10 px-3 py-2 flex items-center border-b border-white/[0.06] shrink-0">
-        <button 
+        <button
           onClick={() => { stopScanner(); navigate('/') }}
           className="flex items-center gap-2 bg-white/[0.06] hover:bg-white/[0.1] backdrop-blur-xl px-3 py-1.5 rounded-xl border border-white/[0.08] transition-all"
         >
@@ -180,6 +183,13 @@ export default function GeneralSort() {
           <span className="text-white text-sm font-medium">Home</span>
         </button>
         <h1 className="ml-3 text-lg font-semibold text-white font-heading">Sort</h1>
+        <button
+          onClick={() => setMode('inventory')}
+          className="ml-auto flex items-center gap-1.5 bg-white/[0.06] hover:bg-white/[0.1] px-3 py-1.5 rounded-xl border border-white/[0.08] text-white text-sm font-medium transition-all"
+        >
+          <iconify-icon icon="lucide:package" class="text-white"></iconify-icon>
+          Inventory
+        </button>
       </div>
 
       {/* Hardware scanner input (Zebra) — always mounted so yellow trigger works while zone is showing */}
@@ -227,6 +237,11 @@ export default function GeneralSort() {
           style={{ maxHeight: '65vh' }}
         />
       </div>
+
+      {/* Inventory takeover */}
+      {mode === 'inventory' && (
+        <JumpstartInventory onClose={() => setMode('scan')} />
+      )}
 
       {/* Zone Display - full screen takeover, tap anywhere to scan next */}
       {scannedItem && (
