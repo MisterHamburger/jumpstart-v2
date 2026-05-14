@@ -12,9 +12,19 @@ import { supabase, fetchAll } from '../lib/supabase'
 // Deletion is always restricted to UNSOLD manifest rows so we never break
 // profitability joins. Per barcode the deletable count is
 // (manifest rows of that barcode) − (jumpstart_sold_scans rows with that barcode).
+// RDM (Random Mystery Lot) inventory has no barcodes and no manifest rows —
+// CLAUDE.md spells out that profitability hardcodes \$3.41/unit for it. We
+// represent it as a single synthetic SKU here: qty = sum of RDM-tagged
+// loads.quantity minus units sold via Whatnot (barcode='RDM') and via
+// rdm_bundle_sales. Editing the in-stock count writes loads.quantity = sold
+// + new_in_stock so the rolling math stays consistent.
+const RDM_COST = 3.41
+const RDM_KEY = '__rdm__'
+
 export default function JumpstartInventory({ onClose }) {
   const [items, setItems] = useState([])              // jumpstart_manifest rows
   const [soldByBarcode, setSoldByBarcode] = useState({}) // barcode → sold count
+  const [rdmData, setRdmData] = useState(null)        // { loadIds, purchased, sold }
   const [loading, setLoading] = useState(true)
 
   const [filterCategory, setFilterCategory] = useState(null)
@@ -41,18 +51,43 @@ export default function JumpstartInventory({ onClose }) {
         .select('id, barcode, description, category, subclass, size, color, vendor, gender, part_number, msrp, cost_freight, zone, load_id, photo_url, created_at')
         .order('created_at', { ascending: false }))
 
-      // Aggregate sold counts per barcode (we paginate raw and count locally)
+      // Aggregate sold counts per barcode + RDM totals (Whatnot RDM scans
+      // share barcode 'RDM' and are tracked separately from real-barcode
+      // sales for inventory purposes).
       const sold = await fetchAll(() => supabase
         .from('jumpstart_sold_scans')
         .select('barcode'))
       const counts = {}
+      let rdmScanCount = 0
       for (const s of (sold || [])) {
         const b = s.barcode
-        if (!b || b === 'RDM' || b === 'CUSTOM') continue
+        if (!b) continue
+        if (b === 'CUSTOM') continue
+        if (b === 'RDM') { rdmScanCount++; continue }
         counts[b] = (counts[b] || 0) + 1
       }
+
+      // RDM inventory: any load tagged with RDM vendor/notes.
+      const { data: rdmLoads } = await supabase
+        .from('loads')
+        .select('id, quantity')
+        .or('vendor.ilike.%rdm%,notes.ilike.%rdm%')
+      const rdmPurchased = (rdmLoads || []).reduce((s, l) => s + (Number(l.quantity) || 0), 0)
+      const { data: rdmBundleRows } = await supabase
+        .from('rdm_bundle_sales')
+        .select('quantity')
+      const rdmBundleSold = (rdmBundleRows || []).reduce((s, r) => s + (Number(r.quantity) || 0), 0)
+      const rdmSold = rdmScanCount + rdmBundleSold
+
       setItems(manifest || [])
       setSoldByBarcode(counts)
+      setRdmData({
+        loadIds: (rdmLoads || []).map(l => l.id),
+        purchased: rdmPurchased,
+        sold: rdmSold,
+        scanSold: rdmScanCount,
+        bundleSold: rdmBundleSold,
+      })
     } finally {
       setLoading(false)
     }
@@ -150,8 +185,47 @@ export default function JumpstartInventory({ onClose }) {
       return { ...g, sold, inStock, inStockIds }
     })
 
-    const visible = showSoldOut ? arr : arr.filter(g => g.inStock > 0)
+    let visible = showSoldOut ? arr : arr.filter(g => g.inStock > 0)
+
+    // Synthetic RDM SKU — only show when vendor/category filters don't exclude
+    // RDM, when no search query (or search matches "rdm"), and when there is
+    // an RDM load on file. Pinned to the top of the list regardless of sort.
+    const rdmMatchesFilters =
+      (!filterCategory) &&
+      (!filterSize) &&
+      (!filterVendor || /rdm/i.test(filterVendor)) &&
+      (!q || 'rdm random mystery'.includes(q))
+    if (rdmData && rdmData.purchased > 0 && rdmMatchesFilters) {
+      const inStock = Math.max(0, rdmData.purchased - rdmData.sold)
+      if (showSoldOut || inStock > 0) {
+        const rdmGroup = {
+          key: RDM_KEY,
+          isRdm: true,
+          rep: {
+            id: RDM_KEY,
+            description: 'RDM (Random Mystery Lot)',
+            vendor: 'RDM',
+            color: null,
+            size: null,
+            msrp: null,
+            cost_freight: RDM_COST,
+            photo_url: null,
+          },
+          items: [],
+          totalQty: rdmData.purchased,
+          inStock,
+          sold: rdmData.sold,
+          inStockIds: [],
+          rdmDetails: rdmData,
+        }
+        visible = [rdmGroup, ...visible]
+      }
+    }
+
     visible.sort((a, b) => {
+      // Pin RDM to the top no matter the sort
+      if (a.isRdm) return -1
+      if (b.isRdm) return 1
       if (sortBy === 'oldest') return (a.earliestCreated || '').localeCompare(b.earliestCreated || '')
       if (sortBy === 'msrp_high') return Number(b.rep.msrp || 0) - Number(a.rep.msrp || 0)
       if (sortBy === 'msrp_low')  return Number(a.rep.msrp || 0) - Number(b.rep.msrp || 0)
@@ -159,7 +233,7 @@ export default function JumpstartInventory({ onClose }) {
       return (b.latestCreated || '').localeCompare(a.latestCreated || '')
     })
     return visible
-  }, [items, soldByBarcode, filterCategory, filterSize, filterVendor, searchQuery, sortBy, showSoldOut])
+  }, [items, soldByBarcode, rdmData, filterCategory, filterSize, filterVendor, searchQuery, sortBy, showSoldOut])
 
   const totalInStock = useMemo(() => groups.reduce((s, g) => s + g.inStock, 0), [groups])
   const totalSelected = useMemo(() => groups.filter(g => selectedKeys.has(g.key)).reduce((s, g) => s + g.inStock, 0), [groups, selectedKeys])
@@ -286,22 +360,37 @@ export default function JumpstartInventory({ onClose }) {
         ) : groups.map(g => {
           const isSelected = selectedKeys.has(g.key)
           const item = g.rep
+          const isRdm = g.isRdm
           return (
             <div
               key={g.key}
-              className={`bg-white/5 border rounded-2xl p-3 flex items-center gap-3 transition-all ${
-                isSelected ? 'border-cyan-500/60 bg-cyan-500/10' : 'border-white/10 hover:bg-cyan-500/5 hover:border-cyan-500/20'
+              className={`border rounded-2xl p-3 flex items-center gap-3 transition-all ${
+                isRdm
+                  ? 'bg-violet-500/10 border-violet-500/40'
+                  : isSelected
+                    ? 'bg-cyan-500/10 border-cyan-500/60'
+                    : 'bg-white/5 border-white/10 hover:bg-cyan-500/5 hover:border-cyan-500/20'
               }`}
             >
-              <input
-                type="checkbox"
-                checked={isSelected}
-                onChange={() => toggleKey(g.key)}
-                className="w-5 h-5 accent-cyan-500 cursor-pointer shrink-0"
-              />
+              {/* RDM has no per-row deletion (not in jumpstart_manifest), so
+                  no checkbox — adjust via the edit dialog instead. */}
+              {isRdm ? (
+                <div className="w-5 shrink-0" aria-hidden />
+              ) : (
+                <input
+                  type="checkbox"
+                  checked={isSelected}
+                  onChange={() => toggleKey(g.key)}
+                  className="w-5 h-5 accent-cyan-500 cursor-pointer shrink-0"
+                />
+              )}
               <button onClick={() => setEditing(g)} className="flex-1 min-w-0 text-left active:scale-[0.98] transition-transform">
                 <div className="flex items-center gap-3">
-                  {item.photo_url ? (
+                  {isRdm ? (
+                    <div className="w-14 h-14 rounded-lg bg-violet-500/20 border border-violet-500/40 shrink-0 flex items-center justify-center text-violet-300 font-black text-sm tracking-wider">
+                      RDM
+                    </div>
+                  ) : item.photo_url ? (
                     <img src={item.photo_url} alt="" loading="lazy" className="w-14 h-14 rounded-lg object-cover bg-white/5 shrink-0" />
                   ) : (
                     <div className="w-14 h-14 rounded-lg bg-white/5 border border-white/10 shrink-0 flex items-center justify-center text-slate-600">
@@ -310,19 +399,27 @@ export default function JumpstartInventory({ onClose }) {
                   )}
                   <div className="min-w-0 flex-1">
                     <p className="text-white font-semibold text-sm truncate">{item.description || 'Unknown'}</p>
-                    <p className="text-slate-400 text-xs truncate">
-                      {[item.vendor, item.size, item.color].filter(Boolean).join(' · ')}
-                    </p>
+                    {isRdm ? (
+                      <p className="text-slate-400 text-xs truncate">
+                        Bulk lot · no barcode · {g.totalQty.toLocaleString()} purchased
+                      </p>
+                    ) : (
+                      <p className="text-slate-400 text-xs truncate">
+                        {[item.vendor, item.size, item.color].filter(Boolean).join(' · ')}
+                      </p>
+                    )}
                     <p className="text-slate-500 text-xs mt-0.5">
-                      MSRP ${Number(item.msrp || 0).toFixed(0)} · Cost ${Number(item.cost_freight || 0).toFixed(2)}
+                      {isRdm
+                        ? `Cost $${RDM_COST.toFixed(2)}/unit`
+                        : `MSRP $${Number(item.msrp || 0).toFixed(0)} · Cost $${Number(item.cost_freight || 0).toFixed(2)}`}
                     </p>
                   </div>
                   <div className="shrink-0 flex flex-col items-end gap-1">
-                    <span className="px-2.5 py-1 rounded-full bg-cyan-500/20 border border-cyan-500/40 text-cyan-200 text-sm font-bold">
-                      ×{g.inStock}
+                    <span className={`px-2.5 py-1 rounded-full text-sm font-bold ${isRdm ? 'bg-violet-500/30 border border-violet-500/50 text-violet-100' : 'bg-cyan-500/20 border border-cyan-500/40 text-cyan-200'}`}>
+                      ×{g.inStock.toLocaleString()}
                     </span>
                     {g.sold > 0 && (
-                      <span className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">{g.sold} sold</span>
+                      <span className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">{g.sold.toLocaleString()} sold</span>
                     )}
                   </div>
                 </div>
@@ -332,7 +429,7 @@ export default function JumpstartInventory({ onClose }) {
         })}
       </div>
 
-      {editing && (
+      {editing && !editing.isRdm && (
         <EditVariantModal
           group={editing}
           onClose={() => setEditing(null)}
@@ -345,6 +442,16 @@ export default function JumpstartInventory({ onClose }) {
           onDeleted={(deletedIds) => {
             const set = new Set(deletedIds)
             setItems(prev => prev.filter(i => !set.has(i.id)))
+            setEditing(null)
+          }}
+        />
+      )}
+      {editing && editing.isRdm && rdmData && (
+        <RdmEditModal
+          group={editing}
+          onClose={() => setEditing(null)}
+          onSaved={(newPurchased) => {
+            setRdmData(prev => prev ? { ...prev, purchased: newPurchased } : prev)
             setEditing(null)
           }}
         />
@@ -494,6 +601,89 @@ function EditVariantModal({ group, onClose, onSaved, onDeleted }) {
           </button>
           <button onClick={deleteAllUnsold} disabled={saving || group.inStockIds.length === 0} className="w-full py-2 rounded-xl bg-red-500/15 hover:bg-red-500/25 border border-red-500/30 text-red-300 text-xs font-bold disabled:opacity-30">
             Delete all {group.inStockIds.length} unsold
+          </button>
+          <button onClick={onClose} className="w-full py-2 rounded-xl text-slate-400 hover:text-white text-xs">Cancel</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function RdmEditModal({ group, onClose, onSaved }) {
+  const details = group.rdmDetails
+  const [targetInStock, setTargetInStock] = useState(group.inStock)
+  const [saving, setSaving] = useState(false)
+
+  // Adjusting in-stock writes back to loads.quantity (so it persists as the
+  // new "purchased" total). We allocate the delta to the first RDM load on
+  // record so historical loads stay traceable.
+  const newPurchased = Math.max(details.sold, details.sold + Number(targetInStock || 0))
+  const delta = newPurchased - details.purchased
+
+  async function save() {
+    if (delta === 0) { onClose(); return }
+    if (!details.loadIds?.length) { alert('No RDM load on record to write to.'); return }
+    if (!confirm(`Set RDM in-stock to ${Number(targetInStock).toLocaleString()}? This will change the load's purchased quantity by ${delta > 0 ? '+' : ''}${delta.toLocaleString()}.`)) return
+    setSaving(true)
+    try {
+      // Apply the change to the first RDM load. If there are multiple loads
+      // we just adjust the primary one — keeps the math right even if not
+      // perfectly distributed.
+      const primaryId = details.loadIds[0]
+      const { data: row } = await supabase.from('loads').select('quantity').eq('id', primaryId).maybeSingle()
+      const currentQty = Number(row?.quantity || 0)
+      const newQty = Math.max(0, currentQty + delta)
+      const { error } = await supabase.from('loads').update({ quantity: newQty }).eq('id', primaryId)
+      if (error) { alert('Save failed: ' + error.message); return }
+      onSaved(newPurchased)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+      <div className="w-full max-w-md bg-slate-900 border border-white/10 rounded-3xl p-5 max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-lg font-bold text-white">RDM inventory</h3>
+          <button onClick={onClose} className="text-slate-400 hover:text-white text-2xl leading-none">×</button>
+        </div>
+        <p className="text-xs text-slate-500 mb-4">Random Mystery Lot — bulk units, no barcodes. Fixed COGS ${RDM_COST.toFixed(2)}/unit.</p>
+
+        <div className="grid grid-cols-3 gap-2 mb-5 text-center">
+          <div className="bg-white/5 rounded-xl py-3">
+            <p className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">Purchased</p>
+            <p className="text-lg font-black text-white mt-1">{details.purchased.toLocaleString()}</p>
+          </div>
+          <div className="bg-white/5 rounded-xl py-3">
+            <p className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">Sold</p>
+            <p className="text-lg font-black text-white mt-1">{details.sold.toLocaleString()}</p>
+            <p className="text-[9px] text-slate-600 mt-0.5">{details.scanSold} shows · {details.bundleSold} bundles</p>
+          </div>
+          <div className="bg-violet-500/20 border border-violet-500/40 rounded-xl py-3">
+            <p className="text-[10px] text-violet-300 uppercase tracking-wider font-semibold">In stock</p>
+            <p className="text-lg font-black text-violet-100 mt-1">{group.inStock.toLocaleString()}</p>
+          </div>
+        </div>
+
+        <Field label="Adjust in-stock (use after damaged / lost / given away)">
+          <div className="flex items-center gap-2">
+            <button type="button" onClick={() => setTargetInStock(q => Math.max(0, Number(q) - 1))} className="px-3 py-2 rounded-lg bg-white/10 text-white">−</button>
+            <input type="number" min="0" value={targetInStock} onChange={e => setTargetInStock(Math.max(0, Number(e.target.value) || 0))} className="flex-1 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white text-center outline-none" />
+            <button type="button" onClick={() => setTargetInStock(q => Number(q) + 1)} className="px-3 py-2 rounded-lg bg-white/10 text-white">+</button>
+          </div>
+        </Field>
+        <p className="text-[11px] text-slate-500 mt-2">
+          {delta === 0
+            ? 'No change.'
+            : delta > 0
+              ? `Will add ${delta.toLocaleString()} unit${delta === 1 ? '' : 's'} to purchased (treats as restock).`
+              : `Will remove ${Math.abs(delta).toLocaleString()} unit${Math.abs(delta) === 1 ? '' : 's'} from purchased (treats as loss).`}
+        </p>
+
+        <div className="flex flex-col gap-2 mt-5">
+          <button onClick={save} disabled={saving || delta === 0} className="w-full py-2.5 rounded-xl bg-violet-600 hover:bg-violet-500 text-white font-bold text-sm disabled:opacity-50">
+            {saving ? 'Saving…' : 'Save'}
           </button>
           <button onClick={onClose} className="w-full py-2 rounded-xl text-slate-400 hover:text-white text-xs">Cancel</button>
         </div>
