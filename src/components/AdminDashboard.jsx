@@ -140,6 +140,12 @@ export default function AdminDashboard() {
   const revenuePerDay = stats ? stats.netRevenue / calendarDays : 0
   const profitPerDay = stats ? stats.grossProfit / calendarDays : 0
   const itemsPerDay = stats ? Math.round(stats.items / calendarDays) : 0
+  const netProfitPerDay = stats ? netProfit / calendarDays : 0
+  const revenuePerItem = stats && stats.items > 0 ? stats.netRevenue / stats.items : 0
+  const cogsPerItem = stats && stats.items > 0 ? stats.cogs / stats.items : 0
+  const grossProfitPerItem = stats && stats.items > 0 ? stats.grossProfit / stats.items : 0
+  const netProfitPerItem = stats && stats.items > 0 ? netProfit / stats.items : 0
+  const totalExpenses = (data?.totalOpex || 0) + (data?.totalPayroll || 0)
 
   return (
     <div>
@@ -182,26 +188,31 @@ export default function AdminDashboard() {
         <div className="text-slate-400 py-12 text-center">No data yet. Upload manifests and show CSVs in Inputs.</div>
       ) : (
         <>
-          {/* KPI Cards */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
-            <GradientKPI label="Avg Sale Price" value={fmt(avgSalePrice)} sub={`${stats.items.toLocaleString()} items sold`} />
-            <GradientKPI label="Profit / Unit" value={fmt(profitPerUnit)} negative={profitPerUnit < 0} />
-            <GradientKPI label="Gross Profit" value={fmt(stats.grossProfit)} sub={`${margin.toFixed(1)}% margin`}
-              negative={stats.grossProfit < 0} />
-            {isSummary ? (
-              <GradientKPI label="Net Profit" value={fmt(netProfit)}
-                negative={netProfit < 0} />
-            ) : (
-              <GradientKPI label="Revenue" value={fmt(stats.netRevenue)}
-                sub="net of fees" />
-            )}
+          {/* Row 1: Totals — Revenue, Gross Profit, Expenses, Net Profit */}
+          <div className={`grid grid-cols-2 ${isSummary ? 'md:grid-cols-4' : 'md:grid-cols-3'} gap-4 mb-4`}>
+            <GradientKPI label="Revenue" value={fmt(stats.netRevenue)} sub={`${stats.items.toLocaleString()} items sold`} />
+            <GradientKPI label="Gross Profit" value={fmt(stats.grossProfit)} sub={`${margin.toFixed(1)}% margin`} negative={stats.grossProfit < 0} />
+            {isSummary && <GradientKPI label="Expenses" value={fmt(totalExpenses)} />}
+            {isSummary
+              ? <GradientKPI label="Net Profit" value={fmt(netProfit)} negative={netProfit < 0} />
+              : <GradientKPI label="COGS" value={fmt(stats.cogs)} />
+            }
           </div>
 
-          {/* Per-Day KPI Cards */}
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-4">
+          {/* Row 2: Per-Day */}
+          <div className={`grid grid-cols-2 ${isSummary ? 'md:grid-cols-4' : 'md:grid-cols-3'} gap-4 mb-4`}>
             <GradientKPI label="Revenue / Day" value={fmt(revenuePerDay)} sub={`over ${calendarDays} days`} />
-            <GradientKPI label="Profit / Day" value={fmt(profitPerDay)} sub={`over ${calendarDays} days`} negative={profitPerDay < 0} />
+            <GradientKPI label="Gross Profit / Day" value={fmt(profitPerDay)} sub={`over ${calendarDays} days`} negative={profitPerDay < 0} />
             <GradientKPI label="Items Sold / Day" value={itemsPerDay.toLocaleString()} sub={`over ${calendarDays} days`} />
+            {isSummary && <GradientKPI label="Net Profit / Day" value={fmt(netProfitPerDay)} sub={`over ${calendarDays} days`} negative={netProfitPerDay < 0} />}
+          </div>
+
+          {/* Row 3: Per-Item */}
+          <div className={`grid grid-cols-2 ${isSummary ? 'md:grid-cols-4' : 'md:grid-cols-3'} gap-4 mb-4`}>
+            <GradientKPI label="Revenue / Item" value={fmt(revenuePerItem)} />
+            <GradientKPI label="COGS / Item" value={fmt(cogsPerItem)} />
+            <GradientKPI label="Gross Profit / Item" value={fmt(grossProfitPerItem)} negative={grossProfitPerItem < 0} />
+            {isSummary && <GradientKPI label="Net Profit / Item" value={fmt(netProfitPerItem)} negative={netProfitPerItem < 0} />}
           </div>
 
           {/* P&L Summary Table */}
