@@ -2,7 +2,8 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 
 const DATE_RANGES = [
-  { label: 'All time (Beginning 2/7/26)', value: 'all' },
+  { label: 'All time', value: 'all' },
+  { label: 'Year to date', value: 'ytd' },
   { label: 'This month', value: 'month' },
   { label: 'Last month', value: 'lastmonth' },
   { label: 'Last 7 days', value: '7d' },
@@ -14,7 +15,9 @@ function getDateRange(range) {
   if (range === 'all') return { start: null, end: null }
   const now = new Date()
   let start, end = null
-  if (range === 'month') {
+  if (range === 'ytd') {
+    start = new Date(now.getFullYear(), 0, 1)
+  } else if (range === 'month') {
     start = new Date(now.getFullYear(), now.getMonth(), 1)
   } else if (range === 'lastmonth') {
     start = new Date(now.getFullYear(), now.getMonth() - 1, 1)
