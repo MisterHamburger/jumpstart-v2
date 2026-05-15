@@ -1,22 +1,39 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 
-const DATE_RANGES = [
-  { label: 'All time', value: 'all' },
-  { label: 'Year to date', value: 'ytd' },
-  { label: 'This month', value: 'month' },
-  { label: 'Last month', value: 'lastmonth' },
-  { label: 'Last 7 days', value: '7d' },
-  { label: 'Last 30 days', value: '30d' },
-  { label: 'Custom', value: 'custom' },
-]
+// Business activity starts in 2026 (Jan '26 manual_revenue is the earliest
+// authoritative data). One year preset per calendar year from BUSINESS_START_YEAR
+// up through today, newest first.
+const BUSINESS_START_YEAR = 2026
+
+function buildDateRanges() {
+  const currentYear = new Date().getFullYear()
+  const yearPresets = []
+  for (let y = currentYear; y >= BUSINESS_START_YEAR; y--) {
+    yearPresets.push({ label: String(y), value: `year-${y}` })
+  }
+  return [
+    { label: 'Year to date', value: 'ytd' },
+    ...yearPresets,
+    { label: 'This month', value: 'month' },
+    { label: 'Last month', value: 'lastmonth' },
+    { label: 'Last 7 days', value: '7d' },
+    { label: 'Last 30 days', value: '30d' },
+    { label: 'Custom', value: 'custom' },
+  ]
+}
+
+const DATE_RANGES = buildDateRanges()
 
 function getDateRange(range) {
-  if (range === 'all') return { start: null, end: null }
   const now = new Date()
   let start, end = null
   if (range === 'ytd') {
     start = new Date(now.getFullYear(), 0, 1)
+  } else if (range && range.startsWith('year-')) {
+    const y = parseInt(range.slice(5), 10)
+    start = new Date(y, 0, 1)
+    end   = new Date(y, 11, 31)
   } else if (range === 'month') {
     start = new Date(now.getFullYear(), now.getMonth(), 1)
   } else if (range === 'lastmonth') {
@@ -35,7 +52,7 @@ function getDateRange(range) {
 
 export default function AdminDashboard() {
   const [channel, setChannel] = useState('all')
-  const [dateRange, setDateRange] = useState('all')
+  const [dateRange, setDateRange] = useState('ytd')
   const [customStart, setCustomStart] = useState('')
   const [customEnd, setCustomEnd] = useState('')
   const [data, setData] = useState(null)
