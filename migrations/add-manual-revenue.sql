@@ -41,10 +41,15 @@ VALUES (
   105819.23,
   0,
   111482.28,
-  0,
+  9416,
   'Pre-launch — spreadsheet totals. Revenue and COGS only; fees assumed 0.'
 )
-ON CONFLICT (channel, period_start, period_end) DO NOTHING;
+ON CONFLICT (channel, period_start, period_end) DO UPDATE SET
+  revenue = EXCLUDED.revenue,
+  fees    = EXCLUDED.fees,
+  cogs    = EXCLUDED.cogs,
+  items   = EXCLUDED.items,
+  notes   = EXCLUDED.notes;
 
 -- Rebuild get_dashboard_summary to fold in manual_revenue values that fall
 -- fully within the requested date range. Preserves the existing JSON shape
