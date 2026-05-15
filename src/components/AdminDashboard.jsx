@@ -1,39 +1,37 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 
-// Business activity starts in 2026 (Jan '26 manual_revenue is the earliest
-// authoritative data). One year preset per calendar year from BUSINESS_START_YEAR
-// up through today, newest first.
+// Three independent filter dropdowns:
+//   - preset: relative ranges (default "This month")
+//   - year:   specific calendar year (overrides preset when set)
+//   - month:  specific month (overrides both — uses `year` or current year)
+// Business data starts in 2026; the year dropdown auto-extends as the
+// calendar year advances.
 const BUSINESS_START_YEAR = 2026
 
-function buildDateRanges() {
-  const currentYear = new Date().getFullYear()
-  const yearPresets = []
-  for (let y = currentYear; y >= BUSINESS_START_YEAR; y--) {
-    yearPresets.push({ label: String(y), value: `year-${y}` })
-  }
-  return [
-    { label: 'Year to date', value: 'ytd' },
-    ...yearPresets,
-    { label: 'This month', value: 'month' },
-    { label: 'Last month', value: 'lastmonth' },
-    { label: 'Last 7 days', value: '7d' },
-    { label: 'Last 30 days', value: '30d' },
-    { label: 'Custom', value: 'custom' },
-  ]
-}
+const DATE_RANGES = [
+  { label: 'Year to date', value: 'ytd' },
+  { label: 'This month', value: 'month' },
+  { label: 'Last month', value: 'lastmonth' },
+  { label: 'Last 7 days', value: '7d' },
+  { label: 'Last 30 days', value: '30d' },
+  { label: 'Custom', value: 'custom' },
+]
 
-const DATE_RANGES = buildDateRanges()
+const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December']
+
+function yearOptions() {
+  const currentYear = new Date().getFullYear()
+  const out = []
+  for (let y = currentYear; y >= BUSINESS_START_YEAR; y--) out.push(y)
+  return out
+}
 
 function getDateRange(range) {
   const now = new Date()
   let start, end = null
   if (range === 'ytd') {
     start = new Date(now.getFullYear(), 0, 1)
-  } else if (range && range.startsWith('year-')) {
-    const y = parseInt(range.slice(5), 10)
-    start = new Date(y, 0, 1)
-    end   = new Date(y, 11, 31)
   } else if (range === 'month') {
     start = new Date(now.getFullYear(), now.getMonth(), 1)
   } else if (range === 'lastmonth') {
@@ -50,34 +48,52 @@ function getDateRange(range) {
   }
 }
 
+// Resolve the active date range from the three filter selectors. Year+month
+// take priority over the preset when set; clearing them (back to "Any") falls
+// back to the preset.
+function resolveRange(preset, year, month, customStart, customEnd) {
+  // Specific month (with year defaulting to current year)
+  if (month !== null && month !== undefined) {
+    const y = year ?? new Date().getFullYear()
+    const lastDay = new Date(y, month + 1, 0).getDate()
+    const pad = n => String(n).padStart(2, '0')
+    return {
+      start: `${y}-${pad(month + 1)}-01`,
+      end:   `${y}-${pad(month + 1)}-${pad(lastDay)}`,
+    }
+  }
+  // Full year
+  if (year !== null && year !== undefined) {
+    return { start: `${year}-01-01`, end: `${year}-12-31` }
+  }
+  // Custom or preset
+  if (preset === 'custom') {
+    return { start: customStart || null, end: customEnd || null }
+  }
+  return getDateRange(preset)
+}
+
 export default function AdminDashboard() {
   const [channel, setChannel] = useState('all')
-  const [dateRange, setDateRange] = useState('ytd')
+  const [dateRange, setDateRange] = useState('month')
   const [customStart, setCustomStart] = useState('')
   const [customEnd, setCustomEnd] = useState('')
+  const [filterYear, setFilterYear] = useState(null)   // null = no override
+  const [filterMonth, setFilterMonth] = useState(null) // null = no override (0-11)
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    if (dateRange === 'custom') {
+    if (dateRange === 'custom' && filterYear == null && filterMonth == null) {
       if (customStart) loadDashboard()
     } else {
       loadDashboard()
     }
-  }, [dateRange, customStart, customEnd])
+  }, [dateRange, customStart, customEnd, filterYear, filterMonth])
 
   async function loadDashboard() {
     setLoading(true)
-
-    let start, end
-    if (dateRange === 'custom') {
-      start = customStart || null
-      end = customEnd || null
-    } else {
-      const range = getDateRange(dateRange)
-      start = range.start
-      end = range.end
-    }
+    const { start, end } = resolveRange(dateRange, filterYear, filterMonth, customStart, customEnd)
 
     const { data: raw, error } = await supabase.rpc('get_dashboard_summary', {
       date_cutoff: start,
@@ -141,16 +157,9 @@ export default function AdminDashboard() {
 
   // Calculate calendar days for per-day metrics
   const calendarDays = (() => {
-    let start, end
-    if (dateRange === 'custom') {
-      start = customStart ? new Date(customStart + 'T00:00:00') : null
-      end = customEnd ? new Date(customEnd + 'T00:00:00') : new Date()
-    } else {
-      const range = getDateRange(dateRange)
-      start = range.start ? new Date(range.start + 'T00:00:00') : new Date('2026-02-07T00:00:00')
-      end = range.end ? new Date(range.end + 'T00:00:00') : new Date()
-    }
-    if (!start) return 1
+    const { start: s, end: e } = resolveRange(dateRange, filterYear, filterMonth, customStart, customEnd)
+    const start = s ? new Date(s + 'T00:00:00') : new Date('2026-01-01T00:00:00')
+    const end = e ? new Date(e + 'T00:00:00') : new Date()
     const diff = Math.floor((end - start) / (1000 * 60 * 60 * 24)) + 1
     return Math.max(diff, 1)
   })()
@@ -188,7 +197,31 @@ export default function AdminDashboard() {
           className="bg-white/5 border border-white/10 text-white text-sm rounded-2xl px-4 py-2 focus:outline-none focus:border-cyan-500/50 focus:ring-4 focus:ring-cyan-500/10 transition-all">
           {DATE_RANGES.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
         </select>
-        {dateRange === 'custom' && (
+        <select
+          value={filterYear == null ? '' : String(filterYear)}
+          onChange={e => setFilterYear(e.target.value === '' ? null : parseInt(e.target.value, 10))}
+          className="bg-white/5 border border-white/10 text-white text-sm rounded-2xl px-4 py-2 focus:outline-none focus:border-cyan-500/50 focus:ring-4 focus:ring-cyan-500/10 transition-all"
+        >
+          <option value="">Any year</option>
+          {yearOptions().map(y => <option key={y} value={y}>{y}</option>)}
+        </select>
+        <select
+          value={filterMonth == null ? '' : String(filterMonth)}
+          onChange={e => setFilterMonth(e.target.value === '' ? null : parseInt(e.target.value, 10))}
+          className="bg-white/5 border border-white/10 text-white text-sm rounded-2xl px-4 py-2 focus:outline-none focus:border-cyan-500/50 focus:ring-4 focus:ring-cyan-500/10 transition-all"
+        >
+          <option value="">Any month</option>
+          {MONTH_NAMES.map((m, i) => <option key={i} value={i}>{m}</option>)}
+        </select>
+        {(filterYear != null || filterMonth != null) && (
+          <button
+            onClick={() => { setFilterYear(null); setFilterMonth(null) }}
+            className="text-xs text-cyan-400 hover:text-cyan-300"
+          >
+            Clear year/month
+          </button>
+        )}
+        {dateRange === 'custom' && filterYear == null && filterMonth == null && (
           <div className="flex items-center gap-2">
             <input type="date" value={customStart} onChange={e => setCustomStart(e.target.value)}
               className="bg-white/5 border border-white/10 text-white text-sm rounded-2xl px-4 py-2 focus:outline-none focus:border-cyan-500/50 focus:ring-4 focus:ring-cyan-500/10 transition-all" />
