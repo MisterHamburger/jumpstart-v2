@@ -1266,13 +1266,23 @@ function ExpenseUpload() {
           category: normalizeCategory(getField(row, 'category', 'Category'))
         })).filter(e => e.date && e.amount && ['OPEX', 'PAYROLL', 'PAYROLL_SOURCING', 'SOURCING', 'INVENTORY'].includes(e.category))
         .map(e => {
-          // Legacy: convert known Kickstart sourcing vendors from INVENTORY to SOURCING
-          // (kept for backward compat with old Co-pilot exports; new exports should already use the right category)
-          if (e.category === 'INVENTORY') {
-            const desc = e.description.toLowerCase()
-            const isKickstartSourcing = desc.includes('reclectic') || desc.includes('businessrsor') || desc.includes('dick')
-            return isKickstartSourcing ? { ...e, category: 'SOURCING' } : null
-          }
+          const desc = e.description.toLowerCase()
+
+          // Vendor patterns that Co-pilot intermittently miscategorizes as
+          // OPEX (or as SOURCING for Businessrsorensen) but are actually
+          // inventory purchases. Force them to INVENTORY here.
+          //   - Inmar / Smartlots Httpsinmarliq: J.Crew + Madewell load wires
+          //   - 888 Digital: Kickstart inventory supplier
+          //   - Businessrsorensen / Reclectic / Dick: Kickstart inventory
+          //     purchases (50%/50% split for the larger reclamation wires)
+          const isInventoryVendor =
+            desc.includes('inmar') ||
+            desc.includes('888 digital') ||
+            desc.includes('businessrsor') ||
+            desc.includes('reclectic') ||
+            desc.includes('dick')
+          if (isInventoryVendor) return { ...e, category: 'INVENTORY' }
+
           return e
         }).filter(Boolean)
 
