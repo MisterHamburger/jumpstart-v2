@@ -1269,14 +1269,17 @@ function ExpenseUpload() {
           const desc = e.description.toLowerCase()
 
           // Vendor patterns that Co-pilot intermittently miscategorizes as
-          // OPEX (or as SOURCING for Businessrsorensen) but are actually
-          // inventory purchases. Force them to INVENTORY here.
-          //   - Inmar / Smartlots Httpsinmarliq: J.Crew + Madewell load wires
+          // OPEX or SOURCING but are actually inventory purchases. Force
+          // them to INVENTORY here.
+          //   - Inmar / Smartlots / Httpsinmarliq: J.Crew + Madewell load wires
+          //     (Co-pilot sometimes shortens the description to just
+          //     "Sp Smartlots", so we match both halves of the pair)
           //   - 888 Digital: Kickstart inventory supplier
           //   - Businessrsorensen / Reclectic / Dick: Kickstart inventory
           //     purchases (50%/50% split for the larger reclamation wires)
           const isInventoryVendor =
             desc.includes('inmar') ||
+            desc.includes('smartlots') ||
             desc.includes('888 digital') ||
             desc.includes('businessrsor') ||
             desc.includes('reclectic') ||
