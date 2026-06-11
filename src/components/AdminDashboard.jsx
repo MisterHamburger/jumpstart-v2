@@ -132,6 +132,7 @@ export default function AdminDashboard() {
       jumpstart, kickstart, combined,
       totalOpex: Number(raw.expenses) || 0,
       totalPayroll: Number(raw.payroll) || 0,
+      totalPayrollSourcing: Number(raw.payroll_sourcing) || 0,
       loadCost: Number(raw.load_cost) || 0,
       loadFreight: Number(raw.load_freight) || 0,
       sourcing: Number(raw.sourcing) || 0,
@@ -153,7 +154,7 @@ export default function AdminDashboard() {
   const avgSalePrice = stats && stats.items > 0 ? stats.revenue / stats.items : 0
   const profitPerUnit = stats && stats.items > 0 ? stats.grossProfit / stats.items : 0
   const margin = stats && stats.revenue > 0 ? (stats.grossProfit / stats.revenue) * 100 : 0
-  const netProfit = stats ? stats.grossProfit - (data?.totalOpex || 0) - (data?.totalPayroll || 0) : 0
+  const netProfit = stats ? stats.grossProfit - (data?.totalOpex || 0) - (data?.totalPayroll || 0) - (data?.totalPayrollSourcing || 0) : 0
 
   // Calculate calendar days for per-day metrics
   const calendarDays = (() => {
@@ -171,7 +172,7 @@ export default function AdminDashboard() {
   const cogsPerItem = stats && stats.items > 0 ? stats.cogs / stats.items : 0
   const grossProfitPerItem = stats && stats.items > 0 ? stats.grossProfit / stats.items : 0
   const netProfitPerItem = stats && stats.items > 0 ? netProfit / stats.items : 0
-  const totalExpenses = (data?.totalOpex || 0) + (data?.totalPayroll || 0)
+  const totalExpenses = (data?.totalOpex || 0) + (data?.totalPayroll || 0) + (data?.totalPayrollSourcing || 0)
 
   return (
     <div>
@@ -294,7 +295,8 @@ export default function AdminDashboard() {
                   <div className="mt-4">
                     <PLRow label="OpEx" value={-(data?.totalOpex || 0)} />
                     <PLRow label="Payroll" value={-(data?.totalPayroll || 0)} />
-                    <PLRow label="Total Expenses" value={-((data?.totalOpex || 0) + (data?.totalPayroll || 0))} bold />
+                    <PLRow label="Sourcing Labor" value={-(data?.totalPayrollSourcing || 0)} />
+                    <PLRow label="Total Expenses" value={-totalExpenses} bold />
                   </div>
 
                   <div className="border-t border-white/[0.1] mt-2 pt-2">
@@ -326,8 +328,8 @@ export default function AdminDashboard() {
                   : channel === 'Kickstart' ? ksInvPurchases
                   : totalInvPurchases
 
-                // Venmo is now categorized as INVENTORY (not PAYROLL), no deduction needed
-                const cashflowPayroll = (data?.totalPayroll || 0)
+                // Sourcing-team labor (Venmo) lives in PAYROLL_SOURCING — real cash out
+                const cashflowPayroll = (data?.totalPayroll || 0) + (data?.totalPayrollSourcing || 0)
 
                 const cashflow = isSummary
                   ? stats.netRevenue - totalInvPurchases - (data?.totalOpex || 0) - cashflowPayroll
@@ -357,7 +359,8 @@ export default function AdminDashboard() {
                     {isSummary && (
                       <>
                         <PLRow label="OpEx" value={-(data?.totalOpex || 0)} />
-                        <PLRow label="Payroll" value={-cashflowPayroll} />
+                        <PLRow label="Payroll" value={-(data?.totalPayroll || 0)} />
+                        <PLRow label="Sourcing Labor" value={-(data?.totalPayrollSourcing || 0)} />
                       </>
                     )}
 

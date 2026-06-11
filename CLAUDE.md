@@ -58,8 +58,8 @@ LEFT JOIN (
 -- NEVER: LEFT JOIN jumpstart_manifest m ON m.barcode = t.barcode  (multiplies rows)
 ```
 
-**`expenses`** — Categories: `OPEX`, `PAYROLL` (Intuit only), `INVENTORY` (Venmo sourcing payments), `SOURCING` (direct sourcing)
-- **⚠️ Venmo = INVENTORY, NOT PAYROLL.** When importing expenses, Venmo transactions must be `INVENTORY`. Dashboard RPC sums `category = 'PAYROLL'` for payroll and `category IN ('SOURCING', 'INVENTORY')` for Kickstart sourcing.
+**`expenses`** — Categories: `OPEX` (incl. Pirate Ship + UPS shipping), `PAYROLL` (Intuit operations payroll only), `PAYROLL_SOURCING` (Venmo sourcing-team labor — kept separate from operations payroll), `SOURCING` (direct vendor payments — reclectic, businessrsor, dick), `INVENTORY` (inventory-vendor payments forced by CSV import rules since June 2026 — contains BOTH Jumpstart load payments (Sp Smartlots, Inmar-DHL, Hemster) and Kickstart vendors), `TRANSFER` (owner capital wires — excluded from every dashboard aggregate; added 2026-06-10)
+- **As of 2026-05-06:** Pirate Ship → OPEX, Venmo → `PAYROLL_SOURCING` (separated from `PAYROLL` so operations labor is distinguishable from sourcing-team labor). The change accompanied a Kickstart `true_cost` simplification — see "Kickstart COGS" below. CSV import normalizes Co-pilot label "Payroll - Sourcing Fees" → `PAYROLL_SOURCING`. Dashboard RPC aggregates: OPEX = `category='OPEX'`; PAYROLL = `category='PAYROLL'`; PAYROLL_SOURCING = `category='PAYROLL_SOURCING'`; "Kickstart sourcing" aggregates `category IN ('SOURCING','INVENTORY')` minus shipping descriptions minus Jumpstart load vendors (`%smartlots%`, `%inmar%`, `%jumpstart%`) — those are canonical in the `loads` table, and counting them here double-counted cashflow (fixed 2026-06-10). ⚠️ When a new Jumpstart load vendor appears in bank imports, add it to the exclusion list in `get_dashboard_summary`.
 
 ### Barcode Normalization (CRITICAL — #1 recurring issue)
 
@@ -99,11 +99,11 @@ FOR EACH ROW EXECUTE FUNCTION normalize_barcode_universal();
 - Enrichment via `enrich-kickstart-v2.js`
 
 ### Dashboard RPC
-- `get_dashboard_summary(date_cutoff, date_end)` — Payroll = `category = 'PAYROLL'`; Sourcing = `category IN ('SOURCING', 'INVENTORY')` excluding UPS/Pirate Ship
+- `get_dashboard_summary(date_cutoff, date_end)` — Payroll = `category = 'PAYROLL'`; Sourcing = `category IN ('SOURCING', 'INVENTORY')` excluding UPS/Pirate Ship and Jumpstart load vendors (smartlots/inmar/jumpstart). Jumpstart inventory cash comes from the `loads` table (`load_cost` + `load_freight`). The dashboard's Net Profit/Expenses/Cashflow include `payroll_sourcing`.
 
 ### Kickstart COGS vs Jumpstart COGS
 - **Jumpstart:** uses `cost_freight` from `jumpstart_manifest`. When importing a load manifest, set `cost_freight` = COGS directly from the liquidator's spreadsheet — freight is already baked into their COGS formula. `cost` is left NULL. Do NOT add $0.45 or any additional freight on top.
-- **Kickstart:** uses `true_cost` = cost + $1 sourcing fee + $1.50 shipping + 10% sales tax. Shipping already in COGS — do NOT also count UPS/Pirate Ship expenses or it double-counts
+- **Kickstart:** uses `true_cost` = `cost × (1 + sales_tax_rate)` only (8% default). Shipping (Pirate Ship, UPS) flows through OPEX and sourcing labor (Venmo) flows through PAYROLL — both as real expenses, no allocation in COGS. Updated 2026-05-06 (Scope C, full historical recompute) — previously included $1 shipping + $2 sourcing per item. The `shipping_fee` and `sourcing_fee` columns on `kickstart_intake` exist but default to 0 and are unused. `calculate_kickstart_true_cost` trigger recomputes on every insert/update.
 - **RDM (Load 5):** Random mystery lot — no manifest, no barcodes. Profitability view uses hardcoded cost of $3.41 for RDM items.
 
 ---
