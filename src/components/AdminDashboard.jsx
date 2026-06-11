@@ -134,7 +134,6 @@ export default function AdminDashboard() {
       totalPayroll: Number(raw.payroll) || 0,
       totalPayrollSourcing: Number(raw.payroll_sourcing) || 0,
       loadCost: Number(raw.load_cost) || 0,
-      loadFreight: Number(raw.load_freight) || 0,
       sourcing: Number(raw.sourcing) || 0,
       sourcingDirect: Number(raw.sourcing_direct) || 0,
       sourcingVenmo: Number(raw.sourcing_venmo) || 0,
@@ -320,7 +319,8 @@ export default function AdminDashboard() {
               )}
 
               {(() => {
-                const jsInvPurchases = (data?.loadCost || 0) + (data?.loadFreight || 0)
+                // Freight is baked into load payments (or arrives as separate OPEX) — no 0.45/item add-on
+                const jsInvPurchases = (data?.loadCost || 0)
                 const ksInvPurchases = data?.sourcing || 0
                 const totalInvPurchases = jsInvPurchases + ksInvPurchases
 
@@ -345,10 +345,7 @@ export default function AdminDashboard() {
                       </>
                     )}
                     {channel === 'Jumpstart' && (
-                      <>
-                        <PLRow label="Load Costs" value={-(data?.loadCost || 0)} indent />
-                        <PLRow label="Freight" value={-(data?.loadFreight || 0)} indent />
-                      </>
+                      <PLRow label="Load Costs" value={-(data?.loadCost || 0)} indent />
                     )}
                     {channel === 'Kickstart' && (
                       <>

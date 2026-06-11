@@ -12,8 +12,14 @@
 --      Fix: the `loads` table stays canonical for Jumpstart inventory cash;
 --      the sourcing aggregate now excludes known Jumpstart load vendors by
 --      description, mirroring the existing ups/pirate-ship exclusions.
+--      Per Josh 2026-06-10: Boutiquebythebox and Nusource are Jumpstart
+--      vendors (excluded); 888 Digital is Kickstart (stays).
 --      ⚠️ When a NEW Jumpstart load vendor appears in bank imports, add it to
 --      the exclusion list below or its payments will double-count again.
+--   3. load_freight (0.45 × quantity) is no longer reported: per Josh
+--      2026-06-10, Inmar payments mostly include freight, and any separate
+--      freight charge arrives as its own OPEX expense from the freight
+--      company/broker — so adding 0.45/item double-counted freight.
 --   2. Owner capital wires (incoming, "Jeremiah Sizemore Or Sarah S Wolf")
 --      were imported as negative SOURCING expenses (-$70k Mar 2026, -$30k Feb
 --      2026, -$30k Oct 2024), silently offsetting real sourcing spend. They
@@ -111,8 +117,10 @@ BEGIN
   SELECT COALESCE(SUM(total_cost), 0) INTO total_load_cost FROM loads
     WHERE date >= effective_start AND (date_end IS NULL OR date <= date_end);
 
-  SELECT COALESCE(SUM(freight_per_item * quantity), 0) INTO total_load_freight FROM loads
-    WHERE date >= effective_start AND (date_end IS NULL OR date <= date_end);
+  -- Freight is already inside Inmar load payments (or arrives as separate
+  -- OPEX from the freight broker) — adding 0.45/item here double-counted it.
+  -- Key kept at 0 for frontend compatibility.
+  total_load_freight := 0;
 
   -- Kickstart sourcing: SOURCING + INVENTORY expenses, minus shipping and
   -- minus Jumpstart load vendors (those are canonical in the `loads` table —
@@ -125,6 +133,8 @@ BEGIN
       AND description NOT ILIKE '%smartlots%'
       AND description NOT ILIKE '%inmar%'
       AND description NOT ILIKE '%jumpstart%'
+      AND description NOT ILIKE '%boutiquebythebox%'
+      AND description NOT ILIKE '%nusource%'
       AND date >= expense_start AND (date_end IS NULL OR date <= date_end);
 
   ups_amount := 0;
