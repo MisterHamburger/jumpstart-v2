@@ -110,8 +110,17 @@ export default function SalesScanner() {
   const [savingCogs, setSavingCogs] = useState(false)
   const [itemOverrides, setItemOverrides] = useState([])
   const [itemCogsError, setItemCogsError] = useState(null)
+  // Jumpstart "Manual Scan" modal: pool tag for no-barcode items (RDM | UJC).
+  // The tag drives both inventory deduction (which pool) and COGS (that pool's WAC).
+  const [tagType, setTagType] = useState('')
+  const [manualMsg, setManualMsg] = useState('')
   const html5QrcodeRef = useRef(null)
   const scannerStartingRef = useRef(false)
+  // Synchronous re-entrancy guard for whole-show "finish" handlers. The
+  // savingCogs state guard is async (React batches the update), so a rapid
+  // double-tap can pass `if (savingCogs) return` twice — both reads see 0
+  // existing scans and both bulk-insert, doubling every listing (show 171).
+  const finishingShowRef = useRef(false)
   const initialScannedRef = useRef(null)
   const onScanSuccessRef = useRef(null)
   const [hardwareInput, setHardwareInput] = useState('')
@@ -379,7 +388,8 @@ export default function SalesScanner() {
 
   // Bulk-save all remaining unscanned valid show_items as RDM, then mark show complete
   const handleSaveAllRemainingAsRdm = async () => {
-    if (savingRdm) return
+    if (savingRdm || finishingShowRef.current) return
+    finishingShowRef.current = true
     try {
       const { data: allItems } = await supabase
         .from('show_items')
@@ -413,8 +423,10 @@ export default function SalesScanner() {
     } catch (err) {
       console.error('Error saving remaining as RDM:', err)
       alert('Error saving — try again')
+    } finally {
+      setSavingRdm(false)
+      finishingShowRef.current = false
     }
-    setSavingRdm(false)
   }
 
   // Kickstart equivalent of handleSaveAllRemainingAsRdm:
@@ -422,10 +434,14 @@ export default function SalesScanner() {
   // for all unscanned valid items, then marks the show complete. Per-item
   // overrides already on show_items still win via the profitability view.
   const handleApplyCogsAndFinish = async (customCostValue, { skipConfirm = false } = {}) => {
-    if (savingCogs) return
+    if (savingCogs || finishingShowRef.current) return
     const val = Number(customCostValue)
     if (!(val > 0)) return
 
+    // Same per-show custom-cost mechanism on both channels, different scan tables.
+    const scansTable = showData?.channel === 'Kickstart' ? 'kickstart_sold_scans' : 'jumpstart_sold_scans'
+
+    finishingShowRef.current = true
     try {
       // Count remaining items for the confirm dialog
       const { data: allItems } = await supabase
@@ -434,7 +450,7 @@ export default function SalesScanner() {
         .eq('show_id', showId)
         .eq('status', 'valid')
       const { data: scannedData } = await supabase
-        .from('kickstart_sold_scans')
+        .from(scansTable)
         .select('listing_number')
         .eq('show_id', showId)
       const scannedSet = new Set((scannedData || []).map(s => String(s.listing_number)))
@@ -464,7 +480,7 @@ export default function SalesScanner() {
 
       // Bulk-insert placeholder scans for remaining items
       if (count > 0) {
-        await supabase.from('kickstart_sold_scans').insert(toInsert)
+        await supabase.from(scansTable).insert(toInsert)
       }
 
       // Mark complete
@@ -479,6 +495,116 @@ export default function SalesScanner() {
     } catch (err) {
       console.error('Error applying COGS and finishing show:', err)
       alert('Error saving — try again')
+    } finally {
+      setSavingCogs(false)
+      finishingShowRef.current = false
+    }
+  }
+
+  // Jumpstart Manual Scan — whole show: tag every remaining unscanned valid
+  // item with a pool barcode (RDM | UJC), then mark the show complete. The tag
+  // is what deducts the pool and resolves COGS to that pool's WAC. Replaces the
+  // old CUSTOM-cost path, which never deducted inventory.
+  const handleApplyTagAndFinish = async (tag) => {
+    if (savingCogs || finishingShowRef.current) return
+    if (tag !== 'RDM' && tag !== 'UJC') return
+    finishingShowRef.current = true
+    try {
+      const { data: allItems } = await supabase
+        .from('show_items')
+        .select('listing_number')
+        .eq('show_id', showId)
+        .eq('status', 'valid')
+      const { data: scannedData } = await supabase
+        .from('jumpstart_sold_scans')
+        .select('listing_number')
+        .eq('show_id', showId)
+      const scannedSet = new Set((scannedData || []).map(s => String(s.listing_number)))
+      const toInsert = (allItems || [])
+        .filter(item => !scannedSet.has(String(item.listing_number)))
+        .map(item => ({
+          show_id: showId,
+          barcode: tag,
+          listing_number: item.listing_number,
+          scanned_by: 'phone'
+        }))
+      const count = toInsert.length
+      const msg = count === 0
+        ? 'No remaining items — mark this show complete?'
+        : `Tag ${count} remaining item${count !== 1 ? 's' : ''} as ${tag} and mark show complete?`
+      if (!confirm(msg)) return
+      setSavingCogs(true)
+      if (count > 0) {
+        await supabase.from('jumpstart_sold_scans').insert(toInsert)
+      }
+      await supabase.from('shows')
+        .update({ status: 'completed', scanned_count: scannedCount + count })
+        .eq('id', showId)
+      setShowCogsModal(false)
+      setShowCompletion(true)
+    } catch (err) {
+      console.error('Error tagging remaining & finishing show:', err)
+      alert('Error saving — try again')
+    } finally {
+      setSavingCogs(false)
+      finishingShowRef.current = false
+    }
+  }
+
+  // Jumpstart Manual Scan — single item: record one no-barcode sale tagged to a
+  // pool (RDM | UJC) for a given sticker #. Inserts a real pool scan so it both
+  // logs the sale and deducts that pool. Stays open so several can be added.
+  const handleManualPoolScan = async (tag) => {
+    if (savingCogs) return
+    if (tag !== 'RDM' && tag !== 'UJC') { setItemCogsError('Pick a type (RDM or UJC)'); return }
+    const listingNum = parseInt(itemCogsListing, 10)
+    if (!(listingNum > 0)) { setItemCogsError('Enter a valid sticker number'); return }
+    setSavingCogs(true)
+    setItemCogsError(null)
+    setManualMsg('')
+    try {
+      const { data: dup } = await supabase
+        .from('jumpstart_sold_scans')
+        .select('id')
+        .eq('show_id', showId)
+        .eq('listing_number', listingNum)
+        .limit(1)
+      if (dup && dup.length > 0) {
+        setItemCogsError(`#${listingNum} was already scanned`)
+        setSavingCogs(false)
+        return
+      }
+      const { data: exists } = await supabase
+        .from('show_items')
+        .select('listing_number, product_name, status')
+        .eq('show_id', showId)
+        .eq('listing_number', listingNum)
+        .limit(1)
+      if (!exists || exists.length === 0) {
+        setItemCogsError(`#${listingNum} not found in this show`)
+        setSavingCogs(false)
+        return
+      }
+      if (exists[0].status === 'failed' || exists[0].status === 'cancelled') {
+        setItemCogsError(`#${listingNum} is ${exists[0].status}`)
+        setSavingCogs(false)
+        return
+      }
+      await supabase.from('jumpstart_sold_scans').insert({
+        show_id: showId,
+        barcode: tag,
+        listing_number: listingNum,
+        scanned_by: 'phone'
+      })
+      await supabase.from('shows')
+        .update({ scanned_count: scannedCount + 1 })
+        .eq('id', showId)
+      await loadScans()
+      setManualMsg(`✓ #${listingNum} added as ${tag}`)
+      setItemCogsListing('')
+    } catch (err) {
+      console.error('Error saving manual pool scan:', err)
+      setItemCogsError('Save failed — check console')
     }
     setSavingCogs(false)
   }
@@ -1440,29 +1566,42 @@ export default function SalesScanner() {
         </div>
       )}
 
-      {/* Bottom buttons: No Barcode + RDM + Remaining + Scans — pinned outside scanner flex so camera can't push them off */}
+      {/* Bottom buttons — pinned outside scanner flex so camera can't push them
+          off. Jumpstart: Manual Scan (no-barcode pool items) + Scans. Kickstart:
+          Find Item + Remaining + Scans. */}
       {!scannedBarcode && !showItemPicker && !noBarcodeStep && !showSuccess && (
         <div className="relative z-10 px-4 pt-3 flex gap-2 bg-slate-900 shrink-0" style={{ paddingBottom: 'calc(12px + env(safe-area-inset-bottom, 12px))' }}>
-          <button
-            onClick={handleNoBarcode}
-            className="flex-1 py-3 rounded-2xl font-bold text-xs bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow-lg shadow-amber-500/30 border border-amber-400/50 active:scale-[0.97] transition-all"
-          >
-            {isKickstart ? 'Find Item' : 'No Barcode'}
-          </button>
-          {!isKickstart && (
+          {isKickstart ? (
+            <>
+              <button
+                onClick={handleNoBarcode}
+                className="flex-1 py-3 rounded-2xl font-bold text-xs bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow-lg shadow-amber-500/30 border border-amber-400/50 active:scale-[0.97] transition-all"
+              >
+                Find Item
+              </button>
+              <button
+                onClick={() => { loadRemainingItems(); setShowRemainingModal(true); }}
+                className="flex-1 py-3 rounded-2xl font-bold text-xs bg-gradient-to-r from-indigo-500 to-blue-500 text-white shadow-lg shadow-indigo-500/30 border border-indigo-400/50 active:scale-[0.97] transition-all"
+              >
+                Remaining
+              </button>
+            </>
+          ) : (
             <button
-              onClick={async () => { await stopScanner(); setScannedBarcode('RDM'); }}
-              className="flex-1 py-3 rounded-2xl font-bold text-xs bg-gradient-to-r from-purple-500 to-violet-500 text-white shadow-lg shadow-purple-500/30 border border-purple-400/50 active:scale-[0.97] transition-all"
+              onClick={async () => {
+                await stopScanner()
+                setCogsTab('show')
+                setTagType('')
+                setManualMsg('')
+                setItemCogsError(null)
+                setItemCogsListing('')
+                setShowCogsModal(true)
+              }}
+              className="flex-1 py-3 rounded-2xl font-bold text-xs bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow-lg shadow-amber-500/30 border border-amber-400/50 active:scale-[0.97] transition-all"
             >
-              RDM
+              Manual Scan
             </button>
           )}
-          <button
-            onClick={() => { loadRemainingItems(); setShowRemainingModal(true); }}
-            className="flex-1 py-3 rounded-2xl font-bold text-xs bg-gradient-to-r from-indigo-500 to-blue-500 text-white shadow-lg shadow-indigo-500/30 border border-indigo-400/50 active:scale-[0.97] transition-all"
-          >
-            Remaining
-          </button>
           <button
             onClick={() => setShowScansModal(true)}
             className="flex-1 py-3 rounded-2xl font-bold text-xs bg-cyan-600 text-white shadow-lg shadow-cyan-500/30 border border-cyan-400/50 active:scale-[0.97] transition-all"
@@ -1638,7 +1777,7 @@ export default function SalesScanner() {
         </div>
       )}
 
-      {/* Custom COGS Modal (Kickstart only) */}
+      {/* Manual Scan (Jumpstart, pool tags) / Custom COGS (Kickstart) modal */}
       {showCogsModal && (
         <div className="fixed inset-0 bg-black/90 backdrop-blur-lg z-50 flex flex-col">
           <div className="glass-card px-6 py-4 flex items-center justify-between border-b border-white/10">
@@ -1649,7 +1788,7 @@ export default function SalesScanner() {
               <iconify-icon icon="lucide:chevron-left" class="text-white"></iconify-icon>
             </button>
             <div className="text-center">
-              <h3 className="text-xl font-bold text-white font-heading">Custom COGS</h3>
+              <h3 className="text-xl font-bold text-white font-heading">{isKickstart ? 'Custom COGS' : 'Manual Scan'}</h3>
             </div>
             <button
               onClick={() => setShowCogsModal(false)}
@@ -1688,7 +1827,7 @@ export default function SalesScanner() {
           <div className="flex-1 overflow-y-auto p-6 flex items-start justify-center">
             <div className="w-full max-w-md space-y-5">
 
-              {cogsTab === 'show' && (
+              {isKickstart && cogsTab === 'show' && (
                 <>
                   <div className="glass-card rounded-3xl p-5">
                     <div className="flex items-start gap-3">
@@ -1786,7 +1925,7 @@ export default function SalesScanner() {
                 </>
               )}
 
-              {cogsTab === 'item' && (
+              {isKickstart && cogsTab === 'item' && (
                 <>
                   <div className="glass-card rounded-3xl p-5">
                     <div className="flex items-start gap-3">
@@ -1920,6 +2059,109 @@ export default function SalesScanner() {
                       </div>
                     </div>
                   )}
+                </>
+              )}
+
+              {/* JUMPSTART — Whole show: tag all remaining items to a pool */}
+              {!isKickstart && cogsTab === 'show' && (
+                <>
+                  <div className="glass-card rounded-3xl p-5">
+                    <div className="flex items-start gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center shrink-0">
+                        <iconify-icon icon="lucide:package" class="text-cyan-400" width="20"></iconify-icon>
+                      </div>
+                      <div className="flex-1">
+                        <p className="text-white font-bold mb-1">Tag remaining items</p>
+                        <p className="text-slate-400 text-sm">
+                          For no-barcode items that weren't pre-scanned. Pick the pool — every remaining unscanned item is tagged, deducted from that pool, and costed at the pool's running WAC. Items already scanned by barcode keep their own cost.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-white/70 text-sm font-semibold mb-2">Item type</label>
+                    <select
+                      value={tagType}
+                      onChange={(e) => setTagType(e.target.value)}
+                      className="w-full px-4 py-4 rounded-2xl bg-white/5 border border-white/10 text-white text-lg font-bold focus:outline-none focus:border-cyan-500/50 focus:ring-4 focus:ring-cyan-500/10 transition-all"
+                    >
+                      <option value="">Select type…</option>
+                      <option value="RDM">RDM — Items with Defect Tags</option>
+                      <option value="UJC">UJC — J.Crew/Madewell items with no barcodes or defect tags</option>
+                    </select>
+                  </div>
+
+                  <button
+                    onClick={() => handleApplyTagAndFinish(tagType)}
+                    disabled={savingCogs || !(tagType === 'RDM' || tagType === 'UJC')}
+                    className="w-full py-5 px-6 rounded-2xl bg-gradient-to-r from-cyan-500 to-teal-500 text-white font-black text-base hover:scale-[1.02] active:scale-[0.98] transition-all shadow-xl shadow-cyan-500/40 border-2 border-cyan-400/50 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {savingCogs ? 'Applying…' : `Apply ${tagType || 'tag'} to remaining ${remainingCount} & finish show`}
+                  </button>
+                  <p className="text-slate-500 text-xs text-center -mt-2">
+                    Tags every unscanned item to the selected pool and marks the show complete.
+                  </p>
+                </>
+              )}
+
+              {/* JUMPSTART — Single item: record one no-barcode pool sale */}
+              {!isKickstart && cogsTab === 'item' && (
+                <>
+                  <div className="glass-card rounded-3xl p-5">
+                    <div className="flex items-start gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center shrink-0">
+                        <iconify-icon icon="lucide:tag" class="text-cyan-400" width="20"></iconify-icon>
+                      </div>
+                      <div className="flex-1">
+                        <p className="text-white font-bold mb-1">Record one no-barcode item</p>
+                        <p className="text-slate-400 text-sm">
+                          Enter the yellow sticker # and pick its pool. Logs the sale, deducts that pool, and costs it at the pool's running WAC.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-3">
+                    <div>
+                      <label className="block text-white/70 text-sm font-semibold mb-2">Yellow sticker #</label>
+                      <input
+                        type="number"
+                        inputMode="numeric"
+                        placeholder="e.g. 42"
+                        value={itemCogsListing}
+                        onChange={(e) => { setItemCogsListing(e.target.value); setItemCogsError(null); setManualMsg('') }}
+                        className="w-full px-4 py-3 rounded-2xl bg-white/5 border border-white/10 text-white text-lg font-bold focus:outline-none focus:border-cyan-500/50 focus:ring-4 focus:ring-cyan-500/10 transition-all"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-white/70 text-sm font-semibold mb-2">Item type</label>
+                      <select
+                        value={tagType}
+                        onChange={(e) => { setTagType(e.target.value); setItemCogsError(null) }}
+                        className="w-full px-4 py-3 rounded-2xl bg-white/5 border border-white/10 text-white text-lg font-bold focus:outline-none focus:border-cyan-500/50 focus:ring-4 focus:ring-cyan-500/10 transition-all"
+                      >
+                        <option value="">Select type…</option>
+                        <option value="RDM">RDM — Items with Defect Tags</option>
+                        <option value="UJC">UJC — J.Crew/Madewell items with no barcodes or defect tags</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  {itemCogsError && (
+                    <p className="text-red-400 text-sm text-center">{itemCogsError}</p>
+                  )}
+                  {manualMsg && (
+                    <p className="text-emerald-400 text-sm text-center">{manualMsg}</p>
+                  )}
+
+                  <button
+                    onClick={() => handleManualPoolScan(tagType)}
+                    disabled={savingCogs || !itemCogsListing || !(tagType === 'RDM' || tagType === 'UJC')}
+                    className="w-full py-4 px-6 rounded-2xl bg-cyan-600 text-white font-bold hover:bg-cyan-500 active:scale-[0.98] transition-all shadow-lg shadow-cyan-600/30 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {savingCogs ? 'Saving…' : 'Add item'}
+                  </button>
                 </>
               )}
 
