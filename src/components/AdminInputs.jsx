@@ -14,17 +14,17 @@ export default function AdminInputs() {
       {/* Tab pills - below title */}
       <div className="relative p-[1px] rounded-3xl bg-gradient-to-r from-cyan-500/40 via-cyan-500/20 to-cyan-500/40 shadow-lg w-fit">
         <div className="flex gap-1 bg-[#080c14] rounded-3xl p-1.5">
-          {['shows', 'manifests', 'expenses'].map(s => (
-            <button 
-              key={s} 
+          {[['shows', 'Shows'], ['manifests', 'Add New Load'], ['expenses', 'Expenses']].map(([s, label]) => (
+            <button
+              key={s}
               onClick={() => setActiveSection(s)}
               className={`px-4 py-2 rounded-xl text-sm font-semibold transition-all duration-200 ${
-                activeSection === s 
+                activeSection === s
                   ? 'bg-cyan-600 text-white shadow-lg shadow-cyan-600/30'
                   : 'text-slate-400 hover:text-white hover:bg-white/5'
               }`}
             >
-              {s.charAt(0).toUpperCase() + s.slice(1)}
+              {label}
             </button>
           ))}
         </div>
@@ -133,7 +133,7 @@ function getField(row, ...names) {
 function ManifestUpload() {
   const [loads, setLoads] = useState([])
   const [loadId, setLoadId] = useState('')
-  const [newLoad, setNewLoad] = useState({ date: '', vendor: '', total_cost: '', quantity: '', notes: '' })
+  const [newLoad, setNewLoad] = useState({ date: '', vendor: '', total_cost: '', quantity: '', notes: '', kind: '' })
   const [showNewLoad, setShowNewLoad] = useState(false)
   const [status, setStatus] = useState('')
   const [progress, setProgress] = useState(null)
@@ -159,27 +159,49 @@ function ManifestUpload() {
     setLoads(merged)
   }
 
+  // The barcode token a pool load is scanned with at sale time. RDM/UJC use
+  // their canonical tokens; a custom brand pool derives one from the brand
+  // name (uppercased, alphanumerics only) so e.g. "Quince" → "QUINCE".
+  function derivePoolTag(kind, vendor) {
+    if (kind === 'rdm') return 'RDM'
+    if (kind === 'unmanifested') return 'UJC'
+    if (kind === 'custom') {
+      const tag = (vendor || '').toUpperCase().replace(/[^A-Z0-9]/g, '')
+      // Guard: a purely-numeric tag would be mangled by barcode normalization.
+      return tag && !/^\d+$/.test(tag) ? tag : null
+    }
+    return null
+  }
+
   async function createLoad(e) {
     e.preventDefault()
     const nextId = loads.length + 1
     const loadIdNew = `Load ${nextId}`
-    
+
+    const poolTag = derivePoolTag(newLoad.kind, newLoad.vendor)
+    if (newLoad.kind === 'custom' && !poolTag) {
+      setStatus('❌ Custom brand needs a non-numeric brand name (used as the scan tag)')
+      return
+    }
+
     const { error } = await supabase.from('loads').insert({
       id: loadIdNew,
       date: newLoad.date,
       vendor: newLoad.vendor,
       total_cost: parseFloat(newLoad.total_cost) || null,
       quantity: parseInt(newLoad.quantity) || null,
-      notes: newLoad.notes
+      notes: newLoad.notes,
+      kind: newLoad.kind,
+      pool_tag: poolTag
     })
-    
+
     if (error) {
       setStatus(`❌ Error creating load: ${error.message}`)
       return
     }
-    
+
     setStatus(`✅ Created ${loadIdNew}`)
-    setNewLoad({ date: '', vendor: '', total_cost: '', quantity: '', notes: '' })
+    setNewLoad({ date: '', vendor: '', total_cost: '', quantity: '', notes: '', kind: '' })
     setShowNewLoad(false)
     setLoadId(loadIdNew)
     refreshLoads()
@@ -319,6 +341,30 @@ function ManifestUpload() {
         {/* New Load Form */}
         {showNewLoad && (
           <form onSubmit={createLoad} className="mb-4 p-4 rounded-2xl bg-white/5 border border-white/10 space-y-3">
+            <div>
+              <label className="block text-xs font-semibold text-slate-400 mb-1.5">Inventory type</label>
+              <select
+                value={newLoad.kind}
+                onChange={e => setNewLoad({...newLoad, kind: e.target.value})}
+                className="w-full bg-white/5 border border-white/10 rounded-2xl px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-500/50 focus:ring-4 focus:ring-cyan-500/10 transition-all"
+                required
+              >
+                <option value="">Select type…</option>
+                <option value="manifested">Manifested — items with barcodes</option>
+                <option value="rdm">RDM — Items with Defect Tags</option>
+                <option value="unmanifested">UJC — J.Crew/Madewell items with no barcodes or defect tags</option>
+                <option value="custom">Custom brand — no manifest, blended WAC by brand</option>
+              </select>
+              {newLoad.kind === 'custom' && (
+                <p className="text-xs text-slate-500 mt-1.5">
+                  No manifest upload. Items are scanned at sale time with the pool tag
+                  {derivePoolTag('custom', newLoad.vendor)
+                    ? <> <span className="font-mono text-cyan-400">{derivePoolTag('custom', newLoad.vendor)}</span></>
+                    : ' (set the brand below)'}
+                  , and cost resolves to this brand's running weighted-average cost across all its loads.
+                </p>
+              )}
+            </div>
             <div className="grid grid-cols-2 gap-3">
               <input 
                 type="date" 
@@ -381,9 +427,15 @@ function ManifestUpload() {
               >
                 <div className="flex justify-between items-start">
                   <div>
-                    <div className="font-semibold text-white">
-                      Load {l.id.replace('Load ', '')}
-                      {(l.vendor || l.notes) && <span className="text-slate-400 font-normal"> — {l.vendor || l.notes}</span>}
+                    <div className="font-semibold text-white flex items-center gap-2 flex-wrap">
+                      <span>
+                        Load {l.id.replace('Load ', '')}
+                        {(l.vendor || l.notes) && <span className="text-slate-400 font-normal"> — {l.vendor || l.notes}</span>}
+                      </span>
+                      {(() => {
+                        const k = { manifested: ['Manifested', 'bg-cyan-500/15 text-cyan-300 border-cyan-500/30'], rdm: ['RDM', 'bg-purple-500/15 text-purple-300 border-purple-500/30'], unmanifested: ['UJC', 'bg-amber-500/15 text-amber-300 border-amber-500/30'], custom: [l.pool_tag || 'CUSTOM', 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'] }[l.kind]
+                        return k ? <span className={`text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full border ${k[1]}`}>{k[0]}</span> : null
+                      })()}
                     </div>
                     <div className="text-xs text-slate-500 mt-1">
                       Date Paid: {formattedDate}
@@ -579,24 +631,27 @@ function ShowUpload() {
           return
         }
 
-        // Parse first timestamp and convert to Central Time
-        // Timestamps from Whatnot are UTC but don't have 'Z' suffix
-        // Append 'Z' to force UTC parsing, then subtract 6 hours for Central
+        // Parse first timestamp and convert to Central Time.
+        // Timestamps from Whatnot are UTC but don't have 'Z' suffix — append
+        // 'Z' to force UTC parsing, then convert via the America/Chicago zone
+        // (handles CST/CDT automatically, no hardcoded offset).
         const rawTs = timestamps[0].trim()
         const utcTs = rawTs.includes('Z') ? rawTs : rawTs.replace(' ', 'T') + 'Z'
         const firstTs = new Date(utcTs)
-        
-        // Create a new date adjusted to Central Time (UTC - 6 hours)
-        const centralTime = new Date(firstTs.getTime() - (6 * 60 * 60 * 1000))
-        
-        // Get the date and hour in Central Time
-        const showDate = centralTime.toISOString().split('T')[0]
-        const centralHour = centralTime.getUTCHours()
 
-        // Morning shows: ~6am-5pm Central
-        // Evening shows: ~5pm-6am Central
+        const parts = new Intl.DateTimeFormat('en-CA', {
+          timeZone: 'America/Chicago',
+          year: 'numeric', month: '2-digit', day: '2-digit',
+          hour: '2-digit', hourCycle: 'h23'
+        }).formatToParts(firstTs)
+        const getPart = (type) => parts.find(p => p.type === type).value
+        const showDate = `${getPart('year')}-${getPart('month')}-${getPart('day')}`
+        const centralHour = parseInt(getPart('hour'), 10)
+
+        // Morning shows: 6am-3pm Central
+        // Evening shows: 3pm-6am Central
         let timeOfDay
-        if (centralHour >= 6 && centralHour < 17) {
+        if (centralHour >= 6 && centralHour < 15) {
           timeOfDay = 'morning'
         } else {
           timeOfDay = 'evening'
@@ -855,6 +910,7 @@ function ShowUpload() {
               <option value="Laura">Laura</option>
               <option value="Hannah">Hannah</option>
               <option value="Josh">Josh</option>
+              <option value="Elizabeth">Elizabeth</option>
             </select>
           </div>
         </div>

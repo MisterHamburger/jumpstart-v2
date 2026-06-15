@@ -12,19 +12,92 @@ import { supabase, fetchAll } from '../lib/supabase'
 // Deletion is always restricted to UNSOLD manifest rows so we never break
 // profitability joins. Per barcode the deletable count is
 // (manifest rows of that barcode) − (jumpstart_sold_scans rows with that barcode).
-// RDM (Random Mystery Lot) inventory has no barcodes and no manifest rows —
-// CLAUDE.md spells out that profitability hardcodes \$3.41/unit for it. We
-// represent it as a single synthetic SKU here: qty = sum of RDM-tagged
-// loads.quantity minus units sold via Whatnot (barcode='RDM') and via
-// rdm_bundle_sales. Editing the in-stock count writes loads.quantity = sold
-// + new_in_stock so the rolling math stays consistent.
-const RDM_COST = 3.41
-const RDM_KEY = '__rdm__'
+//
+// Unmanifested pools (RDM, Unmanifested J.Crew) have no per-unit barcodes and
+// no manifest rows. We represent each as a single synthetic SKU here:
+// qty = sum(loads.quantity WHERE kind=X) − Whatnot scans of barcode X (+ for
+// RDM, rdm_bundle_sales units). Editing in-stock writes loads.quantity = sold
+// + new_in_stock on the pool's primary load.
+// Accent class lookup — Tailwind needs literal class names, so each pool
+// accent's full set lives here rather than being interpolated.
+const ACCENT_CLASSES = {
+  violet: {
+    container: 'bg-violet-500/10 border-violet-500/40',
+    thumb: 'bg-violet-500/20 border-violet-500/40 text-violet-300',
+    badge: 'bg-violet-500/30 border border-violet-500/50 text-violet-100',
+    btn: 'bg-violet-600 hover:bg-violet-500',
+    stock: { bg: 'bg-violet-500/20 border-violet-500/40', label: 'text-violet-300', value: 'text-violet-100' },
+  },
+  amber: {
+    container: 'bg-amber-500/10 border-amber-500/40',
+    thumb: 'bg-amber-500/20 border-amber-500/40 text-amber-300',
+    badge: 'bg-amber-500/30 border border-amber-500/50 text-amber-100',
+    btn: 'bg-amber-600 hover:bg-amber-500',
+    stock: { bg: 'bg-amber-500/20 border-amber-500/40', label: 'text-amber-300', value: 'text-amber-100' },
+  },
+  emerald: {
+    container: 'bg-emerald-500/10 border-emerald-500/40',
+    thumb: 'bg-emerald-500/20 border-emerald-500/40 text-emerald-300',
+    badge: 'bg-emerald-500/30 border border-emerald-500/50 text-emerald-100',
+    btn: 'bg-emerald-600 hover:bg-emerald-500',
+    stock: { bg: 'bg-emerald-500/20 border-emerald-500/40', label: 'text-emerald-300', value: 'text-emerald-100' },
+  },
+}
 
-export default function JumpstartInventory({ onClose }) {
+// Display config for the two built-in pools, keyed by scan token (pool_tag).
+// Custom brand pools synthesize their own config at load time (emerald accent).
+const BASE_POOL_CONFIG = {
+  RDM: {
+    label: 'RDM (Random Mystery Lot)',
+    vendorLabel: 'RDM',
+    accent: 'violet',
+    blurb: 'Random Mystery Lot — bulk units, no barcodes.',
+    hasBundles: true,
+  },
+  UJC: {
+    label: 'Unmanifested J.Crew (non-RDM)',
+    vendorLabel: 'Unmanifested J.Crew',
+    accent: 'amber',
+    blurb: 'Direct-from-J.Crew batch — no per-unit barcodes.',
+    hasBundles: false,
+  },
+}
+
+// Build the full pool-config map keyed by pool_tag from the loads rows.
+// RDM/UJC use BASE_POOL_CONFIG; any other tag (custom brand) is synthesized.
+function buildPoolConfigs(poolLoads) {
+  const cfgs = {}
+  for (const l of poolLoads || []) {
+    const tag = l.pool_tag
+    if (!tag || cfgs[tag]) continue
+    const base = BASE_POOL_CONFIG[tag]
+    cfgs[tag] = base
+      ? { ...base, key: `__pool_${tag}__`, scanBarcode: tag }
+      : {
+          key: `__pool_${tag}__`,
+          label: l.vendor || tag,
+          vendorLabel: l.vendor || tag,
+          scanBarcode: tag,
+          accent: 'emerald',
+          blurb: `${l.vendor || tag} — bulk units, no barcodes.`,
+          hasBundles: false,
+        }
+  }
+  return cfgs
+}
+
+// Pool sort order: RDM, then UJC, then custom brands A–Z.
+function poolRank(tag) {
+  return tag === 'RDM' ? 0 : tag === 'UJC' ? 1 : 2
+}
+
+// Renders as a full-screen overlay when `onClose` is provided (scanner mode),
+// or inline when `embed` is true (used on the Admin Inventory tab).
+export default function JumpstartInventory({ onClose, embed = false }) {
   const [items, setItems] = useState([])              // jumpstart_manifest rows
   const [soldByBarcode, setSoldByBarcode] = useState({}) // barcode → sold count
-  const [rdmData, setRdmData] = useState(null)        // { loadIds, purchased, sold }
+  const [pools, setPools] = useState({})              // pool_tag → { purchased, sold, ... }
+  const [poolConfigs, setPoolConfigs] = useState({})  // pool_tag → display config
   const [loading, setLoading] = useState(true)
 
   const [filterCategory, setFilterCategory] = useState(null)
@@ -51,43 +124,61 @@ export default function JumpstartInventory({ onClose }) {
         .select('id, barcode, description, category, subclass, size, color, vendor, gender, part_number, msrp, cost_freight, zone, load_id, photo_url, created_at')
         .order('created_at', { ascending: false }))
 
-      // Aggregate sold counts per barcode + RDM totals (Whatnot RDM scans
-      // share barcode 'RDM' and are tracked separately from real-barcode
-      // sales for inventory purposes).
+      // Aggregate sold counts per barcode. Unmanifested-pool scans (barcode
+      // 'RDM' or 'UJC') are bucketed separately from real-barcode sales.
       const sold = await fetchAll(() => supabase
         .from('jumpstart_sold_scans')
         .select('barcode'))
+      // Per-pool load aggregates (purchased qty, total cost basis), keyed by
+      // pool_tag (RDM, UJC, and any custom brand pools).
+      const { data: poolLoads } = await supabase
+        .from('loads')
+        .select('id, kind, pool_tag, vendor, quantity, total_cost')
+        .not('pool_tag', 'is', null)
+
+      const cfgs = buildPoolConfigs(poolLoads)
+      const poolTagSet = new Set(Object.keys(cfgs))
+
+      // Aggregate sold counts per barcode. Pool scans (barcode = a pool_tag)
+      // are bucketed separately from real-barcode sales.
       const counts = {}
-      let rdmScanCount = 0
+      const poolScanCounts = {}
       for (const s of (sold || [])) {
         const b = s.barcode
         if (!b) continue
         if (b === 'CUSTOM') continue
-        if (b === 'RDM') { rdmScanCount++; continue }
+        if (poolTagSet.has(b)) { poolScanCounts[b] = (poolScanCounts[b] || 0) + 1; continue }
         counts[b] = (counts[b] || 0) + 1
       }
 
-      // RDM inventory: any load tagged with RDM vendor/notes.
-      const { data: rdmLoads } = await supabase
-        .from('loads')
-        .select('id, quantity')
-        .or('vendor.ilike.%rdm%,notes.ilike.%rdm%')
-      const rdmPurchased = (rdmLoads || []).reduce((s, l) => s + (Number(l.quantity) || 0), 0)
+      // RDM bundle sales (only RDM has this for now)
       const { data: rdmBundleRows } = await supabase
         .from('rdm_bundle_sales')
         .select('quantity')
       const rdmBundleSold = (rdmBundleRows || []).reduce((s, r) => s + (Number(r.quantity) || 0), 0)
-      const rdmSold = rdmScanCount + rdmBundleSold
+
+      const nextPools = {}
+      for (const tag of poolTagSet) {
+        const tagLoads = (poolLoads || []).filter(l => l.pool_tag === tag)
+        const purchased = tagLoads.reduce((s, l) => s + (Number(l.quantity) || 0), 0)
+        const totalCost = tagLoads.reduce((s, l) => s + (Number(l.total_cost) || 0), 0)
+        const bundleSold = tag === 'RDM' ? rdmBundleSold : 0
+        const scanSold = poolScanCounts[tag] || 0
+        nextPools[tag] = {
+          poolTag: tag,
+          loadIds: tagLoads.map(l => l.id),
+          purchased,
+          sold: scanSold + bundleSold,
+          scanSold,
+          bundleSold,
+          unitCost: purchased > 0 ? totalCost / purchased : 0,
+        }
+      }
 
       setItems(manifest || [])
       setSoldByBarcode(counts)
-      setRdmData({
-        loadIds: (rdmLoads || []).map(l => l.id),
-        purchased: rdmPurchased,
-        sold: rdmSold,
-        scanSold: rdmScanCount,
-        bundleSold: rdmBundleSold,
-      })
+      setPools(nextPools)
+      setPoolConfigs(cfgs)
     } finally {
       setLoading(false)
     }
@@ -187,45 +278,56 @@ export default function JumpstartInventory({ onClose }) {
 
     let visible = showSoldOut ? arr : arr.filter(g => g.inStock > 0)
 
-    // Synthetic RDM SKU — only show when vendor/category filters don't exclude
-    // RDM, when no search query (or search matches "rdm"), and when there is
-    // an RDM load on file. Pinned to the top of the list regardless of sort.
-    const rdmMatchesFilters =
-      (!filterCategory) &&
-      (!filterSize) &&
-      (!filterVendor || /rdm/i.test(filterVendor)) &&
-      (!q || 'rdm random mystery'.includes(q))
-    if (rdmData && rdmData.purchased > 0 && rdmMatchesFilters) {
-      const inStock = Math.max(0, rdmData.purchased - rdmData.sold)
-      if (showSoldOut || inStock > 0) {
-        const rdmGroup = {
-          key: RDM_KEY,
-          isRdm: true,
-          rep: {
-            id: RDM_KEY,
-            description: 'RDM (Random Mystery Lot)',
-            vendor: 'RDM',
-            color: null,
-            size: null,
-            msrp: null,
-            cost_freight: RDM_COST,
-            photo_url: null,
-          },
-          items: [],
-          totalQty: rdmData.purchased,
-          inStock,
-          sold: rdmData.sold,
-          inStockIds: [],
-          rdmDetails: rdmData,
-        }
-        visible = [rdmGroup, ...visible]
-      }
+    // Synthetic SKUs for each unmanifested pool (RDM, Unmanifested J.Crew).
+    // Only show when filters don't exclude them and there's purchased qty on
+    // file. Pinned to the top of the list regardless of sort.
+    const poolGroups = []
+    for (const tag of Object.keys(poolConfigs)) {
+      const data = pools[tag]
+      const cfg = poolConfigs[tag]
+      if (!data || data.purchased <= 0) continue
+      const searchHay = `${cfg.label} ${cfg.vendorLabel} ${cfg.scanBarcode}`.toLowerCase()
+      const matchesFilters =
+        (!filterCategory) &&
+        (!filterSize) &&
+        (!filterVendor || searchHay.includes(filterVendor.toLowerCase())) &&
+        (!q || searchHay.includes(q))
+      if (!matchesFilters) continue
+      const inStock = Math.max(0, data.purchased - data.sold)
+      if (!showSoldOut && inStock === 0) continue
+      poolGroups.push({
+        key: cfg.key,
+        isPool: true,
+        poolTag: tag,
+        poolConfig: cfg,
+        rep: {
+          id: cfg.key,
+          description: cfg.label,
+          vendor: cfg.vendorLabel,
+          color: null,
+          size: null,
+          msrp: null,
+          cost_freight: data.unitCost,
+          photo_url: null,
+        },
+        items: [],
+        totalQty: data.purchased,
+        inStock,
+        sold: data.sold,
+        inStockIds: [],
+        poolDetails: data,
+      })
     }
+    visible = [...poolGroups, ...visible]
 
     visible.sort((a, b) => {
-      // Pin RDM to the top no matter the sort
-      if (a.isRdm) return -1
-      if (b.isRdm) return 1
+      // Pin pool synthetics to the top no matter the sort
+      if (a.isPool && !b.isPool) return -1
+      if (b.isPool && !a.isPool) return 1
+      if (a.isPool && b.isPool) {
+        // Stable order across pools: RDM, then UJC, then custom brands A–Z
+        return poolRank(a.poolTag) - poolRank(b.poolTag) || a.poolTag.localeCompare(b.poolTag)
+      }
       if (sortBy === 'oldest') return (a.earliestCreated || '').localeCompare(b.earliestCreated || '')
       if (sortBy === 'msrp_high') return Number(b.rep.msrp || 0) - Number(a.rep.msrp || 0)
       if (sortBy === 'msrp_low')  return Number(a.rep.msrp || 0) - Number(b.rep.msrp || 0)
@@ -233,7 +335,7 @@ export default function JumpstartInventory({ onClose }) {
       return (b.latestCreated || '').localeCompare(a.latestCreated || '')
     })
     return visible
-  }, [items, soldByBarcode, rdmData, filterCategory, filterSize, filterVendor, searchQuery, sortBy, showSoldOut])
+  }, [items, soldByBarcode, pools, poolConfigs, filterCategory, filterSize, filterVendor, searchQuery, sortBy, showSoldOut])
 
   const totalInStock = useMemo(() => groups.reduce((s, g) => s + g.inStock, 0), [groups])
   const totalSelected = useMemo(() => groups.filter(g => selectedKeys.has(g.key)).reduce((s, g) => s + g.inStock, 0), [groups, selectedKeys])
@@ -279,15 +381,19 @@ export default function JumpstartInventory({ onClose }) {
   }
 
   return (
-    <div className="absolute inset-0 z-20 bg-navy flex flex-col">
-      {/* Header */}
-      <div className="px-3 py-2 flex items-center gap-2 border-b border-white/[0.06] shrink-0">
-        <button onClick={onClose} className="flex items-center gap-1 bg-white/[0.06] hover:bg-white/[0.1] px-3 py-1.5 rounded-xl border border-white/[0.08]">
-          <iconify-icon icon="lucide:chevron-left" class="text-white"></iconify-icon>
-          <span className="text-white text-sm font-medium">Scan</span>
-        </button>
-        <h1 className="text-lg font-semibold text-white font-heading">Inventory</h1>
-      </div>
+    <div className={embed
+      ? 'glass-card rounded-3xl overflow-hidden'
+      : 'absolute inset-0 z-20 bg-navy flex flex-col'}>
+      {/* Header — hidden in embed mode (parent supplies its own heading). */}
+      {!embed && (
+        <div className="px-3 py-2 flex items-center gap-2 border-b border-white/[0.06] shrink-0">
+          <button onClick={onClose} className="flex items-center gap-1 bg-white/[0.06] hover:bg-white/[0.1] px-3 py-1.5 rounded-xl border border-white/[0.08]">
+            <iconify-icon icon="lucide:chevron-left" class="text-white"></iconify-icon>
+            <span className="text-white text-sm font-medium">Scan</span>
+          </button>
+          <h1 className="text-lg font-semibold text-white font-heading">Inventory</h1>
+        </div>
+      )}
 
       {/* Selection / bulk-action bar */}
       <div className="px-3 py-2 bg-slate-800/50 border-b border-white/10 flex items-center justify-between gap-3 shrink-0">
@@ -360,21 +466,25 @@ export default function JumpstartInventory({ onClose }) {
         ) : groups.map(g => {
           const isSelected = selectedKeys.has(g.key)
           const item = g.rep
-          const isRdm = g.isRdm
+          const isPool = g.isPool
+          const poolCfg = g.poolConfig
+          // Accent classes per pool (Tailwind needs literal class names — see ACCENT_CLASSES)
+          const accentClasses = isPool ? (ACCENT_CLASSES[poolCfg.accent] || ACCENT_CLASSES.violet) : null
           return (
             <div
               key={g.key}
               className={`border rounded-2xl p-3 flex items-center gap-3 transition-all ${
-                isRdm
-                  ? 'bg-violet-500/10 border-violet-500/40'
+                isPool
+                  ? accentClasses.container
                   : isSelected
                     ? 'bg-cyan-500/10 border-cyan-500/60'
                     : 'bg-white/5 border-white/10 hover:bg-cyan-500/5 hover:border-cyan-500/20'
               }`}
             >
-              {/* RDM has no per-row deletion (not in jumpstart_manifest), so
-                  no checkbox — adjust via the edit dialog instead. */}
-              {isRdm ? (
+              {/* Pool synthetics have no per-row deletion (not in
+                  jumpstart_manifest), so no checkbox — adjust via the edit
+                  dialog. */}
+              {isPool ? (
                 <div className="w-5 shrink-0" aria-hidden />
               ) : (
                 <input
@@ -386,9 +496,9 @@ export default function JumpstartInventory({ onClose }) {
               )}
               <button onClick={() => setEditing(g)} className="flex-1 min-w-0 text-left active:scale-[0.98] transition-transform">
                 <div className="flex items-center gap-3">
-                  {isRdm ? (
-                    <div className="w-14 h-14 rounded-lg bg-violet-500/20 border border-violet-500/40 shrink-0 flex items-center justify-center text-violet-300 font-black text-sm tracking-wider">
-                      RDM
+                  {isPool ? (
+                    <div className={`w-14 h-14 rounded-lg shrink-0 flex items-center justify-center font-black text-sm tracking-wider ${accentClasses.thumb}`}>
+                      {poolCfg.scanBarcode}
                     </div>
                   ) : item.photo_url ? (
                     <img src={item.photo_url} alt="" loading="lazy" className="w-14 h-14 rounded-lg object-cover bg-white/5 shrink-0" />
@@ -399,7 +509,7 @@ export default function JumpstartInventory({ onClose }) {
                   )}
                   <div className="min-w-0 flex-1">
                     <p className="text-white font-semibold text-sm truncate">{item.description || 'Unknown'}</p>
-                    {isRdm ? (
+                    {isPool ? (
                       <p className="text-slate-400 text-xs truncate">
                         Bulk lot · no barcode · {g.totalQty.toLocaleString()} purchased
                       </p>
@@ -409,13 +519,13 @@ export default function JumpstartInventory({ onClose }) {
                       </p>
                     )}
                     <p className="text-slate-500 text-xs mt-0.5">
-                      {isRdm
-                        ? `Cost $${RDM_COST.toFixed(2)}/unit`
+                      {isPool
+                        ? `Cost $${Number(item.cost_freight || 0).toFixed(2)}/unit`
                         : `MSRP $${Number(item.msrp || 0).toFixed(0)} · Cost $${Number(item.cost_freight || 0).toFixed(2)}`}
                     </p>
                   </div>
                   <div className="shrink-0 flex flex-col items-end gap-1">
-                    <span className={`px-2.5 py-1 rounded-full text-sm font-bold ${isRdm ? 'bg-violet-500/30 border border-violet-500/50 text-violet-100' : 'bg-cyan-500/20 border border-cyan-500/40 text-cyan-200'}`}>
+                    <span className={`px-2.5 py-1 rounded-full text-sm font-bold ${isPool ? accentClasses.badge : 'bg-cyan-500/20 border border-cyan-500/40 text-cyan-200'}`}>
                       ×{g.inStock.toLocaleString()}
                     </span>
                     {g.sold > 0 && (
@@ -429,7 +539,7 @@ export default function JumpstartInventory({ onClose }) {
         })}
       </div>
 
-      {editing && !editing.isRdm && (
+      {editing && !editing.isPool && (
         <EditVariantModal
           group={editing}
           onClose={() => setEditing(null)}
@@ -446,12 +556,13 @@ export default function JumpstartInventory({ onClose }) {
           }}
         />
       )}
-      {editing && editing.isRdm && rdmData && (
-        <RdmEditModal
+      {editing && editing.isPool && pools[editing.poolTag] && (
+        <PoolEditModal
           group={editing}
           onClose={() => setEditing(null)}
           onSaved={(newPurchased) => {
-            setRdmData(prev => prev ? { ...prev, purchased: newPurchased } : prev)
+            const tag = editing.poolTag
+            setPools(prev => ({ ...prev, [tag]: { ...prev[tag], purchased: newPurchased } }))
             setEditing(null)
           }}
         />
@@ -609,26 +720,28 @@ function EditVariantModal({ group, onClose, onSaved, onDeleted }) {
   )
 }
 
-function RdmEditModal({ group, onClose, onSaved }) {
-  const details = group.rdmDetails
+function PoolEditModal({ group, onClose, onSaved }) {
+  const details = group.poolDetails
+  const cfg = group.poolConfig
   const [targetInStock, setTargetInStock] = useState(group.inStock)
   const [saving, setSaving] = useState(false)
 
-  // Adjusting in-stock writes back to loads.quantity (so it persists as the
-  // new "purchased" total). We allocate the delta to the first RDM load on
-  // record so historical loads stay traceable.
+  // Adjusting in-stock writes back to loads.quantity on the pool's primary
+  // load (first by id). The cost basis is loads.total_cost / loads.quantity,
+  // which the WAC in the profitability view reads at sale time.
   const newPurchased = Math.max(details.sold, details.sold + Number(targetInStock || 0))
   const delta = newPurchased - details.purchased
 
+  const accent = ACCENT_CLASSES[cfg.accent] || ACCENT_CLASSES.violet
+  const accentBtn = accent.btn
+  const accentStock = accent.stock
+
   async function save() {
     if (delta === 0) { onClose(); return }
-    if (!details.loadIds?.length) { alert('No RDM load on record to write to.'); return }
-    if (!confirm(`Set RDM in-stock to ${Number(targetInStock).toLocaleString()}? This will change the load's purchased quantity by ${delta > 0 ? '+' : ''}${delta.toLocaleString()}.`)) return
+    if (!details.loadIds?.length) { alert(`No ${cfg.scanBarcode} load on record to write to.`); return }
+    if (!confirm(`Set ${cfg.scanBarcode} in-stock to ${Number(targetInStock).toLocaleString()}? This will change the load's purchased quantity by ${delta > 0 ? '+' : ''}${delta.toLocaleString()}.`)) return
     setSaving(true)
     try {
-      // Apply the change to the first RDM load. If there are multiple loads
-      // we just adjust the primary one — keeps the math right even if not
-      // perfectly distributed.
       const primaryId = details.loadIds[0]
       const { data: row } = await supabase.from('loads').select('quantity').eq('id', primaryId).maybeSingle()
       const currentQty = Number(row?.quantity || 0)
@@ -645,10 +758,12 @@ function RdmEditModal({ group, onClose, onSaved }) {
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
       <div className="w-full max-w-md bg-slate-900 border border-white/10 rounded-3xl p-5 max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between mb-3">
-          <h3 className="text-lg font-bold text-white">RDM inventory</h3>
+          <h3 className="text-lg font-bold text-white">{cfg.label} inventory</h3>
           <button onClick={onClose} className="text-slate-400 hover:text-white text-2xl leading-none">×</button>
         </div>
-        <p className="text-xs text-slate-500 mb-4">Random Mystery Lot — bulk units, no barcodes. Fixed COGS ${RDM_COST.toFixed(2)}/unit.</p>
+        <p className="text-xs text-slate-500 mb-4">
+          {cfg.blurb} Cost basis ${Number(details.unitCost || 0).toFixed(2)}/unit (loads.total_cost ÷ qty).
+        </p>
 
         <div className="grid grid-cols-3 gap-2 mb-5 text-center">
           <div className="bg-white/5 rounded-xl py-3">
@@ -658,11 +773,13 @@ function RdmEditModal({ group, onClose, onSaved }) {
           <div className="bg-white/5 rounded-xl py-3">
             <p className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">Sold</p>
             <p className="text-lg font-black text-white mt-1">{details.sold.toLocaleString()}</p>
-            <p className="text-[9px] text-slate-600 mt-0.5">{details.scanSold} shows · {details.bundleSold} bundles</p>
+            <p className="text-[9px] text-slate-600 mt-0.5">
+              {details.scanSold} shows{cfg.hasBundles ? ` · ${details.bundleSold} bundles` : ''}
+            </p>
           </div>
-          <div className="bg-violet-500/20 border border-violet-500/40 rounded-xl py-3">
-            <p className="text-[10px] text-violet-300 uppercase tracking-wider font-semibold">In stock</p>
-            <p className="text-lg font-black text-violet-100 mt-1">{group.inStock.toLocaleString()}</p>
+          <div className={`${accentStock.bg} border rounded-xl py-3`}>
+            <p className={`text-[10px] ${accentStock.label} uppercase tracking-wider font-semibold`}>In stock</p>
+            <p className={`text-lg font-black ${accentStock.value} mt-1`}>{group.inStock.toLocaleString()}</p>
           </div>
         </div>
 
@@ -682,7 +799,7 @@ function RdmEditModal({ group, onClose, onSaved }) {
         </p>
 
         <div className="flex flex-col gap-2 mt-5">
-          <button onClick={save} disabled={saving || delta === 0} className="w-full py-2.5 rounded-xl bg-violet-600 hover:bg-violet-500 text-white font-bold text-sm disabled:opacity-50">
+          <button onClick={save} disabled={saving || delta === 0} className={`w-full py-2.5 rounded-xl ${accentBtn} text-white font-bold text-sm disabled:opacity-50`}>
             {saving ? 'Saving…' : 'Save'}
           </button>
           <button onClick={onClose} className="w-full py-2 rounded-xl text-slate-400 hover:text-white text-xs">Cancel</button>

@@ -110,9 +110,11 @@ export default function SalesScanner() {
   const [savingCogs, setSavingCogs] = useState(false)
   const [itemOverrides, setItemOverrides] = useState([])
   const [itemCogsError, setItemCogsError] = useState(null)
-  // Jumpstart "Manual Scan" modal: pool tag for no-barcode items (RDM | UJC).
+  // Jumpstart "Manual Scan" modal: pool tag for no-barcode items.
   // The tag drives both inventory deduction (which pool) and COGS (that pool's WAC).
+  // Pools are data-driven from loads.pool_tag (RDM, UJC, + custom brands like QUINCE).
   const [tagType, setTagType] = useState('')
+  const [poolTagOptions, setPoolTagOptions] = useState([]) // [{ tag, label }]
   const [manualMsg, setManualMsg] = useState('')
   const html5QrcodeRef = useRef(null)
   const scannerStartingRef = useRef(false)
@@ -155,6 +157,28 @@ export default function SalesScanner() {
         })
     }
   }, [showId])
+
+  // Load the available pool tags (RDM, UJC, and any custom brand pools) so the
+  // Manual Scan dropdowns are data-driven. Ordered RDM, UJC, then brands A–Z.
+  useEffect(() => {
+    supabase.from('loads')
+      .select('pool_tag, vendor, kind')
+      .not('pool_tag', 'is', null)
+      .then(({ data }) => {
+        const byTag = new Map()
+        for (const l of data || []) {
+          if (!l.pool_tag || byTag.has(l.pool_tag)) continue
+          const label = l.kind === 'rdm' ? 'RDM — Items with Defect Tags'
+            : l.kind === 'unmanifested' ? 'UJC — J.Crew/Madewell, no barcodes/defect tags'
+            : `${l.vendor || l.pool_tag} (${l.pool_tag})`
+          byTag.set(l.pool_tag, { tag: l.pool_tag, label })
+        }
+        const rank = t => (t === 'RDM' ? 0 : t === 'UJC' ? 1 : 2)
+        const opts = [...byTag.values()].sort(
+          (a, b) => rank(a.tag) - rank(b.tag) || a.tag.localeCompare(b.tag))
+        setPoolTagOptions(opts)
+      })
+  }, [])
 
   // Always keep customItemCost in sync with the DB (navigation state may be stale)
   useEffect(() => {
@@ -507,7 +531,7 @@ export default function SalesScanner() {
   // old CUSTOM-cost path, which never deducted inventory.
   const handleApplyTagAndFinish = async (tag) => {
     if (savingCogs || finishingShowRef.current) return
-    if (tag !== 'RDM' && tag !== 'UJC') return
+    if (!poolTagOptions.some(o => o.tag === tag)) return
     finishingShowRef.current = true
     try {
       const { data: allItems } = await supabase
@@ -556,7 +580,7 @@ export default function SalesScanner() {
   // logs the sale and deducts that pool. Stays open so several can be added.
   const handleManualPoolScan = async (tag) => {
     if (savingCogs) return
-    if (tag !== 'RDM' && tag !== 'UJC') { setItemCogsError('Pick a type (RDM or UJC)'); return }
+    if (!poolTagOptions.some(o => o.tag === tag)) { setItemCogsError('Pick a pool type'); return }
     const listingNum = parseInt(itemCogsListing, 10)
     if (!(listingNum > 0)) { setItemCogsError('Enter a valid sticker number'); return }
     setSavingCogs(true)
@@ -2087,14 +2111,15 @@ export default function SalesScanner() {
                       className="w-full px-4 py-4 rounded-2xl bg-white/5 border border-white/10 text-white text-lg font-bold focus:outline-none focus:border-cyan-500/50 focus:ring-4 focus:ring-cyan-500/10 transition-all"
                     >
                       <option value="">Select type…</option>
-                      <option value="RDM">RDM — Items with Defect Tags</option>
-                      <option value="UJC">UJC — J.Crew/Madewell items with no barcodes or defect tags</option>
+                      {poolTagOptions.map(o => (
+                        <option key={o.tag} value={o.tag}>{o.label}</option>
+                      ))}
                     </select>
                   </div>
 
                   <button
                     onClick={() => handleApplyTagAndFinish(tagType)}
-                    disabled={savingCogs || !(tagType === 'RDM' || tagType === 'UJC')}
+                    disabled={savingCogs || !poolTagOptions.some(o => o.tag === tagType)}
                     className="w-full py-5 px-6 rounded-2xl bg-gradient-to-r from-cyan-500 to-teal-500 text-white font-black text-base hover:scale-[1.02] active:scale-[0.98] transition-all shadow-xl shadow-cyan-500/40 border-2 border-cyan-400/50 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {savingCogs ? 'Applying…' : `Apply ${tagType || 'tag'} to remaining ${remainingCount} & finish show`}
@@ -2142,8 +2167,9 @@ export default function SalesScanner() {
                         className="w-full px-4 py-3 rounded-2xl bg-white/5 border border-white/10 text-white text-lg font-bold focus:outline-none focus:border-cyan-500/50 focus:ring-4 focus:ring-cyan-500/10 transition-all"
                       >
                         <option value="">Select type…</option>
-                        <option value="RDM">RDM — Items with Defect Tags</option>
-                        <option value="UJC">UJC — J.Crew/Madewell items with no barcodes or defect tags</option>
+                        {poolTagOptions.map(o => (
+                          <option key={o.tag} value={o.tag}>{o.label}</option>
+                        ))}
                       </select>
                     </div>
                   </div>
@@ -2157,7 +2183,7 @@ export default function SalesScanner() {
 
                   <button
                     onClick={() => handleManualPoolScan(tagType)}
-                    disabled={savingCogs || !itemCogsListing || !(tagType === 'RDM' || tagType === 'UJC')}
+                    disabled={savingCogs || !itemCogsListing || !poolTagOptions.some(o => o.tag === tagType)}
                     className="w-full py-4 px-6 rounded-2xl bg-cyan-600 text-white font-bold hover:bg-cyan-500 active:scale-[0.98] transition-all shadow-lg shadow-cyan-600/30 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {savingCogs ? 'Saving…' : 'Add item'}

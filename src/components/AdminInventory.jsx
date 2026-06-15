@@ -1,204 +1,203 @@
 import { useState, useEffect } from 'react'
-import { supabase } from '../lib/supabase'
+import { supabase, fetchAll } from '../lib/supabase'
+import JumpstartInventory from './JumpstartInventory'
 
+// Admin → Inventory tab.
+//
+// Top section: stat cards + Inventory Status bar + Inventory by Load grid.
+//   - Includes RDM and Unmanifested-J.Crew pools alongside manifested loads,
+//     so totals match the variant browser below.
+//   - Inventory by Load surfaces every load row (incl. RDM/UJC) with the
+//     correct in-stock / sold split per kind, sorted by date desc.
+//
+// Below the top section we embed the same variant browser used in the
+// scanner overlay (JumpstartInventory), so admins can search, filter, edit,
+// and bulk-delete variants without leaving the page.
 export default function AdminInventory() {
   const [loading, setLoading] = useState(true)
-  const [items, setItems] = useState([])
-  const [search, setSearch] = useState('')
-  const [zoneFilter, setZoneFilter] = useState('all')
   const [stats, setStats] = useState({
     total: 0,
     sold: 0,
     remaining: 0,
-    avgCost: 0,
+    avgRemainingCost: 0,
+    inventoryValue: 0,
     loads: [],
-    zones: { z1: 0, z1p: 0, z2: 0, z2p: 0, unassigned: 0 }
-  })
-  const [unsoldStats, setUnsoldStats] = useState({
-    totalUnsoldCost: 0,
-    totalUnsoldCount: 0,
-    avgUnsoldCost: 0,
-    byLoad: [] // { load_id, unsoldCost, unsoldCount, avgCost }
   })
 
-  useEffect(() => { loadStats(); loadUnsoldStats() }, [])
-  useEffect(() => { loadItems() }, [search, zoneFilter])
+  useEffect(() => { loadStats() }, [])
 
   async function loadStats() {
     setLoading(true)
-    
-    // Get load summary from view + load details for brand info
-    const { data: loadData } = await supabase.from('load_summary').select('*')
-    const { data: loadsInfo } = await supabase.from('loads').select('id,vendor,notes')
-    
-    // Get zone counts (handles both old integer zones and new string zones)
-    const { count: z1 } = await supabase.from('jumpstart_manifest').select('id', { count: 'exact', head: true }).or('zone.eq.1,zone.eq.Zone 1')
-    const { count: z1p } = await supabase.from('jumpstart_manifest').select('id', { count: 'exact', head: true }).eq('zone', 'Zone 1 Pants')
-    const { count: z2 } = await supabase.from('jumpstart_manifest').select('id', { count: 'exact', head: true }).or('zone.eq.2,zone.eq.Zone 2')
-    const { count: z2p } = await supabase.from('jumpstart_manifest').select('id', { count: 'exact', head: true }).eq('zone', 'Zone 2 Pants')
-    const { count: total } = await supabase.from('jumpstart_manifest').select('id', { count: 'exact', head: true })
 
-    // Get sold count: sold scans + sold bundle items (items that physically left inventory)
-    const { count: soldScans } = await supabase
+    // Manifested-load summary from the existing view (load_id → counts/cost).
+    const { data: loadSummary } = await supabase.from('load_summary').select('*')
+
+    // Every load row, including non-manifested kinds. Needed for brand/notes
+    // lookup, sort-by-date, and RDM/UJC totals (which load_summary's
+    // manifest-join doesn't cover).
+    const { data: loadsInfo } = await supabase
+      .from('loads')
+      .select('id, kind, pool_tag, vendor, notes, quantity, total_cost, date')
+
+    // Pool tokens (RDM, UJC, custom brands) from the loads table.
+    const poolTagSet = new Set((loadsInfo || []).map(l => l.pool_tag).filter(Boolean))
+
+    // Per-barcode sold counts (paginated) — used both for the global Sold
+    // total and for the unsold-walk that drives Avg Cost of Remaining.
+    const allSoldScans = await fetchAll(() => supabase
       .from('jumpstart_sold_scans')
-      .select('id', { count: 'exact', head: true })
-    const { count: soldBundleItems } = await supabase
-      .from('jumpstart_bundle_scans')
-      .select('id', { count: 'exact', head: true })
-      .in('box_number',
-        (await supabase.from('jumpstart_bundle_boxes').select('box_number').not('sold_at', 'is', null)).data?.map(b => b.box_number) || []
-      )
-    const sold = (soldScans || 0) + (soldBundleItems || 0)
+      .select('barcode'))
+    const poolScansByTag = {}   // pool_tag → Whatnot scan count
+    const soldCountsByBarcode = {}
+    for (const s of allSoldScans || []) {
+      const b = s.barcode
+      if (!b) continue
+      if (poolTagSet.has(b)) { poolScansByTag[b] = (poolScansByTag[b] || 0) + 1; continue }
+      soldCountsByBarcode[b] = (soldCountsByBarcode[b] || 0) + 1
+    }
+    // Sold bundle items (Jumpstart bundle boxes that have been sold).
+    const { data: soldBoxRows } = await supabase
+      .from('jumpstart_bundle_boxes')
+      .select('box_number')
+      .not('sold_at', 'is', null)
+    const soldBoxNumbers = (soldBoxRows || []).map(b => b.box_number)
+    let soldBundleScans = []
+    if (soldBoxNumbers.length > 0) {
+      soldBundleScans = await fetchAll(() => supabase
+        .from('jumpstart_bundle_scans')
+        .select('barcode')
+        .in('box_number', soldBoxNumbers))
+    }
+    for (const s of soldBundleScans || []) {
+      const b = s.barcode
+      if (!b) continue
+      if (poolTagSet.has(b)) continue   // pool bundles handled separately
+      soldCountsByBarcode[b] = (soldCountsByBarcode[b] || 0) + 1
+    }
 
-    const totalItems = loadData?.reduce((sum, l) => sum + Number(l.item_count), 0) || 0
-    const totalCost = loadData?.reduce((sum, l) => sum + Number(l.total_cost), 0) || 0
-    const avgCost = totalItems > 0 ? totalCost / totalItems : 0
+    // RDM bundle sales (whole-crate sales outside Whatnot).
+    const { data: rdmBundleRows } = await supabase
+      .from('rdm_bundle_sales')
+      .select('quantity')
+    const rdmBundleSold = (rdmBundleRows || []).reduce((s, r) => s + (Number(r.quantity) || 0), 0)
 
-    const assigned = (z1 || 0) + (z1p || 0) + (z2 || 0) + (z2p || 0)
-    setStats({
-      total: totalItems,
-      sold: sold || 0,
-      remaining: totalItems - (sold || 0),
-      avgCost,
-      loads: (loadData || []).map(l => {
-        const info = loadsInfo?.find(i => i.id === l.load_id)
-        return { ...l, brand: info?.vendor || info?.notes || '' }
-      }),
-      zones: {
-        z1: z1 || 0,
-        z1p: z1p || 0,
-        z2: z2 || 0,
-        z2p: z2p || 0,
-        unassigned: (total || 0) - assigned
+    // Manifest walk — every manifest row, classify sold vs unsold by
+    // burning down soldCountsByBarcode. Unsold rows contribute their
+    // cost_freight to the Avg Cost of Remaining calculation.
+    const manifestRows = await fetchAll(() => supabase
+      .from('jumpstart_manifest')
+      .select('barcode, cost_freight'))
+    let manifestUnsoldCost = 0
+    let manifestUnsoldCount = 0
+    const usedByBarcode = {}
+    for (const row of manifestRows || []) {
+      const bc = row.barcode
+      const used = usedByBarcode[bc] || 0
+      const totalSold = soldCountsByBarcode[bc] || 0
+      if (used < totalSold) {
+        usedByBarcode[bc] = used + 1
+      } else {
+        manifestUnsoldCost += Number(row.cost_freight) || 0
+        manifestUnsoldCount += 1
       }
+    }
+
+    // ── Build per-load rows for the "Inventory by Load" grid ──
+    const rows = []
+    for (const l of loadsInfo || []) {
+      if (l.kind === 'manifested' || !l.kind) {
+        const summary = (loadSummary || []).find(s => s.load_id === l.id)
+        if (!summary) continue
+        rows.push({
+          load_id: l.id,
+          kind: 'manifested',
+          date: l.date || null,
+          brand: l.vendor || l.notes || '',
+          item_count: Number(summary.item_count) || 0,
+          total_cost: Number(summary.total_cost) || 0,
+          avg_cost: Number(summary.avg_cost) || 0,
+        })
+      } else {
+        const qty = Number(l.quantity) || 0
+        const cost = Number(l.total_cost) || 0
+        rows.push({
+          load_id: l.id,
+          kind: l.kind,
+          pool_tag: l.pool_tag || null,
+          date: l.date || null,
+          brand: l.kind === 'rdm' ? 'RDM'
+            : l.kind === 'unmanifested' ? 'Unmanifested J.Crew'
+            : (l.vendor || l.pool_tag || 'Custom'),
+          item_count: qty,
+          total_cost: cost,
+          avg_cost: qty > 0 ? cost / qty : 0,
+        })
+      }
+    }
+    // Sort by date desc; loads without a date go last in id order.
+    rows.sort((a, b) => {
+      if (a.date && b.date) return b.date.localeCompare(a.date)
+      if (a.date && !b.date) return -1
+      if (!a.date && b.date) return 1
+      return String(a.load_id).localeCompare(String(b.load_id))
+    })
+
+    // ── Top-level totals ──
+    const manifestedItems = (loadSummary || []).reduce((s, l) => s + (Number(l.item_count) || 0), 0)
+    const poolRows = (loadsInfo || []).filter(l => l.pool_tag)
+    const poolItems = poolRows.reduce((s, l) => s + (Number(l.quantity) || 0), 0)
+
+    const total = manifestedItems + poolItems
+
+    // Pool remaining contribution to Avg Cost of Remaining:
+    // For each pool load, remaining qty × per-unit cost basis (total_cost/qty).
+    // We can't perfectly split sold between multiple loads of the same pool, so
+    // we apportion the pool's total sold across its loads pro-rata by qty.
+    const poolByTag = {}
+    for (const l of poolRows) (poolByTag[l.pool_tag] ||= []).push(l)
+    const poolSoldByTag = {}
+    for (const tag of Object.keys(poolByTag)) {
+      poolSoldByTag[tag] = (poolScansByTag[tag] || 0) + (tag === 'RDM' ? rdmBundleSold : 0)
+    }
+    let poolRemainingCost = 0
+    let poolRemainingCount = 0
+    for (const tag of Object.keys(poolByTag)) {
+      const loadsOfKind = poolByTag[tag]
+      const totalQty = loadsOfKind.reduce((s, l) => s + (Number(l.quantity) || 0), 0)
+      const totalSold = Math.min(totalQty, poolSoldByTag[tag] || 0)
+      if (totalQty === 0) continue
+      for (const l of loadsOfKind) {
+        const qty = Number(l.quantity) || 0
+        const cost = Number(l.total_cost) || 0
+        const unitCost = qty > 0 ? cost / qty : 0
+        const allocatedSold = Math.round(totalSold * (qty / totalQty))
+        const remainingQty = Math.max(0, qty - allocatedSold)
+        poolRemainingCost  += remainingQty * unitCost
+        poolRemainingCount += remainingQty
+      }
+    }
+
+    // Bottom-up Remaining (matches the variant browser's "X in stock" count
+    // and is robust to cross-barcode overscanning). Sold is derived so the
+    // three top-row numbers tie: Total = Sold + Remaining, and
+    // Avg × Remaining = Inventory Value exactly.
+    const remaining           = manifestUnsoldCount + poolRemainingCount
+    const totalRemainingCost  = manifestUnsoldCost  + poolRemainingCost
+    const avgRemainingCost    = remaining > 0 ? totalRemainingCost / remaining : 0
+    const sold                = Math.max(0, total - remaining)
+
+    setStats({
+      total,
+      sold,
+      remaining,
+      avgRemainingCost,
+      inventoryValue: totalRemainingCost,
+      loads: rows,
     })
     setLoading(false)
   }
 
-  // Helper to fetch all rows with pagination (Supabase default limit is 1000)
-  async function fetchAllRows(table, columns, filters = []) {
-    let allData = []
-    let offset = 0
-    const pageSize = 1000
-    while (true) {
-      let query = supabase.from(table).select(columns).range(offset, offset + pageSize - 1)
-      for (const f of filters) {
-        if (f.type === 'eq') query = query.eq(f.col, f.val)
-      }
-      const { data } = await query
-      if (!data || data.length === 0) break
-      allData = allData.concat(data)
-      offset += pageSize
-      if (data.length < pageSize) break
-    }
-    return allData
-  }
-
-  async function loadUnsoldStats() {
-    // Get all manifest items with cost and load (paginated)
-    const manifestData = await fetchAllRows('jumpstart_manifest', 'barcode,cost_freight,load_id')
-    const { data: loadsInfo } = await supabase.from('loads').select('id,vendor,notes')
-
-    // Get all sold barcodes: sold scans + sold bundle items (items that physically left inventory)
-    const soldScansData = await fetchAllRows('jumpstart_sold_scans', 'barcode')
-    const soldBoxes = (await supabase.from('jumpstart_bundle_boxes').select('box_number').not('sold_at', 'is', null)).data || []
-    const soldBoxNumbers = soldBoxes.map(b => b.box_number)
-    let soldBundleData = []
-    if (soldBoxNumbers.length > 0) {
-      const allBundleScans = await fetchAllRows('jumpstart_bundle_scans', 'barcode,box_number')
-      soldBundleData = allBundleScans.filter(s => soldBoxNumbers.includes(s.box_number))
-    }
-    const soldData = [...soldScansData, ...soldBundleData]
-
-    if (!manifestData || manifestData.length === 0) {
-      setUnsoldStats({ totalUnsoldCost: 0, totalUnsoldCount: 0, avgUnsoldCost: 0, byLoad: [] })
-      return
-    }
-
-    // Count how many times each barcode was sold
-    const soldCounts = {}
-    if (soldData) {
-      soldData.forEach(row => {
-        soldCounts[row.barcode] = (soldCounts[row.barcode] || 0) + 1
-      })
-    }
-
-    // Walk through every manifest item, subtract sold counts
-    // Since manifest has duplicate barcodes (multiple physical items), we process each row
-    // and decrement the sold count as we "use up" sold units
-    const soldUsed = {} // track how many sold we've accounted for per barcode
-    const byLoadMap = {}
-    let totalCost = 0
-    let totalCount = 0
-
-    manifestData.forEach(item => {
-      const bc = item.barcode
-      const used = soldUsed[bc] || 0
-      const totalSold = soldCounts[bc] || 0
-
-      if (used < totalSold) {
-        // This item was sold — mark it used
-        soldUsed[bc] = used + 1
-      } else {
-        // This item is unsold
-        const cost = Number(item.cost_freight) || 0
-        const loadId = item.load_id || 'Unknown'
-
-        if (!byLoadMap[loadId]) {
-          byLoadMap[loadId] = { load_id: loadId, unsoldCost: 0, unsoldCount: 0 }
-        }
-        byLoadMap[loadId].unsoldCost += cost
-        byLoadMap[loadId].unsoldCount += 1
-        totalCost += cost
-        totalCount += 1
-      }
-    })
-
-    const byLoad = Object.values(byLoadMap).map(load => {
-      const info = loadsInfo?.find(i => i.id === load.load_id)
-      return {
-        ...load,
-        brand: info?.vendor || info?.notes || '',
-        avgCost: load.unsoldCount > 0 ? load.unsoldCost / load.unsoldCount : 0
-      }
-    })
-
-    setUnsoldStats({
-      totalUnsoldCost: totalCost,
-      totalUnsoldCount: totalCount,
-      avgUnsoldCost: totalCount > 0 ? totalCost / totalCount : 0,
-      byLoad
-    })
-  }
-
-  async function loadItems() {
-    let query = supabase.from('jumpstart_manifest')
-      .select('barcode, description, category, size, color, msrp, cost_freight, zone, load_id')
-      .order('msrp', { ascending: false })
-      .limit(100)
-
-    if (zoneFilter === 'none') {
-      query = query.is('zone', null)
-    } else if (zoneFilter === '1') {
-      query = query.or('zone.eq.1,zone.eq.Zone 1')
-    } else if (zoneFilter === '1p') {
-      query = query.eq('zone', 'Zone 1 Pants')
-    } else if (zoneFilter === '2') {
-      query = query.or('zone.eq.2,zone.eq.Zone 2')
-    } else if (zoneFilter === '2p') {
-      query = query.eq('zone', 'Zone 2 Pants')
-    }
-    if (search) query = query.or(`description.ilike.%${search}%,barcode.ilike.%${search}%,category.ilike.%${search}%`)
-
-    const { data } = await query
-    setItems(data || [])
-  }
-
-  // Use unsold count from manifest walk (more accurate than simple subtraction)
-  // Falls back to stats.remaining while unsoldStats is still loading
-  const remaining = unsoldStats.totalUnsoldCount || stats.remaining
-  const sold = stats.total - remaining
-  const soldPct = stats.total > 0 ? (sold / stats.total * 100).toFixed(1) : 0
+  const soldPct = stats.total > 0 ? (stats.sold / stats.total * 100).toFixed(1) : 0
 
   if (loading) {
     return (
@@ -216,50 +215,70 @@ export default function AdminInventory() {
       <h2 className="text-2xl font-extrabold tracking-tight text-white">Inventory</h2>
 
       {/* Top Stats Row */}
-      <div className="grid grid-cols-4 gap-4">
-        <StatCard label="Total Items" value={stats.total.toLocaleString()} sub="All inventory" />
-        <StatCard label="Sold" value={sold.toLocaleString()} sub={`${soldPct}% of total`} accent="cyan" />
-        <StatCard label="Remaining" value={remaining.toLocaleString()} sub="In stock" accent="purple" />
-        <StatCard label="Avg Cost" value={`$${stats.avgCost.toFixed(2)}`} sub="Per item (incl. freight)" />
+      <div className="grid grid-cols-5 gap-4">
+        <StatCard label="Remaining"             value={stats.remaining.toLocaleString()} sub="In stock" accent="purple" />
+        <StatCard label="Sold"                  value={stats.sold.toLocaleString()}      sub={`${soldPct}% of total`} accent="cyan" />
+        <StatCard label="Total Items Purchased" value={stats.total.toLocaleString()}     sub="All inventory ever" />
+        <StatCard label="Avg Cost of Remaining" value={`$${stats.avgRemainingCost.toFixed(2)}`} sub="Per in-stock item" />
+        <StatCard label="Inventory Value"       value={`$${Math.round(stats.inventoryValue).toLocaleString()}`} sub="Cost of in-stock units" accent="emerald" />
       </div>
 
       {/* Progress Bar */}
       <div className="glass-card rounded-3xl p-6">
-          <div className="flex justify-between items-center mb-3">
+        <div className="flex justify-between items-center mb-3">
           <span className="text-sm font-medium text-slate-300">Inventory Status</span>
           <span className="text-sm text-cyan-400 font-semibold">{soldPct}% sold</span>
         </div>
         <div className="h-3 rounded-full bg-slate-800 overflow-hidden">
-          <div 
+          <div
             className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-cyan-400 transition-all duration-500"
             style={{ width: `${soldPct}%` }}
           />
         </div>
         <div className="flex justify-between mt-2 text-xs text-slate-500">
-          <span>{sold.toLocaleString()} sold</span>
-          <span>{remaining.toLocaleString()} remaining</span>
+          <span>{stats.sold.toLocaleString()} sold</span>
+          <span>{stats.remaining.toLocaleString()} remaining</span>
         </div>
       </div>
 
-      {/* Inventory by Load */}
+      {/* Inventory by Load — 3-col grid, newest first */}
       <div className="glass-card rounded-3xl p-6">
-          <h3 className="font-bold text-lg mb-4">Inventory by Load</h3>
-        <div className="grid grid-cols-2 gap-4">
+        <h3 className="font-bold text-lg mb-4">Inventory by Load</h3>
+        <div className="grid grid-cols-3 gap-4">
           {stats.loads.map(load => {
-            const totalItems = Number(load.item_count)
-            const avgCostLoad = Number(load.avg_cost || 0)
+            const badge = load.kind === 'rdm'
+              ? { label: 'RDM',          cls: 'bg-violet-500/20 text-violet-300 border-violet-500/30' }
+              : load.kind === 'unmanifested'
+                ? { label: 'Unmanifested', cls: 'bg-amber-500/20 text-amber-300 border-amber-500/30' }
+                : load.kind === 'custom'
+                  ? { label: load.pool_tag || 'Custom', cls: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30' }
+                  : null
+            const formattedDate = load.date
+              ? (() => { const [y, m, d] = load.date.split('-'); return `${m}-${d}-${y}` })()
+              : null
             return (
               <div key={load.load_id} className="rounded-xl bg-slate-800/30 border border-white/[0.04] p-4 hover:bg-slate-800/50 transition-colors">
-                <div className="flex justify-between items-start mb-2">
-                  <div className="font-semibold text-white">
-                    Load {load.load_id.replace('Load ', '')}
-                    {load.brand && <span className="text-slate-400 font-normal"> — {load.brand}</span>}
+                <div className="flex justify-between items-start mb-2 gap-2">
+                  <div className="font-semibold text-white flex items-center gap-2 flex-wrap min-w-0">
+                    <span>Load {load.load_id.replace('Load ', '')}</span>
+                    {badge && (
+                      <span className={`px-1.5 py-0.5 rounded-md text-[10px] uppercase tracking-wider font-bold border ${badge.cls}`}>
+                        {badge.label}
+                      </span>
+                    )}
                   </div>
-                  <div className="text-lg font-bold text-white">{totalItems.toLocaleString()}</div>
+                  <div className="text-lg font-bold text-white shrink-0">{load.item_count.toLocaleString()}</div>
                 </div>
+                {(load.brand || formattedDate) && (
+                  <div className="text-xs text-slate-400 mb-1 truncate">
+                    {load.brand}
+                    {load.brand && formattedDate && <span className="text-slate-600"> · </span>}
+                    {formattedDate}
+                  </div>
+                )}
                 <div className="flex justify-between text-xs text-slate-400 mt-1">
                   <span>Total: ${Number(load.total_cost).toLocaleString(undefined, {maximumFractionDigits: 0})}</span>
-                  <span>Avg: ${avgCostLoad.toFixed(2)}/item</span>
+                  <span>Avg: ${Number(load.avg_cost).toFixed(2)}/item</span>
                 </div>
               </div>
             )
@@ -267,115 +286,25 @@ export default function AdminInventory() {
         </div>
       </div>
 
-      {/* By Zone */}
-      <div className="glass-card rounded-3xl p-6">
-          <h3 className="font-bold text-lg mb-4">By Zone</h3>
-        <div className="grid grid-cols-5 gap-4">
-          <ZoneCard label="Zone 1" count={stats.zones.z1} color="purple" />
-          <ZoneCard label="Zone 1 Pants" count={stats.zones.z1p} color="amber" />
-          <ZoneCard label="Zone 2" count={stats.zones.z2} color="teal" />
-          <ZoneCard label="Zone 2 Pants" count={stats.zones.z2p} color="pink" />
-          <ZoneCard label="Unassigned" count={stats.zones.unassigned} color="slate" />
-        </div>
-      </div>
-
-      {/* Item List */}
-      <div className="glass-card rounded-3xl p-6">
-          <h3 className="font-bold text-lg mb-4">Item List</h3>
-        
-        {/* Filters */}
-        <div className="flex gap-3 mb-4">
-          <input 
-            placeholder="Search barcode, description, category..."
-            value={search} 
-            onChange={e => setSearch(e.target.value)}
-            className="flex-1 bg-white/5 border border-white/10 rounded-2xl px-5 py-4 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-cyan-500/50 focus:ring-4 focus:ring-cyan-500/10 transition-all" 
-          />
-          <select 
-            value={zoneFilter} 
-            onChange={e => setZoneFilter(e.target.value)}
-            className="bg-white/5 border border-white/10 rounded-2xl px-5 py-4 text-sm text-white appearance-none focus:outline-none focus:border-cyan-500/50 focus:ring-4 focus:ring-cyan-500/10 transition-all"
-          >
-            <option value="all">All Zones</option>
-            <option value="1">Zone 1</option>
-            <option value="1p">Zone 1 Pants</option>
-            <option value="2">Zone 2</option>
-            <option value="2p">Zone 2 Pants</option>
-            <option value="none">Unassigned</option>
-          </select>
-        </div>
-
-        {/* Table */}
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-white/[0.08]">
-                <th className="text-left py-3 px-3 text-[11px] uppercase tracking-wider font-semibold text-slate-400">Description</th>
-                <th className="text-left py-3 px-3 text-[11px] uppercase tracking-wider font-semibold text-slate-400">Category</th>
-                <th className="text-right py-3 px-3 text-[11px] uppercase tracking-wider font-semibold text-slate-400">MSRP</th>
-                <th className="text-right py-3 px-3 text-[11px] uppercase tracking-wider font-semibold text-slate-400">Cost</th>
-                <th className="text-center py-3 px-3 text-[11px] uppercase tracking-wider font-semibold text-slate-400">Zone</th>
-                <th className="text-left py-3 px-3 text-[11px] uppercase tracking-wider font-semibold text-slate-400">Size</th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((item, i) => (
-                <tr key={i} className="border-b border-white/[0.04] hover:bg-white/[0.02] transition-colors">
-                  <td className="py-3 px-3 max-w-[250px] truncate text-white">{item.description}</td>
-                  <td className="py-3 px-3 text-slate-400">{item.category}</td>
-                  <td className="py-3 px-3 text-right text-slate-300">${Number(item.msrp || 0).toFixed(2)}</td>
-                  <td className="py-3 px-3 text-right text-slate-500">${Number(item.cost_freight || 0).toFixed(2)}</td>
-                  <td className="py-3 px-3 text-center">
-                    {(() => {
-                      const z = String(item.zone || '').toLowerCase().trim()
-                      let label = item.zone || '—'
-                      let bg = 'bg-slate-600'
-                      if (z === '1' || z === 'zone 1') { label = 'Zone 1'; bg = 'bg-purple-600' }
-                      else if (z === 'zone 1 pants') { label = 'Z1 Pants'; bg = 'bg-amber-600' }
-                      else if (z === '2' || z === 'zone 2') { label = 'Zone 2'; bg = 'bg-teal-600' }
-                      else if (z === 'zone 2 pants') { label = 'Z2 Pants'; bg = 'bg-pink-600' }
-                      else if (z === '3') { label = 'Zone 3'; bg = 'bg-fuchsia-600' }
-                      return <span className={`inline-flex items-center justify-center px-2 h-7 rounded-lg text-xs font-bold text-white ${bg}`}>{label}</span>
-                    })()}
-                  </td>
-                  <td className="py-3 px-3 text-slate-400">{item.size}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          {items.length >= 100 && (
-            <p className="text-xs text-slate-500 text-center py-3">Showing first 100 results. Narrow your search for more.</p>
-          )}
-        </div>
-      </div>
+      {/* Variant browser — same component as the scanner's Inventory overlay */}
+      <JumpstartInventory embed />
     </div>
   )
 }
 
 function StatCard({ label, value, sub, accent }) {
+  const valueClass =
+    accent === 'cyan'    ? 'text-cyan-400'    :
+    accent === 'purple'  ? 'text-purple-400'  :
+    accent === 'emerald' ? 'text-emerald-400' :
+    'text-white'
   return (
     <div className="glass-card rounded-3xl p-5">
       <div className="text-[10px] uppercase tracking-[0.15em] font-semibold text-slate-500 mb-1">{label}</div>
-      <div className={`text-2xl font-bold ${accent === 'cyan' ? 'text-cyan-400' : accent === 'purple' ? 'text-purple-400' : 'text-white'}`}>
+      <div className={`text-2xl font-bold ${valueClass}`}>
         {value}
       </div>
       <div className="text-xs text-slate-500 mt-1">{sub}</div>
-    </div>
-  )
-}
-
-function ZoneCard({ count, label, color }) {
-  const colors = {
-    purple: 'border-purple-500/30 text-purple-400',
-    amber: 'border-amber-500/30 text-amber-400',
-    teal: 'border-teal-500/30 text-teal-400',
-    pink: 'border-pink-500/30 text-pink-400',
-    slate: 'border-white/[0.04] text-slate-400'
-  }
-  return (
-    <div className={`rounded-xl bg-slate-800/30 border ${colors[color] || colors.slate} p-4 text-center hover:bg-slate-800/50 transition-colors`}>
-      <div className="text-2xl font-bold text-white mb-1">{count.toLocaleString()}</div>
-      <div className={`text-sm ${colors[color]?.split(' ')[1] || 'text-slate-400'}`}>{label}</div>
     </div>
   )
 }
