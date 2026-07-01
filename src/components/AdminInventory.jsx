@@ -18,9 +18,13 @@ export default function AdminInventory() {
   const [stats, setStats] = useState({
     total: 0,
     sold: 0,
-    remaining: 0,
+    onShelfCount: 0,
+    onShelfCost: 0,
+    transitCount: 0,
+    transitCost: 0,
+    ownedRemaining: 0,
+    ownedCost: 0,
     avgRemainingCost: 0,
-    inventoryValue: 0,
     loads: [],
   })
 
@@ -37,7 +41,7 @@ export default function AdminInventory() {
     // manifest-join doesn't cover).
     const { data: loadsInfo } = await supabase
       .from('loads')
-      .select('id, kind, pool_tag, vendor, notes, quantity, total_cost, date')
+      .select('id, kind, pool_tag, vendor, notes, quantity, total_cost, date, landed')
 
     // Pool tokens (RDM, UJC, custom brands) from the loads table.
     const poolTagSet = new Set((loadsInfo || []).map(l => l.pool_tag).filter(Boolean))
@@ -71,6 +75,7 @@ export default function AdminInventory() {
         rows.push({
           load_id: l.id,
           kind: 'manifested',
+          landed: l.landed,
           date: l.date || null,
           brand: l.vendor || l.notes || '',
           item_count: Number(summary.item_count) || 0,
@@ -84,6 +89,7 @@ export default function AdminInventory() {
           load_id: l.id,
           kind: l.kind,
           pool_tag: l.pool_tag || null,
+          landed: l.landed,
           date: l.date || null,
           brand: l.kind === 'rdm' ? 'RDM'
             : l.kind === 'unmanifested' ? 'Unmanifested J.Crew'
@@ -109,49 +115,58 @@ export default function AdminInventory() {
 
     const total = manifestedItems + poolItems
 
-    // Pool remaining contribution to Avg Cost of Remaining:
-    // For each pool load, remaining qty × per-unit cost basis (total_cost/qty).
-    // We can't perfectly split sold between multiple loads of the same pool, so
-    // we apportion the pool's total sold across its loads pro-rata by qty.
+    // Pool remaining, split into LANDED (physically on the shelf) and IN-TRANSIT
+    // (purchased but not yet arrived). Sales can only draw from landed loads, so
+    // sold is apportioned pro-rata across a pool's landed loads only; in-transit
+    // loads keep their full quantity. This keeps "cost of units in stock"
+    // precise (physical) while still exposing total owned inventory value.
     const poolByTag = {}
     for (const l of poolRows) (poolByTag[l.pool_tag] ||= []).push(l)
     const poolSoldByTag = {}
     for (const tag of Object.keys(poolByTag)) {
       poolSoldByTag[tag] = (poolScansByTag[tag] || 0) + (tag === 'RDM' ? rdmBundleSold : 0)
     }
-    let poolRemainingCost = 0
-    let poolRemainingCount = 0
+    let onShelfCount = 0, onShelfCost = 0     // landed & unsold
+    let transitCount = 0, transitCost = 0     // purchased, not yet landed
     for (const tag of Object.keys(poolByTag)) {
-      const loadsOfKind = poolByTag[tag]
-      const totalQty = loadsOfKind.reduce((s, l) => s + (Number(l.quantity) || 0), 0)
-      const totalSold = Math.min(totalQty, poolSoldByTag[tag] || 0)
-      if (totalQty === 0) continue
-      for (const l of loadsOfKind) {
+      const landedLoads  = poolByTag[tag].filter(l => l.landed)
+      const transitLoads = poolByTag[tag].filter(l => !l.landed)
+      const landedQty = landedLoads.reduce((s, l) => s + (Number(l.quantity) || 0), 0)
+      const soldFromLanded = Math.min(landedQty, poolSoldByTag[tag] || 0)
+      for (const l of landedLoads) {
         const qty = Number(l.quantity) || 0
-        const cost = Number(l.total_cost) || 0
-        const unitCost = qty > 0 ? cost / qty : 0
-        const allocatedSold = Math.round(totalSold * (qty / totalQty))
+        const unitCost = qty > 0 ? (Number(l.total_cost) || 0) / qty : 0
+        const allocatedSold = landedQty > 0 ? Math.round(soldFromLanded * (qty / landedQty)) : 0
         const remainingQty = Math.max(0, qty - allocatedSold)
-        poolRemainingCost  += remainingQty * unitCost
-        poolRemainingCount += remainingQty
+        onShelfCount += remainingQty
+        onShelfCost  += remainingQty * unitCost
+      }
+      for (const l of transitLoads) {
+        const qty = Number(l.quantity) || 0
+        const unitCost = qty > 0 ? (Number(l.total_cost) || 0) / qty : 0
+        transitCount += qty
+        transitCost  += qty * unitCost
       }
     }
 
-    // In-stock = pool inventory only. Manifested inventory is treated as fully
-    // depleted, so it adds nothing to Remaining / Inventory Value. Sold is
-    // derived so the three top-row numbers tie: Total = Sold + Remaining, and
-    // Avg × Remaining = Inventory Value exactly.
-    const remaining           = poolRemainingCount
-    const totalRemainingCost  = poolRemainingCost
-    const avgRemainingCost    = remaining > 0 ? totalRemainingCost / remaining : 0
-    const sold                = Math.max(0, total - remaining)
+    // Manifested inventory is treated as fully depleted (sold, pool-tagged,
+    // bundled, or scanner-missed), so it adds nothing to in-stock. "In stock" =
+    // landed pool units; "owned" also includes in-transit. Sold ties out:
+    // Total = Sold + Owned-remaining.
+    const ownedRemaining      = onShelfCount + transitCount
+    const avgRemainingCost    = onShelfCount > 0 ? onShelfCost / onShelfCount : 0
+    const sold                = Math.max(0, total - ownedRemaining)
 
     setStats({
       total,
       sold,
-      remaining,
+      onShelfCount,
+      onShelfCost,
+      transitCount,
+      transitCost,
+      ownedRemaining,
+      ownedCost: onShelfCost + transitCost,
       avgRemainingCost,
-      inventoryValue: totalRemainingCost,
       loads: rows,
     })
     setLoading(false)
@@ -176,11 +191,11 @@ export default function AdminInventory() {
 
       {/* Top Stats Row */}
       <div className="grid grid-cols-5 gap-4">
-        <StatCard label="Remaining"             value={stats.remaining.toLocaleString()} sub="In stock" accent="purple" />
+        <StatCard label="In Stock (landed)"     value={stats.onShelfCount.toLocaleString()} sub={stats.transitCount > 0 ? `on the shelf · +${stats.transitCount.toLocaleString()} in transit` : 'on the shelf'} accent="purple" />
         <StatCard label="Sold"                  value={stats.sold.toLocaleString()}      sub={`${soldPct}% of total`} accent="cyan" />
         <StatCard label="Total Items Purchased" value={stats.total.toLocaleString()}     sub="All inventory ever" />
-        <StatCard label="Avg Cost of Remaining" value={`$${stats.avgRemainingCost.toFixed(2)}`} sub="Per in-stock item" />
-        <StatCard label="Inventory Value"       value={`$${Math.round(stats.inventoryValue).toLocaleString()}`} sub="Cost of in-stock units" accent="emerald" />
+        <StatCard label="Avg Cost of Remaining" value={`$${stats.avgRemainingCost.toFixed(2)}`} sub="Per landed unit" />
+        <StatCard label="Landed Stock Value"    value={`$${Math.round(stats.onShelfCost).toLocaleString()}`} sub={stats.transitCost > 0 ? `owned $${Math.round(stats.ownedCost).toLocaleString()} incl. transit` : 'cost of in-stock units'} accent="emerald" />
       </div>
 
       {/* Progress Bar */}
@@ -197,7 +212,7 @@ export default function AdminInventory() {
         </div>
         <div className="flex justify-between mt-2 text-xs text-slate-500">
           <span>{stats.sold.toLocaleString()} sold</span>
-          <span>{stats.remaining.toLocaleString()} remaining</span>
+          <span>{stats.ownedRemaining.toLocaleString()} remaining{stats.transitCount > 0 ? ` (${stats.onShelfCount.toLocaleString()} landed + ${stats.transitCount.toLocaleString()} in transit)` : ''}</span>
         </div>
       </div>
 
@@ -224,6 +239,11 @@ export default function AdminInventory() {
                     {badge && (
                       <span className={`px-1.5 py-0.5 rounded-md text-[10px] uppercase tracking-wider font-bold border ${badge.cls}`}>
                         {badge.label}
+                      </span>
+                    )}
+                    {load.landed === false && (
+                      <span className="px-1.5 py-0.5 rounded-md text-[10px] uppercase tracking-wider font-bold border bg-orange-500/20 text-orange-300 border-orange-500/30">
+                        In transit
                       </span>
                     )}
                   </div>

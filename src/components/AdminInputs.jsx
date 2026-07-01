@@ -133,7 +133,7 @@ function getField(row, ...names) {
 function ManifestUpload() {
   const [loads, setLoads] = useState([])
   const [loadId, setLoadId] = useState('')
-  const [newLoad, setNewLoad] = useState({ date: '', vendor: '', total_cost: '', quantity: '', notes: '', kind: '' })
+  const [newLoad, setNewLoad] = useState({ date: '', vendor: '', total_cost: '', quantity: '', notes: '', kind: '', landed: false })
   const [showNewLoad, setShowNewLoad] = useState(false)
   const [status, setStatus] = useState('')
   const [progress, setProgress] = useState(null)
@@ -192,7 +192,8 @@ function ManifestUpload() {
       quantity: parseInt(newLoad.quantity) || null,
       notes: newLoad.notes,
       kind: newLoad.kind,
-      pool_tag: poolTag
+      pool_tag: poolTag,
+      landed: newLoad.landed
     })
 
     if (error) {
@@ -200,11 +201,21 @@ function ManifestUpload() {
       return
     }
 
-    setStatus(`✅ Created ${loadIdNew}`)
-    setNewLoad({ date: '', vendor: '', total_cost: '', quantity: '', notes: '', kind: '' })
+    setStatus(`✅ Created ${loadIdNew}${newLoad.landed ? '' : ' (in transit)'}`)
+    setNewLoad({ date: '', vendor: '', total_cost: '', quantity: '', notes: '', kind: '', landed: false })
     setShowNewLoad(false)
     setLoadId(loadIdNew)
     refreshLoads()
+  }
+
+  // Flip a load between in-transit and landed (arrived / selling started).
+  async function toggleLanded(load) {
+    const next = !load.landed
+    // optimistic update
+    setLoads(prev => prev.map(l => l.id === load.id ? { ...l, landed: next } : l))
+    const { error } = await supabase.from('loads').update({ landed: next }).eq('id', load.id)
+    if (error) { setStatus(`❌ ${error.message}`); refreshLoads(); return }
+    setStatus(`✅ ${load.id} marked ${next ? 'Landed' : 'In transit'}`)
   }
 
   // Export a load's manifest as a Whatnot bulk-listing CSV. Pulls every
@@ -402,6 +413,28 @@ function ManifestUpload() {
                 className="bg-white/5 border border-white/10 rounded-2xl px-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500/50 focus:ring-4 focus:ring-cyan-500/10 transition-all"
               />
             </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-400 mb-1.5">Status</label>
+              <div className="inline-flex rounded-2xl border border-white/10 overflow-hidden">
+                {[['transit', false, 'In transit'], ['landed', true, 'Landed']].map(([key, val, label]) => (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => setNewLoad({ ...newLoad, landed: val })}
+                    className={`px-4 py-2 text-sm font-medium transition-colors ${
+                      newLoad.landed === val
+                        ? (val ? 'bg-emerald-600 text-white' : 'bg-amber-600 text-white')
+                        : 'bg-white/5 text-slate-400 hover:bg-white/10'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <p className="text-xs text-slate-500 mt-1.5">
+                In-transit loads count toward owned inventory but not physical "on the shelf" stock. Toggle to Landed when it arrives.
+              </p>
+            </div>
             <button type="submit" className="bg-cyan-600 hover:bg-cyan-500 px-4 py-2 rounded-lg text-sm font-medium transition-colors">
               Create Load
             </button>
@@ -436,6 +469,9 @@ function ManifestUpload() {
                         const k = { manifested: ['Manifested', 'bg-cyan-500/15 text-cyan-300 border-cyan-500/30'], rdm: ['RDM', 'bg-purple-500/15 text-purple-300 border-purple-500/30'], unmanifested: ['UJC', 'bg-amber-500/15 text-amber-300 border-amber-500/30'], custom: [l.pool_tag || 'CUSTOM', 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'] }[l.kind]
                         return k ? <span className={`text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full border ${k[1]}`}>{k[0]}</span> : null
                       })()}
+                      {!l.landed && (
+                        <span className="text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full border bg-orange-500/15 text-orange-300 border-orange-500/30">In transit</span>
+                      )}
                     </div>
                     <div className="text-xs text-slate-500 mt-1">
                       Date Paid: {formattedDate}
@@ -446,6 +482,16 @@ function ManifestUpload() {
                       <div className="text-lg font-bold text-slate-300">{(l.item_count || l.quantity || 0).toLocaleString()} items</div>
                       <div className="text-xs text-slate-500">${Number(l.total_cost || l.total_cost_actual || 0).toLocaleString(undefined, {minimumFractionDigits: 2})}</div>
                     </div>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); toggleLanded(l) }}
+                      className={`px-2 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                        l.landed
+                          ? 'text-orange-300 hover:bg-orange-500/10'
+                          : 'text-emerald-300 hover:bg-emerald-500/10'
+                      }`}
+                    >
+                      {l.landed ? 'Mark in transit' : 'Mark landed'}
+                    </button>
                     <button
                       onClick={(e) => { e.stopPropagation(); handleExportLoad(l) }}
                       disabled={exportingLoadId === l.id}
