@@ -42,65 +42,25 @@ export default function AdminInventory() {
     // Pool tokens (RDM, UJC, custom brands) from the loads table.
     const poolTagSet = new Set((loadsInfo || []).map(l => l.pool_tag).filter(Boolean))
 
-    // Per-barcode sold counts (paginated) — used both for the global Sold
-    // total and for the unsold-walk that drives Avg Cost of Remaining.
+    // Pool scan counts (RDM/UJC/custom tokens) — the only inventory that carries
+    // a live in-stock balance. Manifested barcodes are intentionally NOT walked
+    // for in-stock: every manifested unit is treated as depleted (sold live,
+    // tagged into a pool, bundled, or lost to scanner misses), so it contributes
+    // nothing to Remaining / Inventory Value (see the Remaining calc below).
     const allSoldScans = await fetchAll(() => supabase
       .from('jumpstart_sold_scans')
       .select('barcode'))
     const poolScansByTag = {}   // pool_tag → Whatnot scan count
-    const soldCountsByBarcode = {}
     for (const s of allSoldScans || []) {
       const b = s.barcode
-      if (!b) continue
-      if (poolTagSet.has(b)) { poolScansByTag[b] = (poolScansByTag[b] || 0) + 1; continue }
-      soldCountsByBarcode[b] = (soldCountsByBarcode[b] || 0) + 1
-    }
-    // Sold bundle items (Jumpstart bundle boxes that have been sold).
-    const { data: soldBoxRows } = await supabase
-      .from('jumpstart_bundle_boxes')
-      .select('box_number')
-      .not('sold_at', 'is', null)
-    const soldBoxNumbers = (soldBoxRows || []).map(b => b.box_number)
-    let soldBundleScans = []
-    if (soldBoxNumbers.length > 0) {
-      soldBundleScans = await fetchAll(() => supabase
-        .from('jumpstart_bundle_scans')
-        .select('barcode')
-        .in('box_number', soldBoxNumbers))
-    }
-    for (const s of soldBundleScans || []) {
-      const b = s.barcode
-      if (!b) continue
-      if (poolTagSet.has(b)) continue   // pool bundles handled separately
-      soldCountsByBarcode[b] = (soldCountsByBarcode[b] || 0) + 1
+      if (b && poolTagSet.has(b)) poolScansByTag[b] = (poolScansByTag[b] || 0) + 1
     }
 
-    // RDM bundle sales (whole-crate sales outside Whatnot).
+    // RDM bundle sales (whole-crate sales outside Whatnot) deplete the RDM pool.
     const { data: rdmBundleRows } = await supabase
       .from('rdm_bundle_sales')
       .select('quantity')
     const rdmBundleSold = (rdmBundleRows || []).reduce((s, r) => s + (Number(r.quantity) || 0), 0)
-
-    // Manifest walk — every manifest row, classify sold vs unsold by
-    // burning down soldCountsByBarcode. Unsold rows contribute their
-    // cost_freight to the Avg Cost of Remaining calculation.
-    const manifestRows = await fetchAll(() => supabase
-      .from('jumpstart_manifest')
-      .select('barcode, cost_freight'))
-    let manifestUnsoldCost = 0
-    let manifestUnsoldCount = 0
-    const usedByBarcode = {}
-    for (const row of manifestRows || []) {
-      const bc = row.barcode
-      const used = usedByBarcode[bc] || 0
-      const totalSold = soldCountsByBarcode[bc] || 0
-      if (used < totalSold) {
-        usedByBarcode[bc] = used + 1
-      } else {
-        manifestUnsoldCost += Number(row.cost_freight) || 0
-        manifestUnsoldCount += 1
-      }
-    }
 
     // ── Build per-load rows for the "Inventory by Load" grid ──
     const rows = []
@@ -177,12 +137,12 @@ export default function AdminInventory() {
       }
     }
 
-    // Bottom-up Remaining (matches the variant browser's "X in stock" count
-    // and is robust to cross-barcode overscanning). Sold is derived so the
-    // three top-row numbers tie: Total = Sold + Remaining, and
+    // In-stock = pool inventory only. Manifested inventory is treated as fully
+    // depleted, so it adds nothing to Remaining / Inventory Value. Sold is
+    // derived so the three top-row numbers tie: Total = Sold + Remaining, and
     // Avg × Remaining = Inventory Value exactly.
-    const remaining           = manifestUnsoldCount + poolRemainingCount
-    const totalRemainingCost  = manifestUnsoldCost  + poolRemainingCost
+    const remaining           = poolRemainingCount
+    const totalRemainingCost  = poolRemainingCost
     const avgRemainingCost    = remaining > 0 ? totalRemainingCost / remaining : 0
     const sold                = Math.max(0, total - remaining)
 
