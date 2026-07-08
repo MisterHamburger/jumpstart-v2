@@ -23,10 +23,12 @@ Jumpstart is a livestream liquidation business that buys retail inventory loads 
 ## Deploy Command
 
 ```bash
-cd ~/Desktop/jumpstart-v2 && npm run build && echo '/* /index.html 200' > dist/_redirects && npx netlify deploy --prod --dir=dist --functions=netlify/functions
+cd ~/Projects/jumpstart-v2 && npm run build && echo '/* /index.html 200' > dist/_redirects && npx netlify deploy --prod --dir=dist --functions=netlify/functions
 ```
 
 Always include the `_redirects` file — required for SPA client-side routing.
+
+⚠️ The active repo is `~/Projects/jumpstart-v2`. A **stale clone** exists at `~/Desktop/jumpstart-v2` (last touched April 2026, missing recent commits) — never build or deploy from there.
 
 ---
 

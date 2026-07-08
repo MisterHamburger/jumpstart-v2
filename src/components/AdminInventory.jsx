@@ -51,9 +51,15 @@ export default function AdminInventory() {
     // for in-stock: every manifested unit is treated as depleted (sold live,
     // tagged into a pool, bundled, or lost to scanner misses), so it contributes
     // nothing to Remaining / Inventory Value (see the Remaining calc below).
-    const allSoldScans = await fetchAll(() => supabase
-      .from('jumpstart_sold_scans')
-      .select('barcode'))
+    // Pool sales come from BOTH channels now — one shared inventory pool. Jumpstart
+    // shows write to jumpstart_sold_scans, Kickstart shows to kickstart_sold_scans;
+    // both deduct from the same pool, so count pool-tag scans across both tables.
+    // (Non-pool barcodes are ignored below by the poolTagSet filter.)
+    const [jsScans, ksScans] = await Promise.all([
+      fetchAll(() => supabase.from('jumpstart_sold_scans').select('barcode')),
+      fetchAll(() => supabase.from('kickstart_sold_scans').select('barcode')),
+    ])
+    const allSoldScans = [...(jsScans || []), ...(ksScans || [])]
     const poolScansByTag = {}   // pool_tag → Whatnot scan count
     for (const s of allSoldScans || []) {
       const b = s.barcode

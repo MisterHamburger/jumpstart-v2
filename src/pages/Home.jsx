@@ -7,7 +7,8 @@ const actions = [
     subtitle: 'Sort incoming inventory',
     icon: 'lucide:package',
     jumpstart: '/sorting/general',
-    kickstart: '/kickstart',
+    // Kickstart intake retired — inventory is one shared pool; new brand stock
+    // enters as custom pool loads via Admin → Inputs → Add New Load.
   },
   {
     title: 'Sold',
@@ -97,16 +98,18 @@ export default function Home() {
                 >
                   Jumpstart
                 </button>
-                <button
-                  onClick={() => go(action.kickstart)}
-                  className="flex-1 py-3 rounded-2xl font-bold text-sm
-                             bg-pink-500 text-white
-                             hover:bg-pink-400 hover:scale-105
-                             active:scale-95 transition-all
-                             shadow-lg shadow-pink-500/30 glow-magenta"
-                >
-                  Kickstart
-                </button>
+                {action.kickstart && (
+                  <button
+                    onClick={() => go(action.kickstart)}
+                    className="flex-1 py-3 rounded-2xl font-bold text-sm
+                               bg-pink-500 text-white
+                               hover:bg-pink-400 hover:scale-105
+                               active:scale-95 transition-all
+                               shadow-lg shadow-pink-500/30 glow-magenta"
+                  >
+                    Kickstart
+                  </button>
+                )}
               </div>
             </div>
           ))}

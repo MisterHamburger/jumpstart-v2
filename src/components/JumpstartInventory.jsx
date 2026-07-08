@@ -124,11 +124,17 @@ export default function JumpstartInventory({ onClose, embed = false }) {
         .select('id, barcode, description, category, subclass, size, color, vendor, gender, part_number, msrp, cost_freight, zone, load_id, photo_url, created_at')
         .order('created_at', { ascending: false }))
 
-      // Aggregate sold counts per barcode. Unmanifested-pool scans (barcode
-      // 'RDM' or 'UJC') are bucketed separately from real-barcode sales.
-      const sold = await fetchAll(() => supabase
-        .from('jumpstart_sold_scans')
-        .select('barcode'))
+      // Aggregate sold counts per barcode. Pool scans (barcode = a pool_tag like
+      // 'RDM'/'UJC'/'QUINCE') are bucketed separately from real-barcode sales.
+      // Pool sales draw from ONE shared inventory pool across both channels, so
+      // count scans from jumpstart_sold_scans AND kickstart_sold_scans. Real-barcode
+      // (manifest) sales only exist in jumpstart_sold_scans; any stray Kickstart UPC
+      // won't match a manifest barcode, so bucketing it is harmless.
+      const [jsSold, ksSold] = await Promise.all([
+        fetchAll(() => supabase.from('jumpstart_sold_scans').select('barcode')),
+        fetchAll(() => supabase.from('kickstart_sold_scans').select('barcode')),
+      ])
+      const sold = [...(jsSold || []), ...(ksSold || [])]
       // Per-pool load aggregates (purchased qty, total cost basis), keyed by
       // pool_tag (RDM, UJC, and any custom brand pools).
       const { data: poolLoads } = await supabase

@@ -3,13 +3,10 @@ import Home from './pages/Home'
 import SortingSelect from './pages/SortingSelect'
 import GeneralSort from './pages/GeneralSort'
 import BundleSort from './pages/BundleSort'
-import KickstartSort from './pages/KickstartSort'
-import KickstartBuyer from './pages/KickstartBuyer'
 import SalesSetup from './pages/SalesSetup'
 import SalesScanner from './pages/SalesScanner'
 import Admin from './pages/Admin'
 import ItemLookup from './pages/ItemLookup'
-// import KickstartProducts from './pages/KickstartProducts'
 
 export default function App() {
   return (
@@ -18,8 +15,7 @@ export default function App() {
         <Route path="/" element={<Home />} />
         <Route path="/sorting" element={<SortingSelect />} />
         <Route path="/sorting/general" element={<GeneralSort />} />
-        <Route path="/kickstart" element={<KickstartSort />} />
-            <Route path="/sorting/bundle" element={<BundleSort />} />
+        <Route path="/sorting/bundle" element={<BundleSort />} />
         <Route path="/sales" element={<SalesSetup />} />
         <Route path="/sales/:showId" element={<SalesScanner />} />
         <Route path="/admin" element={<Admin />} />
@@ -31,9 +27,6 @@ export default function App() {
         <Route path="/admin/analytics" element={<Admin />} />
         <Route path="/admin/statements" element={<Admin />} />
         <Route path="/admin/data-check" element={<Admin />} />
-        <Route path="/admin/kickstart" element={<Admin />} />
-        <Route path="/kickstart/buyer" element={<KickstartBuyer />} />
-        {/* <Route path="/kickstart/products" element={<KickstartProducts />} /> */}
         <Route path="/lookup" element={<ItemLookup />} />
       </Routes>
     </div>
