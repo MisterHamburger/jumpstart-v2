@@ -193,8 +193,12 @@ export default function SalesSetup() {
                         <div className="font-bold font-heading mb-1 truncate">{show.showName}</div>
                         <div className="text-xs opacity-50">{show.scanned} / {show.totalItems} scanned</div>
                       </div>
-                      {channel === 'Kickstart' && show.customItemCost != null && (
-                        <span className="shrink-0 text-xs font-bold bg-pink-500/20 text-pink-200 border border-pink-500/30 px-2 py-1 rounded-full">
+                      {show.customItemCost != null && (
+                        <span className={`shrink-0 text-xs font-bold px-2 py-1 rounded-full border ${
+                          channel === 'Kickstart'
+                            ? 'bg-pink-500/20 text-pink-200 border-pink-500/30'
+                            : 'bg-cyan-500/20 text-cyan-200 border-cyan-500/30'
+                        }`}>
                           COGS ${Number(show.customItemCost).toFixed(2)}
                         </span>
                       )}

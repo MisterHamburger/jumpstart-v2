@@ -91,7 +91,7 @@ export default function AdminAnalytics() {
     while (true) {
       const { data, error } = await supabase
         .from('profitability')
-        .select('category,description,msrp,cost_freight,buyer_paid,profit,margin,zone,show_name,show_date,is_bundle,barcode')
+        .select('category,description,msrp,cost_freight,buyer_paid,net_payout,profit,margin,zone,show_name,show_date,is_bundle,barcode')
         .eq('channel', 'Jumpstart')
         .eq('is_bundle', false)
         .range(offset, offset + PAGE - 1)
@@ -180,7 +180,7 @@ export default function AdminAnalytics() {
       fetchAllRows('jumpstart_manifest', 'barcode,cost_freight,load_id'),
       supabase.from('loads').select('id,date,vendor,notes,total_cost,quantity').then(r => r.data || []),
       getSoldBarcodes(),
-      fetchAllRows('profitability', 'barcode,buyer_paid,profit', [{ type: 'eq', col: 'channel', val: 'Jumpstart' }]),
+      fetchAllRows('profitability', 'barcode,buyer_paid,net_payout,profit', [{ type: 'eq', col: 'channel', val: 'Jumpstart' }]),
     ])
 
     // Count items per load and total cost per load from manifest
@@ -218,7 +218,7 @@ export default function AdminAnalytics() {
       const lid = barcodeToLoad[item.barcode]
       if (!lid) return
       if (!loadProfit[lid]) loadProfit[lid] = { revenue: 0, profit: 0, soldWithProfit: 0 }
-      loadProfit[lid].revenue += Number(item.buyer_paid) || 0
+      loadProfit[lid].revenue += Number(item.net_payout) || 0
       loadProfit[lid].profit += Number(item.profit) || 0
       loadProfit[lid].soldWithProfit++
     })
@@ -260,10 +260,10 @@ export default function AdminAnalytics() {
     const groups = {}
     for (const item of items) {
       const key = keyFn(item) || 'Unknown'
-      if (!groups[key]) groups[key] = { items: 0, revenue: 0, cost: 0, profit: 0, profitable: 0 }
+      if (!groups[key]) groups[key] = { items: 0, netRevenue: 0, cost: 0, profit: 0, profitable: 0 }
       const g = groups[key]
       g.items++
-      g.revenue += Number(item.buyer_paid) || 0
+      g.netRevenue += Number(item.net_payout) || 0
       g.cost += Number(item.cost_freight) || 0
       g.profit += Number(item.profit) || 0
       if (Number(item.profit) > 0) g.profitable++
@@ -271,19 +271,19 @@ export default function AdminAnalytics() {
     return Object.entries(groups).map(([key, g]) => ({
       key,
       items: g.items,
-      revenue: g.revenue,
+      revenue: g.netRevenue,
       cost: g.cost,
       profit: g.profit,
       avgProfit: g.profit / g.items,
-      avgSale: g.revenue / g.items,
+      avgSale: g.netRevenue / g.items,
       avgCost: g.cost / g.items,
-      margin: g.revenue > 0 ? (g.profit / g.revenue) * 100 : 0,
+      margin: g.netRevenue > 0 ? (g.profit / g.netRevenue) * 100 : 0,
       pctProfitable: (g.profitable / g.items) * 100,
     }))
   }
 
   const totalProfit = items.reduce((s, i) => s + (Number(i.profit) || 0), 0)
-  const totalRevenue = items.reduce((s, i) => s + (Number(i.buyer_paid) || 0), 0)
+  const totalRevenue = items.reduce((s, i) => s + (Number(i.net_payout) || 0), 0)
   const totalProfitable = items.filter(i => Number(i.profit) > 0).length
 
   const TABS = [
@@ -302,7 +302,7 @@ export default function AdminAnalytics() {
       <div className="mb-6">
         <h2 className="text-2xl font-bold text-white">Jumpstart Analytics</h2>
         <p className="text-slate-500 text-sm mt-1">
-          {items.length.toLocaleString()} items sold | {fmt(totalRevenue)} revenue | {fmt(totalProfit)} profit | {pct(totalRevenue > 0 ? (totalProfit / totalRevenue) * 100 : 0)} margin | {pct((totalProfitable / items.length) * 100)} profitable
+          {items.length.toLocaleString()} items sold | {fmt(totalRevenue)} net revenue | {fmt(totalProfit)} profit | {pct(totalRevenue > 0 ? (totalProfit / totalRevenue) * 100 : 0)} margin | {pct((totalProfitable / items.length) * 100)} profitable
         </p>
       </div>
 
@@ -520,7 +520,7 @@ function BundleView({ items, aggregate }) {
     .sort((a, b) => (b.losers / b.items) - (a.losers / a.items))
 
   const losers = items.filter(i => Number(i.profit) < 0)
-  const loserRevenue = losers.reduce((s, i) => s + (Number(i.buyer_paid) || 0), 0)
+  const loserRevenue = losers.reduce((s, i) => s + (Number(i.net_payout) || 0), 0)
   const loserLoss = losers.reduce((s, i) => s + (Number(i.profit) || 0), 0)
 
   return (
@@ -537,7 +537,7 @@ function BundleView({ items, aggregate }) {
         <div className="bg-red-500/10 border border-red-500/20 rounded-2xl p-5">
           <div className="text-sm text-red-400 mb-1">Total Losses</div>
           <div className="text-2xl font-bold text-red-400">{fmt(loserLoss)}</div>
-          <div className="text-xs text-slate-500 mt-1">Revenue: {fmt(loserRevenue)}</div>
+          <div className="text-xs text-slate-500 mt-1">Net Revenue: {fmt(loserRevenue)}</div>
         </div>
         <div className="bg-amber-500/10 border border-amber-500/20 rounded-2xl p-5">
           <div className="text-sm text-amber-400 mb-1">Avg Loss Per Item</div>
@@ -776,7 +776,7 @@ function LoadROIView({ data, loading }) {
         <div className="glass-card rounded-3xl p-5">
           <div className="text-xs text-slate-400 mb-1">Total Profit</div>
           <div className={`text-2xl font-bold ${totalProfit >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{fmt(totalProfit)}</div>
-          <div className="text-xs text-slate-500 mt-1">{fmt(totalRevenue)} revenue</div>
+          <div className="text-xs text-slate-500 mt-1">{fmt(totalRevenue)} net revenue</div>
         </div>
         <div className="glass-card rounded-3xl p-5">
           <div className="text-xs text-slate-400 mb-1">Overall ROI</div>
@@ -802,7 +802,7 @@ function LoadROIView({ data, loading }) {
                 <th className="text-right px-4 py-3">Cost</th>
                 <th className="text-right px-4 py-3">Sold</th>
                 <th className="text-right px-4 py-3">Sell-Through</th>
-                <th className="text-right px-4 py-3">Revenue</th>
+                <th className="text-right px-4 py-3">Net Revenue</th>
                 <th className="text-right px-4 py-3">Profit</th>
                 <th className="text-right px-4 py-3">ROI</th>
                 <th className="text-right px-4 py-3">Margin</th>
@@ -853,7 +853,7 @@ function ShowView({ items }) {
     }
     const s = shows[key]
     s.items++
-    s.revenue += Number(item.buyer_paid) || 0
+    s.revenue += Number(item.net_payout) || 0
     s.cost += Number(item.cost_freight) || 0
     s.profit += Number(item.profit) || 0
     if (Number(item.profit) > 0) s.profitable++
@@ -909,7 +909,7 @@ function ShowView({ items }) {
                 <th className="text-left px-4 py-3">Show</th>
                 <th className="text-left px-4 py-3">Date</th>
                 <th className="text-right px-4 py-3">Items</th>
-                <th className="text-right px-4 py-3">Revenue</th>
+                <th className="text-right px-4 py-3">Net Revenue</th>
                 <th className="text-right px-4 py-3">Avg Sale</th>
                 <th className="text-right px-4 py-3">COGS</th>
                 <th className="text-right px-4 py-3">Profit</th>

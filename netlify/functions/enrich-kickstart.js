@@ -50,8 +50,9 @@ export default async (req) => {
         }
 
         // Update the item with extracted data
-        // Only overwrite description if AI actually found a product name
-        // Normalize size: AI returns "ALL" but app uses "One Size"
+        // AI's "description" output is the product name from the tag — write to
+        // the `notes` column (Item Description), not `description` (Category).
+        // Writing to description would overwrite the sorter's category pick.
         let normalizedSize = tagData.size || null
         if (normalizedSize && normalizedSize.toUpperCase() === 'ALL') normalizedSize = 'One Size'
 
@@ -63,7 +64,7 @@ export default async (req) => {
           msrp: tagData.msrp ? parseFloat(tagData.msrp) : null,
           status: 'enriched'
         }
-        if (tagData.description) updates.description = tagData.description
+        if (tagData.description) updates.notes = tagData.description
 
         await updateItem(SUPABASE_URL, SUPABASE_ANON_KEY, item.id, updates)
       } catch (err) {

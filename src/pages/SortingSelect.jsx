@@ -48,7 +48,7 @@ export default function SortingSelect() {
             </div>
             <div>
               <div className="text-xl font-bold font-heading">Bundle Sort</div>
-              <div className="text-sm text-slate-400">Scan → Box number</div>
+              <div className="text-sm text-slate-400">Scan → Lot number</div>
             </div>
           </div>
         </button>

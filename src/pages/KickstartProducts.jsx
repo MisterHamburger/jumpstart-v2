@@ -15,10 +15,13 @@ function LazyPhoto({ intakeId, size = 'sm' }) {
     const observer = new IntersectionObserver(([entry]) => {
       if (entry.isIntersecting && !loaded) {
         setLoaded(true)
-        supabase.from('kickstart_intake').select('item_photo_data, photo_data').eq('id', intakeId).single()
+        supabase.from('kickstart_intake').select('photo_url, item_photo_data, photo_data').eq('id', intakeId).single()
           .then(({ data }) => {
-            const photo = data?.item_photo_data || data?.photo_data
-            if (photo) setSrc(`data:image/jpeg;base64,${photo}`)
+            if (data?.photo_url) setSrc(data.photo_url)
+            else {
+              const photo = data?.item_photo_data || data?.photo_data
+              if (photo) setSrc(`data:image/jpeg;base64,${photo}`)
+            }
           })
       }
     }, { rootMargin: '200px' })

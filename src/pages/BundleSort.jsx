@@ -1,9 +1,46 @@
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { Html5Qrcode } from 'html5-qrcode'
-import { supabase } from '../lib/supabase'
+import { supabase, fetchAll } from '../lib/supabase'
 import { normalizeBarcode } from '../lib/barcodes'
 import jsPDF from 'jspdf'
+
+// Build a J.Crew / Madewell stock photo URL from manifest fields.
+// Matches the pattern in src/components/AdminInputs.jsx buildPhotoUrl().
+function buildJumpstartPhotoUrl(vendor, style, color) {
+  const s = (style || '').toString().trim().toUpperCase()
+  const c = (color || '').toString().trim().toUpperCase()
+  if (!s || !c) return ''
+  const v = (vendor || '').toLowerCase()
+  if (v.includes('madewell')) return `https://www.madewell.com/s7-img-facade/${s}_${c}`
+  if (v.includes('crew')) return `https://www.jcrew.com/s7-img-facade/${s}_${c}`
+  return ''
+}
+
+// Fetch an image URL, downscale to a max dimension, and return base64 JPEG bytes.
+// Returns null on failure (CORS, 404, network) so callers can fall back to text-only.
+async function fetchPhotoAsBase64(url, maxDim = 200) {
+  try {
+    const res = await fetch(url)
+    if (!res.ok) return null
+    const blob = await res.blob()
+    const img = await createImageBitmap(blob)
+    const scale = Math.min(1, maxDim / Math.max(img.width, img.height))
+    const w = Math.max(1, Math.round(img.width * scale))
+    const h = Math.max(1, Math.round(img.height * scale))
+    const canvas = document.createElement('canvas')
+    canvas.width = w
+    canvas.height = h
+    const ctx = canvas.getContext('2d')
+    ctx.fillStyle = '#ffffff'
+    ctx.fillRect(0, 0, w, h)
+    ctx.drawImage(img, 0, 0, w, h)
+    const dataUrl = canvas.toDataURL('image/jpeg', 0.8)
+    return dataUrl.split(',')[1]
+  } catch (e) {
+    return null
+  }
+}
 
 // Lazy-loading photo thumbnail for No Barcode picker
 function LazyPhoto({ intakeId }) {
@@ -17,10 +54,13 @@ function LazyPhoto({ intakeId }) {
     const observer = new IntersectionObserver(([entry]) => {
       if (entry.isIntersecting && !loaded) {
         setLoaded(true)
-        supabase.from('kickstart_intake').select('item_photo_data, photo_data').eq('id', intakeId).single()
+        supabase.from('kickstart_intake').select('photo_url, item_photo_data, photo_data').eq('id', intakeId).single()
           .then(({ data }) => {
-            const photo = data?.item_photo_data || data?.photo_data
-            if (photo) setSrc(`data:image/jpeg;base64,${photo}`)
+            if (data?.photo_url) setSrc(data.photo_url)
+            else {
+              const photo = data?.item_photo_data || data?.photo_data
+              if (photo) setSrc(`data:image/jpeg;base64,${photo}`)
+            }
           })
       }
     }, { rootMargin: '200px' })
@@ -137,10 +177,10 @@ export default function BundleSort() {
           .select('*')
           .order('box_number', { ascending: false })
 
-        const { data: scanRows } = await supabase
+        const scanRows = await fetchAll(() => supabase
           .from('kickstart_bundle_scans')
           .select('*')
-          .order('scanned_at')
+          .order('scanned_at'))
 
         const scansByBox = {}
         ;(scanRows || []).forEach(s => {
@@ -428,7 +468,7 @@ export default function BundleSort() {
             .update({ status: 'complete' })
             .eq('box_number', activeBox)
           await stopScanner()
-          setTimeout(() => { alert(`Box complete! ${activeBoxTarget} items reached.`); closeScanner() }, 500)
+          setTimeout(() => { alert(`Lot complete! ${activeBoxTarget} items reached.`); closeScanner() }, 500)
         }
       } catch (e) {
         console.error('Scan error:', e)
@@ -454,7 +494,7 @@ export default function BundleSort() {
             .update({ status: 'complete' })
             .eq('box_number', activeBox)
           await stopScanner()
-          setTimeout(() => { alert(`Box complete! ${activeBoxTarget} items reached.`); closeScanner() }, 500)
+          setTimeout(() => { alert(`Lot complete! ${activeBoxTarget} items reached.`); closeScanner() }, 500)
           return
         }
       } catch (e) {
@@ -588,7 +628,7 @@ export default function BundleSort() {
           .update({ status: 'complete' })
           .eq('box_number', activeBox)
         await stopScanner()
-        setTimeout(() => { alert(`Box complete! ${activeBoxTarget} items reached.`); closeScanner() }, 500)
+        setTimeout(() => { alert(`Lot complete! ${activeBoxTarget} items reached.`); closeScanner() }, 500)
       }
     } catch (e) {
       console.error('Error adding item:', e)
@@ -902,7 +942,8 @@ export default function BundleSort() {
         avgPerItem = salePrice / items.length
       }
 
-      // --- Fetch photos for Kickstart ---
+      // --- Fetch photos ---
+      // Kickstart map is keyed by intake_id; Jumpstart map is keyed by barcode.
       const photoMap = {}
       if (isKickstart) {
         const intakeIds = items.map(i => i.intake_id).filter(Boolean)
@@ -910,13 +951,36 @@ export default function BundleSort() {
           const batch = intakeIds.slice(i, i + 5)
           const { data: photoData, error } = await supabase
             .from('kickstart_intake')
-            .select('id, item_photo_data, photo_data')
+            .select('id, photo_url, item_photo_data, photo_data')
             .in('id', batch)
           if (error) console.error('PDF photo fetch error:', error)
-          ;(photoData || []).forEach(p => {
+          await Promise.all((photoData || []).map(async p => {
+            if (p.photo_url) {
+              const base64 = await fetchPhotoAsBase64(p.photo_url, 240)
+              if (base64) { photoMap[p.id] = base64; return }
+            }
             const photo = p.item_photo_data || p.photo_data
             if (photo) photoMap[p.id] = photo
-          })
+          }))
+        }
+      } else {
+        // Jumpstart: build S7 facade URLs on the fly from vendor+style+color.
+        // (jumpstart_manifest.photo_url is only populated at import time and
+        // most existing rows are null, so we don't rely on it.)
+        const urlByBarcode = new Map()
+        for (const it of items) {
+          if (!it.barcode || urlByBarcode.has(it.barcode)) continue
+          const url = buildJumpstartPhotoUrl(it.vendor, it.style, it.color)
+          if (url) urlByBarcode.set(it.barcode, url)
+        }
+        const uniqueUrls = [...new Set(urlByBarcode.values())]
+        const base64ByUrl = {}
+        await Promise.all(uniqueUrls.map(async url => {
+          const base64 = await fetchPhotoAsBase64(url, 160)
+          if (base64) base64ByUrl[url] = base64
+        }))
+        for (const [barcode, url] of urlByBarcode) {
+          if (base64ByUrl[url]) photoMap[barcode] = base64ByUrl[url]
         }
       }
 
@@ -1075,10 +1139,27 @@ export default function BundleSort() {
       y += 4
 
       // ========== ITEM ROWS ==========
-      const photoSize = 14  // mm
-      const rowH = isKickstart ? 20 : 16
+      const photoSize = isKickstart ? 20 : 12  // mm — Kickstart shows photos prominently for wholesale buyer
+      const rowH = isKickstart ? 28 : 16
 
-      items.forEach((item) => {
+      // Group items by variant for the row list (Kickstart only — Jumpstart manifest stays per-item)
+      let rows = items.map(it => ({ rep: it, qty: 1 }))
+      if (isKickstart) {
+        const groups = new Map()
+        for (const it of items) {
+          const key = [it.brand || '', it.description || '', it.color || '', it.size || '', it.condition || ''].join('||')
+          if (!groups.has(key)) groups.set(key, { rep: it, qty: 0 })
+          groups.get(key).qty += 1
+        }
+        // Sort by MSRP descending (highest first), tiebreak by quantity descending.
+        rows = Array.from(groups.values()).sort((a, b) => {
+          const msrpDiff = (b.rep.msrp || 0) - (a.rep.msrp || 0)
+          if (msrpDiff !== 0) return msrpDiff
+          return b.qty - a.qty
+        })
+      }
+
+      rows.forEach(({ rep: item, qty }) => {
         needsPage(rowH + 2)
 
         const brand = isKickstart ? (item.brand || '') : (item.vendor || '')
@@ -1092,10 +1173,12 @@ export default function BundleSort() {
 
         let textX = mx
 
-        // Photo (Kickstart only)
+        // Photo: Kickstart always reserves the column (placeholder if missing).
+        // Jumpstart shows a photo when manifest has one, otherwise the row stays text-only.
+        const photoKey = isKickstart ? item.intake_id : item.barcode
+        const photo = photoKey ? photoMap[photoKey] : null
         if (isKickstart) {
           const rowCenterY = y + rowH / 2
-          const photo = item.intake_id ? photoMap[item.intake_id] : null
           if (photo) {
             try {
               doc.addImage(`data:image/jpeg;base64,${photo}`, 'JPEG', mx, rowCenterY - photoSize / 2, photoSize, photoSize)
@@ -1108,6 +1191,14 @@ export default function BundleSort() {
             doc.rect(mx, rowCenterY - photoSize / 2, photoSize, photoSize, 'F')
           }
           textX = mx + photoSize + 6
+        } else if (photo) {
+          const rowCenterY = y + rowH / 2
+          try {
+            doc.addImage(`data:image/jpeg;base64,${photo}`, 'JPEG', mx, rowCenterY - photoSize / 2, photoSize, photoSize)
+            textX = mx + photoSize + 4
+          } catch (e) {
+            // Embed failed — fall back to text-only for this row.
+          }
         }
 
         // Brand
@@ -1121,7 +1212,7 @@ export default function BundleSort() {
         doc.setFontSize(9)
         setC(DARK)
         let displayDesc = desc
-        const maxW = cw - (textX - mx) - 55
+        const maxW = cw - (textX - mx) - (isKickstart ? 73 : 55)
         while (doc.getTextWidth(displayDesc) > maxW && displayDesc.length > 10) {
           displayDesc = displayDesc.slice(0, -1)
         }
@@ -1139,7 +1230,7 @@ export default function BundleSort() {
         setC(GRAY4)
         doc.text(detailParts.join(' · '), textX, y + 14.5)
 
-        // Right side: Condition badge + MSRP — at right edge
+        // Right side: QTY + Condition badge + MSRP — at right edge
         const rightX = mx + cw - 5
 
         // MSRP
@@ -1152,7 +1243,21 @@ export default function BundleSort() {
         setC(DARK)
         doc.text(`$${msrp.toFixed(0)}`, rightX, y + 11, { align: 'right' })
 
-        // Condition badge (border-only, to left of MSRP)
+        // QTY column (Kickstart only) — sits left of MSRP
+        const qtyColW = isKickstart ? 18 : 0
+        if (isKickstart) {
+          const qtyX = rightX - 22
+          doc.setFont('helvetica', 'normal')
+          doc.setFontSize(6)
+          setC(GRAY4)
+          doc.text('QTY', qtyX, y + 5, { align: 'right' })
+          doc.setFont('helvetica', 'bold')
+          doc.setFontSize(10)
+          setC(qty > 1 ? TEAL : DARK)
+          doc.text(`×${qty}`, qtyX, y + 11, { align: 'right' })
+        }
+
+        // Condition badge (border-only, to left of QTY/MSRP)
         if (condition) {
           doc.setFont('helvetica', 'bold')
           doc.setFontSize(6)
@@ -1161,7 +1266,7 @@ export default function BundleSort() {
           const badgeBorderColor = isNwt ? TEAL : GRAY3
           const bText = condition
           const bw = doc.getTextWidth(bText) + 5
-          const bx = rightX - 22 - bw
+          const bx = rightX - 22 - qtyColW - bw
           const by = y + rowH / 2 - 2.5
           setD(badgeBorderColor)
           doc.rect(bx, by, bw, 5, 'S')
@@ -1255,7 +1360,7 @@ export default function BundleSort() {
           </button>
           <h1 className="text-lg font-bold text-white font-heading">
             {isKickstart && <span className="text-fuchsia-400 text-sm mr-1">KS</span>}
-            Box {activeBox}
+            Lot #{activeBox}
           </h1>
           <div className="flex items-center gap-2">
             <button onClick={toggleItemList} className="bg-gradient-to-r from-cyan-500/20 to-blue-500/20 backdrop-blur-lg px-3 py-1.5 rounded-full border border-cyan-400/30 active:bg-cyan-500/30">
@@ -1574,7 +1679,7 @@ export default function BundleSort() {
                         <h2 className="text-6xl font-black text-white mb-4 tracking-tight font-heading">
                           {lastScan.added ? 'ADDED ✓' : 'SCANNED ✓'}
                         </h2>
-                        <p className="text-2xl text-white/90 font-semibold">Place in Box {activeBox}</p>
+                        <p className="text-2xl text-white/90 font-semibold">Place in Lot #{activeBox}</p>
                         {lastScan.description && (
                           <p className="text-lg text-white/70 mt-2">{lastScan.description}</p>
                         )}
@@ -1669,7 +1774,7 @@ export default function BundleSort() {
           </button>
           <h1 className="text-lg font-bold text-white font-heading">
             {isKickstart && <span className="text-fuchsia-400 text-sm mr-1">KS</span>}
-            Box {viewingBox.boxNumber}
+            Lot #{viewingBox.boxNumber}
           </h1>
           <div className="flex items-center gap-2">
             {isComplete && !isSold && (
@@ -1846,7 +1951,7 @@ export default function BundleSort() {
             )}
             {isSold && (
               <button onClick={clearSale} className="flex-1 bg-gradient-to-r from-amber-500 to-orange-600 py-3 rounded-xl text-white font-bold text-sm shadow-lg shadow-amber-500/25 active:scale-[0.98] transition-all">
-                Unsell Box
+                Unsell Lot
               </button>
             )}
             {isComplete && (
@@ -1930,7 +2035,7 @@ export default function BundleSort() {
                           </div>
                           {/* Delete button */}
                           <button
-                            onClick={() => { if (confirm('Remove this item from the box?')) deleteItemFromBox(item.scan_id) }}
+                            onClick={() => { if (confirm('Remove this item from the lot?')) deleteItemFromBox(item.scan_id) }}
                             className="mt-0.5 w-7 h-7 rounded-full bg-red-500/10 border border-red-500/20 flex items-center justify-center hover:bg-red-500/30 transition-colors"
                           >
                             <span className="text-red-400 text-xs font-bold">X</span>
@@ -1956,7 +2061,7 @@ export default function BundleSort() {
           <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
             <div className="glass-card rounded-3xl p-6 w-full max-w-sm border border-white/10">
               <h3 className="text-xl font-bold text-white mb-2">Mark as Sold</h3>
-              <p className="text-slate-400 text-sm mb-4">Confirm sale of Box {viewingBox.boxNumber}</p>
+              <p className="text-slate-400 text-sm mb-4">Confirm sale of Lot #{viewingBox.boxNumber}</p>
 
               <div className="bg-emerald-500/10 rounded-xl p-4 mb-4 border border-emerald-500/30">
                 <div className="flex justify-between items-center mb-2">
@@ -2081,7 +2186,7 @@ export default function BundleSort() {
           <div className="text-center py-16">
             <p className="text-slate-300 text-lg mb-6">No {channel} boxes yet</p>
             <button onClick={createNewBox} className={`px-8 py-3 rounded-full text-white font-bold text-lg shadow-xl ${isKickstart ? 'bg-cyan-600 hover:bg-cyan-500 shadow-cyan-500/30' : 'bg-cyan-600 hover:bg-cyan-500 shadow-cyan-500/30'}`}>
-              ＋ Create Box 1
+              ＋ Create Lot #1
             </button>
           </div>
         )}
@@ -2137,7 +2242,7 @@ export default function BundleSort() {
               <div className="p-4 cursor-pointer active:bg-white/5" onClick={() => openBox(box)}>
                 <div className="flex items-center justify-between mb-2">
                   <div className="flex-1 min-w-0">
-                    <h3 className="text-white font-bold text-lg">Box {box.boxNumber}</h3>
+                    <h3 className="text-white font-bold text-lg">Lot #{box.boxNumber}</h3>
                     <p className="text-slate-400 text-sm">{box.targetQuantity != null ? `${box.itemCount}/${box.targetQuantity}` : `${box.itemCount}`} items{box.targetQuantity == null ? ' · ∞' : ''} • <span className={isSold ? 'text-emerald-400' : ''}>{statusText}</span></p>
                   </div>
                   <button onClick={(e) => deleteBox(e, box)} className="text-slate-500 hover:text-red-400 active:text-red-400 w-10 h-10 rounded-full bg-white/5 hover:bg-red-500/10 flex items-center justify-center text-lg font-bold transition-colors shrink-0">
@@ -2189,7 +2294,7 @@ export default function BundleSort() {
       {showNewBoxModal && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="glass-card rounded-3xl p-6 w-full max-w-sm border border-white/10">
-            <h3 className="text-xl font-bold text-white mb-4 font-heading">New Box</h3>
+            <h3 className="text-xl font-bold text-white mb-4 font-heading">New Lot</h3>
 
             {/* Mode toggle */}
             <div className="flex gap-1 bg-white/5 rounded-xl p-1 mb-5">
@@ -2313,7 +2418,7 @@ export default function BundleSort() {
                     : 'bg-cyan-600 hover:bg-cyan-500 shadow-cyan-500/25'
                 }`}
               >
-                {newBoxMode === 'rdm' ? 'Save RDM Sale' : 'Create Box'}
+                {newBoxMode === 'rdm' ? 'Save RDM Sale' : 'Create Lot'}
               </button>
             </div>
           </div>
