@@ -28,8 +28,8 @@ export default function AdminInventory() {
     avgRemainingCost: 0,
     loads: [],
   })
-  // Inventory-by-Load filter: true = show Landed loads, false = show In Transit.
-  const [showLanded, setShowLanded] = useState(true)
+  // Inventory-by-Load filter: 'all' = all loads, true = Landed only, false = In Transit only.
+  const [loadFilter, setLoadFilter] = useState('all')
 
   useEffect(() => { loadStats() }, [])
 
@@ -229,15 +229,15 @@ export default function AdminInventory() {
       <div className="glass-card rounded-3xl p-6">
         <div className="flex items-center justify-between mb-4 gap-3">
           <h3 className="font-bold text-lg">Inventory by Load</h3>
-          <LandedToggle value={showLanded} onChange={setShowLanded} />
+          <LandedToggle includeAll value={loadFilter} onChange={setLoadFilter} />
         </div>
-        {stats.loads.filter(l => l.landed === showLanded).length === 0 ? (
+        {stats.loads.filter(l => loadFilter === 'all' || l.landed === loadFilter).length === 0 ? (
           <p className="text-sm text-slate-500 py-8 text-center">
-            No {showLanded ? 'landed' : 'in-transit'} loads.
+            No {loadFilter === true ? 'landed' : loadFilter === false ? 'in-transit' : ''} loads.
           </p>
         ) : (
         <div className="grid grid-cols-3 gap-4">
-          {stats.loads.filter(l => l.landed === showLanded).map(load => {
+          {stats.loads.filter(l => loadFilter === 'all' || l.landed === loadFilter).map(load => {
             const badge = load.kind === 'rdm'
               ? { label: 'RDM',          cls: 'bg-violet-500/20 text-violet-300 border-violet-500/30' }
               : load.kind === 'unmanifested'
