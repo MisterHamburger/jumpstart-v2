@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { supabase, fetchAll } from '../lib/supabase'
 import JumpstartInventory from './JumpstartInventory'
+import LandedToggle from './LandedToggle'
 
 // Admin → Inventory tab.
 //
@@ -27,6 +28,8 @@ export default function AdminInventory() {
     avgRemainingCost: 0,
     loads: [],
   })
+  // Inventory-by-Load filter: true = show Landed loads, false = show In Transit.
+  const [showLanded, setShowLanded] = useState(true)
 
   useEffect(() => { loadStats() }, [])
 
@@ -222,11 +225,19 @@ export default function AdminInventory() {
         </div>
       </div>
 
-      {/* Inventory by Load — 3-col grid, newest first */}
+      {/* Inventory by Load — 3-col grid, newest first, filtered by landed state */}
       <div className="glass-card rounded-3xl p-6">
-        <h3 className="font-bold text-lg mb-4">Inventory by Load</h3>
+        <div className="flex items-center justify-between mb-4 gap-3">
+          <h3 className="font-bold text-lg">Inventory by Load</h3>
+          <LandedToggle value={showLanded} onChange={setShowLanded} />
+        </div>
+        {stats.loads.filter(l => l.landed === showLanded).length === 0 ? (
+          <p className="text-sm text-slate-500 py-8 text-center">
+            No {showLanded ? 'landed' : 'in-transit'} loads.
+          </p>
+        ) : (
         <div className="grid grid-cols-3 gap-4">
-          {stats.loads.map(load => {
+          {stats.loads.filter(l => l.landed === showLanded).map(load => {
             const badge = load.kind === 'rdm'
               ? { label: 'RDM',          cls: 'bg-violet-500/20 text-violet-300 border-violet-500/30' }
               : load.kind === 'unmanifested'
@@ -270,6 +281,7 @@ export default function AdminInventory() {
             )
           })}
         </div>
+        )}
       </div>
 
       {/* Variant browser — same component as the scanner's Inventory overlay */}

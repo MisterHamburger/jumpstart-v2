@@ -3,6 +3,7 @@ import Papa from 'papaparse'
 import { supabase, fetchAll } from '../lib/supabase'
 import { normalizeBarcode } from '../lib/barcodes'
 import { generateJumpstartWhatnotCsv } from '../lib/jumpstartWhatnotCsv'
+import LandedToggle from './LandedToggle'
 
 export default function AdminInputs() {
   const [activeSection, setActiveSection] = useState('shows')
@@ -482,16 +483,10 @@ function ManifestUpload() {
                       <div className="text-lg font-bold text-slate-300">{(l.item_count || l.quantity || 0).toLocaleString()} items</div>
                       <div className="text-xs text-slate-500">${Number(l.total_cost || l.total_cost_actual || 0).toLocaleString(undefined, {minimumFractionDigits: 2})}</div>
                     </div>
-                    <button
-                      onClick={(e) => { e.stopPropagation(); toggleLanded(l) }}
-                      className={`px-2 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                        l.landed
-                          ? 'text-orange-300 hover:bg-orange-500/10'
-                          : 'text-emerald-300 hover:bg-emerald-500/10'
-                      }`}
-                    >
-                      {l.landed ? 'Mark in transit' : 'Mark landed'}
-                    </button>
+                    <LandedToggle
+                      value={l.landed}
+                      onChange={(v) => { if (v !== l.landed) toggleLanded(l) }}
+                    />
                     <button
                       onClick={(e) => { e.stopPropagation(); handleExportLoad(l) }}
                       disabled={exportingLoadId === l.id}
