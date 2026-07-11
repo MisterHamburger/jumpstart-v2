@@ -952,6 +952,7 @@ function ShowUpload() {
               <option value="Hannah">Hannah</option>
               <option value="Josh">Josh</option>
               <option value="Elizabeth">Elizabeth</option>
+              <option value="Gill">Gill</option>
             </select>
           </div>
         </div>
