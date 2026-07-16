@@ -136,11 +136,13 @@ export default function JumpstartInventory({ onClose, embed = false }) {
       ])
       const sold = [...(jsSold || []), ...(ksSold || [])]
       // Per-pool load aggregates (purchased qty, total cost basis), keyed by
-      // pool_tag (RDM, UJC, and any custom brand pools).
-      const { data: poolLoads } = await supabase
+      // pool_tag (J.Crew/Madewell blend + custom brand pools). Closed pools
+      // (legacy RDM/UJC folded into the JCM blend) are excluded.
+      const { data: poolLoadsRaw } = await supabase
         .from('loads')
-        .select('id, kind, pool_tag, vendor, quantity, total_cost')
+        .select('id, kind, pool_tag, vendor, quantity, total_cost, closed')
         .not('pool_tag', 'is', null)
+      const poolLoads = (poolLoadsRaw || []).filter(l => !l.closed)
 
       const cfgs = buildPoolConfigs(poolLoads)
       const poolTagSet = new Set(Object.keys(cfgs))

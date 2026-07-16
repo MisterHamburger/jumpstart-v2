@@ -87,22 +87,24 @@ export default function SalesScanner() {
     }
   }, [showId])
 
-  // Load the available pool tags (RDM, UJC, and any custom brand pools) so the
-  // Manual Scan dropdowns are data-driven. Ordered RDM, UJC, then brands A–Z.
+  // Load the available pool tags (J.Crew/Madewell blend + custom brand pools) so
+  // the Manual Scan dropdown is data-driven. Closed pools (legacy RDM/UJC, now
+  // folded into the JCM blend) are excluded. JCM first, then brands A–Z.
   useEffect(() => {
     supabase.from('loads')
-      .select('pool_tag, vendor, kind')
+      .select('pool_tag, vendor, kind, closed')
       .not('pool_tag', 'is', null)
       .then(({ data }) => {
         const byTag = new Map()
         for (const l of data || []) {
-          if (!l.pool_tag || byTag.has(l.pool_tag)) continue
-          const label = l.kind === 'rdm' ? 'RDM — Items with Defect Tags'
+          if (!l.pool_tag || l.closed || byTag.has(l.pool_tag)) continue
+          const label = l.pool_tag === 'JCM' ? 'J.Crew/Madewell (RDM + UJC)'
+            : l.kind === 'rdm' ? 'RDM — Items with Defect Tags'
             : l.kind === 'unmanifested' ? 'UJC — J.Crew/Madewell, no barcodes/defect tags'
             : `${l.vendor || l.pool_tag} (${l.pool_tag})`
           byTag.set(l.pool_tag, { tag: l.pool_tag, label })
         }
-        const rank = t => (t === 'RDM' ? 0 : t === 'UJC' ? 1 : 2)
+        const rank = t => (t === 'JCM' ? 0 : 1)
         const opts = [...byTag.values()].sort(
           (a, b) => rank(a.tag) - rank(b.tag) || a.tag.localeCompare(b.tag))
         setPoolTagOptions(opts)

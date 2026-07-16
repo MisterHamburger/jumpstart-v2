@@ -44,7 +44,7 @@ export default function AdminInventory() {
     // manifest-join doesn't cover).
     const { data: loadsInfo } = await supabase
       .from('loads')
-      .select('id, kind, pool_tag, vendor, notes, quantity, total_cost, date, landed')
+      .select('id, kind, pool_tag, vendor, notes, quantity, total_cost, date, landed, closed, is_opening')
 
     // Pool tokens (RDM, UJC, custom brands) from the loads table.
     const poolTagSet = new Set((loadsInfo || []).map(l => l.pool_tag).filter(Boolean))
@@ -76,8 +76,10 @@ export default function AdminInventory() {
     const rdmBundleSold = (rdmBundleRows || []).reduce((s, r) => s + (Number(r.quantity) || 0), 0)
 
     // ── Build per-load rows for the "Inventory by Load" grid ──
+    // Closed pools (legacy RDM/UJC folded into the JCM blend) are hidden.
     const rows = []
     for (const l of loadsInfo || []) {
+      if (l.closed) continue
       if (l.kind === 'manifested' || !l.kind) {
         const summary = (loadSummary || []).find(s => s.load_id === l.id)
         if (!summary) continue
@@ -118,9 +120,12 @@ export default function AdminInventory() {
     })
 
     // ── Top-level totals ──
+    // Total-purchased keeps the legacy RDM/UJC loads (real purchases) but EXCLUDES
+    // the JCM opening balance (a carry-over transfer, not a new purchase) so the
+    // 11,280 carried-over units aren't counted twice.
     const manifestedItems = (loadSummary || []).reduce((s, l) => s + (Number(l.item_count) || 0), 0)
     const poolRows = (loadsInfo || []).filter(l => l.pool_tag)
-    const poolItems = poolRows.reduce((s, l) => s + (Number(l.quantity) || 0), 0)
+    const poolItems = poolRows.filter(l => !l.is_opening).reduce((s, l) => s + (Number(l.quantity) || 0), 0)
 
     const total = manifestedItems + poolItems
 
@@ -129,8 +134,10 @@ export default function AdminInventory() {
     // sold is apportioned pro-rata across a pool's landed loads only; in-transit
     // loads keep their full quantity. This keeps "cost of units in stock"
     // precise (physical) while still exposing total owned inventory value.
+    // On-hand excludes closed pools (legacy RDM/UJC — their remaining now lives
+    // in the JCM opening balance, which is not closed and is counted here).
     const poolByTag = {}
-    for (const l of poolRows) (poolByTag[l.pool_tag] ||= []).push(l)
+    for (const l of poolRows) { if (l.closed) continue; (poolByTag[l.pool_tag] ||= []).push(l) }
     const poolSoldByTag = {}
     for (const tag of Object.keys(poolByTag)) {
       poolSoldByTag[tag] = (poolScansByTag[tag] || 0) + (tag === 'RDM' ? rdmBundleSold : 0)
