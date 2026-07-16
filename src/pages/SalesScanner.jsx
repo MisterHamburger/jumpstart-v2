@@ -97,7 +97,8 @@ export default function SalesScanner() {
       .then(({ data }) => {
         const byTag = new Map()
         for (const l of data || []) {
-          if (!l.pool_tag || l.closed || byTag.has(l.pool_tag)) continue
+          // DAMAGE is sold in bulk (Cindy flow), never scanned into a show.
+          if (!l.pool_tag || l.closed || l.pool_tag === 'DAMAGE' || byTag.has(l.pool_tag)) continue
           const label = l.pool_tag === 'JCM' ? 'J.Crew/Madewell (RDM + UJC)'
             : l.kind === 'rdm' ? 'RDM — Items with Defect Tags'
             : l.kind === 'unmanifested' ? 'UJC — J.Crew/Madewell, no barcodes/defect tags'

@@ -30,8 +30,50 @@ export default function AdminInventory() {
   })
   // Inventory-by-Load filter: 'all' = all loads, true = Landed only, false = In Transit only.
   const [loadFilter, setLoadFilter] = useState('all')
+  const [dmgCount, setDmgCount] = useState('')
+  const [taggingDmg, setTaggingDmg] = useState(false)
 
   useEffect(() => { loadStats() }, [])
+
+  // Tag N units as damages: shrinkage write-down to $1/unit. Removes them from
+  // the J.Crew/Madewell (JCM) pool via a dated adjustment load that takes out
+  // only the $1/unit recovery — the rest of their cost stays in the pool and
+  // raises its WAC. The units land in the accumulating DAMAGE bucket at $1.
+  // No lump loss is booked; it self-recognizes as higher COGS on future JCM sales.
+  async function tagDamages() {
+    const n = parseInt(dmgCount, 10)
+    if (!(n > 0) || taggingDmg) return
+    if (!confirm(`Tag ${n} unit${n !== 1 ? 's' : ''} as damages?\n\nRemoves them from the J.Crew/Madewell pool (raising its WAC) and moves them to the Damages line at $1/unit.`)) return
+    setTaggingDmg(true)
+    try {
+      const today = new Date().toISOString().slice(0, 10)
+      await supabase.from('loads').insert({
+        id: `DMG-ADJ-${Date.now()}`, kind: 'custom', pool_tag: 'JCM',
+        vendor: 'Damage removal', notes: `Tagged ${n} units to damages`,
+        quantity: -n, total_cost: -n, date: today, landed: true, is_opening: true,
+      })
+      const { data: existing } = await supabase.from('loads')
+        .select('quantity, total_cost').eq('id', 'DAMAGE').maybeSingle()
+      if (existing) {
+        await supabase.from('loads').update({
+          quantity: (Number(existing.quantity) || 0) + n,
+          total_cost: (Number(existing.total_cost) || 0) + n,
+        }).eq('id', 'DAMAGE')
+      } else {
+        await supabase.from('loads').insert({
+          id: 'DAMAGE', kind: 'custom', pool_tag: 'DAMAGE', vendor: 'Damages',
+          notes: 'Damaged units written down to $1 (bulk-sold via the Cindy flow)',
+          quantity: n, total_cost: n, date: today, landed: true, is_opening: true,
+        })
+      }
+      setDmgCount('')
+      await loadStats()
+    } catch (e) {
+      console.error('tagDamages error', e)
+      alert('Error tagging damages — check console')
+    }
+    setTaggingDmg(false)
+  }
 
   async function loadStats() {
     setLoading(true)
@@ -76,10 +118,11 @@ export default function AdminInventory() {
     const rdmBundleSold = (rdmBundleRows || []).reduce((s, r) => s + (Number(r.quantity) || 0), 0)
 
     // ── Build per-load rows for the "Inventory by Load" grid ──
-    // Closed pools (legacy RDM/UJC folded into the JCM blend) are hidden.
+    // Closed pools (legacy RDM/UJC folded into the JCM blend) and internal
+    // negative damage-removal adjustment loads are hidden.
     const rows = []
     for (const l of loadsInfo || []) {
-      if (l.closed) continue
+      if (l.closed || (l.is_opening && (Number(l.quantity) || 0) < 0)) continue
       if (l.kind === 'manifested' || !l.kind) {
         const summary = (loadSummary || []).find(s => s.load_id === l.id)
         if (!summary) continue
@@ -289,6 +332,34 @@ export default function AdminInventory() {
           })}
         </div>
         )}
+      </div>
+
+      {/* Tag Damages — shrinkage write-down to $1/unit */}
+      <div className="glass-card rounded-3xl p-6">
+        <div className="flex items-center justify-between gap-4 flex-wrap">
+          <div className="min-w-0">
+            <h3 className="font-bold text-lg">Tag Damages</h3>
+            <p className="text-slate-500 text-sm mt-1 max-w-xl">
+              Write damaged units down to $1. Removes them from the J.Crew/Madewell pool —
+              their unrecovered cost stays behind and <span className="text-slate-300">raises its WAC</span> —
+              and moves them to the <span className="text-slate-300">Damages</span> line below.
+            </p>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <input
+              type="number" min="1" inputMode="numeric" placeholder="# units"
+              value={dmgCount} onChange={e => setDmgCount(e.target.value)}
+              className="w-28 px-3 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white placeholder-white/40 focus:outline-none focus:border-cyan-500/50 focus:ring-4 focus:ring-cyan-500/10 transition-all"
+            />
+            <button
+              onClick={tagDamages}
+              disabled={taggingDmg || !(parseInt(dmgCount, 10) > 0)}
+              className="px-5 py-2.5 rounded-xl font-bold text-sm bg-cyan-600 text-white shadow-lg shadow-cyan-600/30 hover:bg-cyan-500 active:scale-[0.98] transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              {taggingDmg ? 'Tagging…' : 'Tag damages'}
+            </button>
+          </div>
+        </div>
       </div>
 
       {/* Variant browser — same component as the scanner's Inventory overlay */}
