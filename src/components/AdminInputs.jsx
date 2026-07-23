@@ -164,8 +164,10 @@ function ManifestUpload() {
   // their canonical tokens; a custom brand pool derives one from the brand
   // name (uppercased, alphanumerics only) so e.g. "Quince" → "QUINCE".
   function derivePoolTag(kind, vendor) {
-    if (kind === 'rdm') return 'RDM'
-    if (kind === 'unmanifested') return 'UJC'
+    // RDM + Unmanifested J.Crew are blended into one running J.Crew/Madewell pool
+    // (JCM) as of 2026-07-16. The kind is kept as an intake label, but both feed
+    // the single JCM pool so their WAC blends.
+    if (kind === 'rdm' || kind === 'unmanifested') return 'JCM'
     if (kind === 'custom') {
       const tag = (vendor || '').toUpperCase().replace(/[^A-Z0-9]/g, '')
       // Guard: a purely-numeric tag would be mangled by barcode normalization.
