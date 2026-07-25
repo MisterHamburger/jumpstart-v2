@@ -159,18 +159,22 @@ export default function JumpstartInventory({ onClose, embed = false }) {
         counts[b] = (counts[b] || 0) + 1
       }
 
-      // RDM bundle sales (only RDM has this for now)
+      // Bulk lot sales deplete their own pool (JCM, DAMAGE, or legacy RDM).
       const { data: rdmBundleRows } = await supabase
         .from('rdm_bundle_sales')
-        .select('quantity')
-      const rdmBundleSold = (rdmBundleRows || []).reduce((s, r) => s + (Number(r.quantity) || 0), 0)
+        .select('quantity, pool_tag')
+      const bundleSoldByTag = {}
+      for (const r of rdmBundleRows || []) {
+        const t = r.pool_tag || 'RDM'
+        bundleSoldByTag[t] = (bundleSoldByTag[t] || 0) + (Number(r.quantity) || 0)
+      }
 
       const nextPools = {}
       for (const tag of poolTagSet) {
         const tagLoads = (poolLoads || []).filter(l => l.pool_tag === tag)
         const purchased = tagLoads.reduce((s, l) => s + (Number(l.quantity) || 0), 0)
         const totalCost = tagLoads.reduce((s, l) => s + (Number(l.total_cost) || 0), 0)
-        const bundleSold = tag === 'RDM' ? rdmBundleSold : 0
+        const bundleSold = bundleSoldByTag[tag] || 0
         const scanSold = poolScanCounts[tag] || 0
         nextPools[tag] = {
           poolTag: tag,

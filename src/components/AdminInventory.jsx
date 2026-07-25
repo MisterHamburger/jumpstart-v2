@@ -111,11 +111,16 @@ export default function AdminInventory() {
       if (b && poolTagSet.has(b)) poolScansByTag[b] = (poolScansByTag[b] || 0) + 1
     }
 
-    // RDM bundle sales (whole-crate sales outside Whatnot) deplete the RDM pool.
+    // Bulk lot sales (whole-crate sales outside Whatnot) deplete their own pool:
+    // JCM, DAMAGE, or legacy RDM (rows default to 'RDM').
     const { data: rdmBundleRows } = await supabase
       .from('rdm_bundle_sales')
-      .select('quantity')
-    const rdmBundleSold = (rdmBundleRows || []).reduce((s, r) => s + (Number(r.quantity) || 0), 0)
+      .select('quantity, pool_tag')
+    const bundleSoldByTag = {}
+    for (const r of rdmBundleRows || []) {
+      const t = r.pool_tag || 'RDM'
+      bundleSoldByTag[t] = (bundleSoldByTag[t] || 0) + (Number(r.quantity) || 0)
+    }
 
     // ── Build per-load rows for the "Inventory by Load" grid ──
     // Closed pools (legacy RDM/UJC folded into the JCM blend) and internal
@@ -183,7 +188,7 @@ export default function AdminInventory() {
     for (const l of poolRows) { if (l.closed) continue; (poolByTag[l.pool_tag] ||= []).push(l) }
     const poolSoldByTag = {}
     for (const tag of Object.keys(poolByTag)) {
-      poolSoldByTag[tag] = (poolScansByTag[tag] || 0) + (tag === 'RDM' ? rdmBundleSold : 0)
+      poolSoldByTag[tag] = (poolScansByTag[tag] || 0) + (bundleSoldByTag[tag] || 0)
     }
     let onShelfCount = 0, onShelfCost = 0     // landed & unsold
     let transitCount = 0, transitCost = 0     // purchased, not yet landed

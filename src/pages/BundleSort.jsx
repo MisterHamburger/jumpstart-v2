@@ -140,7 +140,7 @@ export default function BundleSort() {
   // New Box modal state
   const [showNewBoxModal, setShowNewBoxModal] = useState(false)
   const [newBoxTargetQty, setNewBoxTargetQty] = useState(40)
-  const [newBoxMode, setNewBoxMode] = useState('fixed') // 'fixed' | 'unlimited' | 'rdm'
+  const [newBoxMode, setNewBoxMode] = useState('fixed') // 'fixed' | 'unlimited' | 'jcm' | 'damages'
   const [rdmSalePrice, setRdmSalePrice] = useState('')
   const [rdmBuyerName, setRdmBuyerName] = useState('')
   const [rdmBundles, setRdmBundles] = useState([])
@@ -661,14 +661,17 @@ export default function BundleSort() {
   }
 
   const confirmCreateBox = async () => {
-    if (newBoxMode === 'rdm') {
+    if (newBoxMode === 'jcm' || newBoxMode === 'damages') {
       const price = parseFloat(rdmSalePrice)
       if (!price || price <= 0) return
       await supabase.from('rdm_bundle_sales').insert({
         quantity: newBoxTargetQty,
         sale_price: price,
         buyer_name: rdmBuyerName.trim() || null,
-        sold_at: new Date().toISOString()
+        sold_at: new Date().toISOString(),
+        // JCM sells like a normal Jumpstart lot (costed at JCM WAC); DAMAGE draws
+        // down the Damages bucket at ~$1 (near break-even).
+        pool_tag: newBoxMode === 'damages' ? 'DAMAGE' : 'JCM',
       })
       setShowNewBoxModal(false)
       fetchBoxes()
@@ -2190,20 +2193,23 @@ export default function BundleSort() {
             </button>
           </div>
         )}
-        {/* RDM Bundle Sales (Jumpstart only) */}
+        {/* Bulk Lot Sales (Jumpstart only) — J.Crew/Madewell, Damages, RDM */}
         {!isKickstart && rdmBundles.length > 0 && (
           <>
             <div className="flex items-center gap-2 mb-2 mt-1">
-              <span className="text-xs font-bold text-purple-400 tracking-widest uppercase">RDM Sales</span>
+              <span className="text-xs font-bold text-purple-400 tracking-widest uppercase">Bulk Lot Sales</span>
               <div className="flex-1 h-px bg-purple-500/20" />
             </div>
-            {rdmBundles.map(bundle => (
+            {rdmBundles.map(bundle => {
+              const tag = bundle.pool_tag || 'RDM'
+              const label = tag === 'JCM' ? 'J.Crew/Madewell' : tag === 'DAMAGE' ? 'Damages' : 'RDM'
+              return (
               <div key={bundle.id} className="rounded-3xl bg-gradient-to-r from-purple-500/20 to-fuchsia-500/20 backdrop-blur-lg border border-purple-400/30 overflow-hidden">
                 <div className="p-4 flex items-center justify-between">
                   <div>
                     <div className="flex items-center gap-2 mb-0.5">
-                      <span className="text-white font-bold">RDM Bundle</span>
-                      <span className="text-xs bg-purple-500/30 text-purple-300 px-2 py-0.5 rounded-full font-semibold">RDM</span>
+                      <span className="text-white font-bold">{label} Bundle</span>
+                      <span className="text-xs bg-purple-500/30 text-purple-300 px-2 py-0.5 rounded-full font-semibold">{tag}</span>
                     </div>
                     <p className="text-slate-400 text-sm">
                       {bundle.quantity} items · <span className="text-emerald-400 font-semibold">${Number(bundle.sale_price).toFixed(2)}</span>
@@ -2220,7 +2226,8 @@ export default function BundleSort() {
                   </button>
                 </div>
               </div>
-            ))}
+              )
+            })}
             <div className="h-2" />
           </>
         )}
@@ -2297,39 +2304,49 @@ export default function BundleSort() {
             <h3 className="text-xl font-bold text-white mb-4 font-heading">New Lot</h3>
 
             {/* Mode toggle */}
-            <div className="flex gap-1 bg-white/5 rounded-xl p-1 mb-5">
+            <div className="grid grid-cols-2 gap-1 bg-white/5 rounded-xl p-1 mb-5">
               <button
                 onClick={() => setNewBoxMode('fixed')}
-                className={`flex-1 py-2.5 rounded-lg text-sm font-semibold transition-all ${
+                className={`py-2.5 rounded-lg text-sm font-semibold transition-all ${
                   newBoxMode === 'fixed' ? 'bg-cyan-600 text-white shadow-lg' : 'text-slate-400'
                 }`}
               >
                 Fixed Qty
               </button>
-              {!isKickstart && (
-                <button
-                  onClick={() => setNewBoxMode('rdm')}
-                  className={`flex-1 py-2.5 rounded-lg text-sm font-semibold transition-all ${
-                    newBoxMode === 'rdm' ? 'bg-purple-600 text-white shadow-lg' : 'text-slate-400'
-                  }`}
-                >
-                  RDM
-                </button>
-              )}
               <button
                 onClick={() => setNewBoxMode('unlimited')}
-                className={`flex-1 py-2.5 rounded-lg text-sm font-semibold transition-all ${
+                className={`py-2.5 rounded-lg text-sm font-semibold transition-all ${
                   newBoxMode === 'unlimited' ? 'bg-cyan-600 text-white shadow-lg' : 'text-slate-400'
                 }`}
               >
                 Unlimited
               </button>
+              {!isKickstart && (
+                <button
+                  onClick={() => setNewBoxMode('jcm')}
+                  className={`py-2.5 rounded-lg text-sm font-semibold transition-all ${
+                    newBoxMode === 'jcm' ? 'bg-purple-600 text-white shadow-lg' : 'text-slate-400'
+                  }`}
+                >
+                  J.Crew/Madewell
+                </button>
+              )}
+              {!isKickstart && (
+                <button
+                  onClick={() => setNewBoxMode('damages')}
+                  className={`py-2.5 rounded-lg text-sm font-semibold transition-all ${
+                    newBoxMode === 'damages' ? 'bg-orange-600 text-white shadow-lg' : 'text-slate-400'
+                  }`}
+                >
+                  Damages
+                </button>
+              )}
             </div>
 
             {/* Quantity picker (fixed + rdm modes) */}
             {newBoxMode !== 'unlimited' ? (
               <div className="flex flex-col items-center mb-6">
-                <p className="text-slate-400 text-sm mb-3">Items per box</p>
+                <p className="text-slate-400 text-sm mb-3">{newBoxMode === 'fixed' ? 'Items per box' : 'Quantity'}</p>
                 <div className="flex items-center gap-4">
                   <button
                     onClick={() => setNewBoxTargetQty(q => Math.max(1, q - 5))}
@@ -2373,8 +2390,8 @@ export default function BundleSort() {
               </div>
             )}
 
-            {/* RDM-specific fields */}
-            {newBoxMode === 'rdm' && (
+            {/* Bulk-sale fields (J.Crew/Madewell + Damages) */}
+            {(newBoxMode === 'jcm' || newBoxMode === 'damages') && (
               <div className="space-y-3 mb-5">
                 <div>
                   <p className="text-slate-400 text-sm mb-1.5">Sale price <span className="text-red-400">*</span></p>
@@ -2411,14 +2428,18 @@ export default function BundleSort() {
               </button>
               <button
                 onClick={confirmCreateBox}
-                disabled={newBoxMode === 'rdm' && (!rdmSalePrice || parseFloat(rdmSalePrice) <= 0)}
+                disabled={(newBoxMode === 'jcm' || newBoxMode === 'damages') && (!rdmSalePrice || parseFloat(rdmSalePrice) <= 0)}
                 className={`flex-1 py-3 rounded-xl text-white font-bold shadow-lg active:scale-[0.97] transition-all disabled:opacity-40 ${
-                  newBoxMode === 'rdm'
+                  newBoxMode === 'jcm'
                     ? 'bg-purple-600 hover:bg-purple-500 shadow-purple-500/25'
-                    : 'bg-cyan-600 hover:bg-cyan-500 shadow-cyan-500/25'
+                    : newBoxMode === 'damages'
+                      ? 'bg-orange-600 hover:bg-orange-500 shadow-orange-500/25'
+                      : 'bg-cyan-600 hover:bg-cyan-500 shadow-cyan-500/25'
                 }`}
               >
-                {newBoxMode === 'rdm' ? 'Save RDM Sale' : 'Create Lot'}
+                {newBoxMode === 'jcm' ? 'Save J.Crew/Madewell Sale'
+                  : newBoxMode === 'damages' ? 'Save Damages Sale'
+                  : 'Create Lot'}
               </button>
             </div>
           </div>
