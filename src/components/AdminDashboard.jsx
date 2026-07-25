@@ -154,6 +154,7 @@ export default function AdminDashboard() {
   const profitPerUnit = stats && stats.items > 0 ? stats.grossProfit / stats.items : 0
   const margin = stats && stats.revenue > 0 ? (stats.grossProfit / stats.revenue) * 100 : 0
   const netProfit = stats ? stats.grossProfit - (data?.totalOpex || 0) - (data?.totalPayroll || 0) - (data?.totalPayrollSourcing || 0) : 0
+  const pctOfRevenue = (v) => (stats && stats.revenue > 0 ? (v / stats.revenue) * 100 : 0)
 
   // Calculate calendar days for per-day metrics
   const calendarDays = (() => {
@@ -241,10 +242,10 @@ export default function AdminDashboard() {
           {/* Row 1: Totals — Revenue, Gross Profit, Expenses, Net Profit */}
           <div className={`grid grid-cols-2 ${isSummary ? 'md:grid-cols-4' : 'md:grid-cols-3'} gap-4 mb-4`}>
             <GradientKPI label="Revenue" value={fmt(stats.netRevenue)} sub={`${stats.items.toLocaleString()} items sold`} />
-            <GradientKPI label="Gross Profit" value={fmt(stats.grossProfit)} sub={`${margin.toFixed(1)}% margin`} negative={stats.grossProfit < 0} />
-            {isSummary && <GradientKPI label="Expenses" value={fmt(totalExpenses)} />}
+            <GradientKPI label="Gross Profit" value={fmt(stats.grossProfit)} sub={`${margin.toFixed(1)}% of Revenue`} negative={stats.grossProfit < 0} />
+            {isSummary && <GradientKPI label="Expenses" value={fmt(totalExpenses)} sub={`${pctOfRevenue(totalExpenses).toFixed(1)}% of Revenue`} />}
             {isSummary
-              ? <GradientKPI label="Net Profit" value={fmt(netProfit)} negative={netProfit < 0} />
+              ? <GradientKPI label="Net Profit" value={fmt(netProfit)} sub={`${pctOfRevenue(netProfit).toFixed(1)}% of Revenue`} negative={netProfit < 0} />
               : <GradientKPI label="COGS" value={fmt(stats.cogs)} />
             }
           </div>
