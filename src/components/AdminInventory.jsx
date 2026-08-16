@@ -29,6 +29,7 @@ export default function AdminInventory() {
     loads: [],
     poolOnHand: {},
     poolLabels: {},
+    poolWac: {},
   })
   // Inventory-by-Load filter: 'all' = all loads, true = Landed only, false = In Transit only.
   const [loadFilter, setLoadFilter] = useState('all')
@@ -81,24 +82,24 @@ export default function AdminInventory() {
     setTaggingDmg(false)
   }
 
-  // Damage out / reconcile: remove N units from a chosen pool at $0 recovery.
-  // Unlike Tag Damages there's no Damages bucket — the units are simply gone
-  // (sold for nothing / tossed / count correction). A dated -N / $0 adjustment
-  // load leaves ALL of their cost in the pool, so the remaining units' WAC rises;
-  // when N equals the on-hand, it reconciles the pool's count to zero.
+  // Damage out / reconcile: remove N units from a chosen pool by recording a
+  // $0 sale of them. That books the real loss to gross profit (revenue $0, COGS
+  // = N × the pool's WAC) and deducts N from the pool — so it reconciles the
+  // count (to zero when N = on-hand) for overestimates, tossed/lost/given items.
+  // (Reuses the Part 2b bulk-sale mechanism; the profitability view costs it at
+  // the pool WAC and the inventory views deduct it by pool_tag.)
   async function damageOut() {
     const n = parseInt(doCount, 10)
     if (!doPool || !(n > 0) || doingOut) return
     const label = stats.poolLabels?.[doPool] || doPool
+    const wac = Number(stats.poolWac?.[doPool] || 0)
     const onHand = stats.poolOnHand?.[doPool] ?? '?'
-    if (!confirm(`Damage out / reconcile ${n} ${label} unit${n !== 1 ? 's' : ''}? (on hand: ${onHand})\n\nRemoves them from the ${label} pool at $0. Any remaining units' WAC rises to absorb the cost; if this zeroes the pool it reconciles the count to 0. This is not reversible from the UI.`)) return
+    if (!confirm(`Damage out ${n} ${label} unit${n !== 1 ? 's' : ''}? (on hand: ${onHand})\n\nBooks a $${(n * wac).toFixed(2)} loss to gross profit — ${n} × $${wac.toFixed(2)} WAC, sold for $0 — and removes them from the pool. If this zeroes the pool it reconciles the count to 0.`)) return
     setDoingOut(true)
     try {
-      const today = new Date().toISOString().slice(0, 10)
-      await supabase.from('loads').insert({
-        id: `DMGOUT-${doPool}-${Date.now()}`, kind: 'custom', pool_tag: doPool,
-        vendor: 'Damage-out / reconcile', notes: `Reconciled out ${n} ${doPool} units at $0`,
-        quantity: -n, total_cost: 0, date: today, landed: true, is_opening: true,
+      await supabase.from('rdm_bundle_sales').insert({
+        pool_tag: doPool, quantity: n, sale_price: 0,
+        buyer_name: 'Damage out / reconcile', sold_at: new Date().toISOString(),
       })
       setDoCount(''); setDoPool('')
       await loadStats()
@@ -226,12 +227,14 @@ export default function AdminInventory() {
     }
     let onShelfCount = 0, onShelfCost = 0     // landed & unsold
     let transitCount = 0, transitCost = 0     // purchased, not yet landed
-    const poolOnHand = {}, poolLabels = {}    // per-pool remaining + display name (for Damage-out)
+    const poolOnHand = {}, poolLabels = {}, poolWac = {}   // per-pool remaining, name, landed WAC (Damage-out)
     for (const l of rows) { if (l.pool_tag) poolLabels[l.pool_tag] = l.pool_tag === 'JCM' ? 'J.Crew/Madewell' : (l.brand || l.pool_tag) }
     for (const tag of Object.keys(poolByTag)) {
       const landedLoads  = poolByTag[tag].filter(l => l.landed)
       const transitLoads = poolByTag[tag].filter(l => !l.landed)
       const landedQty = landedLoads.reduce((s, l) => s + (Number(l.quantity) || 0), 0)
+      const landedCost = landedLoads.reduce((s, l) => s + (Number(l.total_cost) || 0), 0)
+      poolWac[tag] = landedQty > 0 ? landedCost / landedQty : 0
       const soldFromLanded = Math.min(landedQty, poolSoldByTag[tag] || 0)
       let poolRemain = 0
       for (const l of landedLoads) {
@@ -274,6 +277,7 @@ export default function AdminInventory() {
       loads: rows,
       poolOnHand,
       poolLabels,
+      poolWac,
     })
     setLoading(false)
   }
@@ -415,10 +419,10 @@ export default function AdminInventory() {
           <div className="min-w-0">
             <h3 className="font-bold text-lg">Damage out / Reconcile</h3>
             <p className="text-slate-500 text-sm mt-1 max-w-xl">
-              Remove units from a chosen pool at <span className="text-slate-300">$0</span> (sold for nothing,
-              tossed, or a count correction). Their cost stays behind so the remaining units'
-              <span className="text-slate-300"> WAC rises</span> — or use it to <span className="text-slate-300">reconcile</span> a
-              pool's count down to zero.
+              Remove units from a chosen pool by selling them for <span className="text-slate-300">$0</span> —
+              books a <span className="text-slate-300">loss to gross profit</span> of units × the pool's WAC —
+              and deducts them from stock. Use it to <span className="text-slate-300">reconcile</span> counts:
+              overestimated loads, tossed/damaged, lost, or given-away items.
             </p>
           </div>
           <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
