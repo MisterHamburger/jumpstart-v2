@@ -27,11 +27,17 @@ export default function AdminInventory() {
     ownedCost: 0,
     avgRemainingCost: 0,
     loads: [],
+    poolOnHand: {},
+    poolLabels: {},
   })
   // Inventory-by-Load filter: 'all' = all loads, true = Landed only, false = In Transit only.
   const [loadFilter, setLoadFilter] = useState('all')
   const [dmgCount, setDmgCount] = useState('')
   const [taggingDmg, setTaggingDmg] = useState(false)
+  // Damage out / reconcile
+  const [doPool, setDoPool] = useState('')
+  const [doCount, setDoCount] = useState('')
+  const [doingOut, setDoingOut] = useState(false)
 
   useEffect(() => { loadStats() }, [])
 
@@ -73,6 +79,34 @@ export default function AdminInventory() {
       alert('Error tagging damages — check console')
     }
     setTaggingDmg(false)
+  }
+
+  // Damage out / reconcile: remove N units from a chosen pool at $0 recovery.
+  // Unlike Tag Damages there's no Damages bucket — the units are simply gone
+  // (sold for nothing / tossed / count correction). A dated -N / $0 adjustment
+  // load leaves ALL of their cost in the pool, so the remaining units' WAC rises;
+  // when N equals the on-hand, it reconciles the pool's count to zero.
+  async function damageOut() {
+    const n = parseInt(doCount, 10)
+    if (!doPool || !(n > 0) || doingOut) return
+    const label = stats.poolLabels?.[doPool] || doPool
+    const onHand = stats.poolOnHand?.[doPool] ?? '?'
+    if (!confirm(`Damage out / reconcile ${n} ${label} unit${n !== 1 ? 's' : ''}? (on hand: ${onHand})\n\nRemoves them from the ${label} pool at $0. Any remaining units' WAC rises to absorb the cost; if this zeroes the pool it reconciles the count to 0. This is not reversible from the UI.`)) return
+    setDoingOut(true)
+    try {
+      const today = new Date().toISOString().slice(0, 10)
+      await supabase.from('loads').insert({
+        id: `DMGOUT-${doPool}-${Date.now()}`, kind: 'custom', pool_tag: doPool,
+        vendor: 'Damage-out / reconcile', notes: `Reconciled out ${n} ${doPool} units at $0`,
+        quantity: -n, total_cost: 0, date: today, landed: true, is_opening: true,
+      })
+      setDoCount(''); setDoPool('')
+      await loadStats()
+    } catch (e) {
+      console.error('damageOut error', e)
+      alert('Error — check console')
+    }
+    setDoingOut(false)
   }
 
   async function loadStats() {
@@ -192,11 +226,14 @@ export default function AdminInventory() {
     }
     let onShelfCount = 0, onShelfCost = 0     // landed & unsold
     let transitCount = 0, transitCost = 0     // purchased, not yet landed
+    const poolOnHand = {}, poolLabels = {}    // per-pool remaining + display name (for Damage-out)
+    for (const l of rows) { if (l.pool_tag) poolLabels[l.pool_tag] = l.pool_tag === 'JCM' ? 'J.Crew/Madewell' : (l.brand || l.pool_tag) }
     for (const tag of Object.keys(poolByTag)) {
       const landedLoads  = poolByTag[tag].filter(l => l.landed)
       const transitLoads = poolByTag[tag].filter(l => !l.landed)
       const landedQty = landedLoads.reduce((s, l) => s + (Number(l.quantity) || 0), 0)
       const soldFromLanded = Math.min(landedQty, poolSoldByTag[tag] || 0)
+      let poolRemain = 0
       for (const l of landedLoads) {
         const qty = Number(l.quantity) || 0
         const unitCost = qty > 0 ? (Number(l.total_cost) || 0) / qty : 0
@@ -204,13 +241,16 @@ export default function AdminInventory() {
         const remainingQty = Math.max(0, qty - allocatedSold)
         onShelfCount += remainingQty
         onShelfCost  += remainingQty * unitCost
+        poolRemain   += remainingQty
       }
       for (const l of transitLoads) {
         const qty = Number(l.quantity) || 0
         const unitCost = qty > 0 ? (Number(l.total_cost) || 0) / qty : 0
         transitCount += qty
         transitCost  += qty * unitCost
+        poolRemain   += qty
       }
+      poolOnHand[tag] = poolRemain
     }
 
     // Manifested inventory is treated as fully depleted (sold, pool-tagged,
@@ -232,6 +272,8 @@ export default function AdminInventory() {
       ownedCost: onShelfCost + transitCost,
       avgRemainingCost,
       loads: rows,
+      poolOnHand,
+      poolLabels,
     })
     setLoading(false)
   }
@@ -362,6 +404,46 @@ export default function AdminInventory() {
               className="px-5 py-2.5 rounded-xl font-bold text-sm bg-cyan-600 text-white shadow-lg shadow-cyan-600/30 hover:bg-cyan-500 active:scale-[0.98] transition-all disabled:opacity-40 disabled:cursor-not-allowed"
             >
               {taggingDmg ? 'Tagging…' : 'Tag damages'}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Damage out / Reconcile — remove units from any pool at $0 (WAC rises / zero-out a count) */}
+      <div className="glass-card rounded-3xl p-6">
+        <div className="flex items-center justify-between gap-4 flex-wrap">
+          <div className="min-w-0">
+            <h3 className="font-bold text-lg">Damage out / Reconcile</h3>
+            <p className="text-slate-500 text-sm mt-1 max-w-xl">
+              Remove units from a chosen pool at <span className="text-slate-300">$0</span> (sold for nothing,
+              tossed, or a count correction). Their cost stays behind so the remaining units'
+              <span className="text-slate-300"> WAC rises</span> — or use it to <span className="text-slate-300">reconcile</span> a
+              pool's count down to zero.
+            </p>
+          </div>
+          <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
+            <select
+              value={doPool} onChange={e => setDoPool(e.target.value)}
+              className="px-3 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white focus:outline-none focus:border-rose-500/50 focus:ring-4 focus:ring-rose-500/10 transition-all"
+            >
+              <option value="">Pool…</option>
+              {Object.keys(stats.poolOnHand || {}).filter(t => t !== 'DAMAGE').sort().map(tag => (
+                <option key={tag} value={tag}>
+                  {(stats.poolLabels?.[tag] || tag)} · {(stats.poolOnHand[tag] || 0).toLocaleString()} on hand
+                </option>
+              ))}
+            </select>
+            <input
+              type="number" min="1" inputMode="numeric" placeholder="# units"
+              value={doCount} onChange={e => setDoCount(e.target.value)}
+              className="w-28 px-3 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white placeholder-white/40 focus:outline-none focus:border-rose-500/50 focus:ring-4 focus:ring-rose-500/10 transition-all"
+            />
+            <button
+              onClick={damageOut}
+              disabled={doingOut || !doPool || !(parseInt(doCount, 10) > 0)}
+              className="px-5 py-2.5 rounded-xl font-bold text-sm bg-rose-600 text-white shadow-lg shadow-rose-600/30 hover:bg-rose-500 active:scale-[0.98] transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              {doingOut ? 'Working…' : 'Damage out'}
             </button>
           </div>
         </div>
