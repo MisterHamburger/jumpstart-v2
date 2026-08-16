@@ -262,30 +262,13 @@ export default function JumpstartInventory({ onClose, embed = false }) {
     }
 
     const arr = Array.from(map.values()).map(g => {
-      // Per-barcode in-stock = manifest rows of that barcode (within group)
-      // minus sold count for that barcode. Sum across barcodes for the group.
-      const byBarcode = new Map()
-      for (const it of g.items) {
-        const arr2 = byBarcode.get(it.barcode) || []
-        arr2.push(it)
-        byBarcode.set(it.barcode, arr2)
-      }
-      let inStock = 0, sold = 0
-      const inStockIdsByBarcode = new Map()
-      for (const [bc, rows] of byBarcode) {
-        const soldN = Math.min(rows.length, soldByBarcode[bc] || 0)
-        sold += soldN
-        const stockN = rows.length - soldN
-        inStock += stockN
-        // The stockN rows we'd allow deletion of: take the newest stockN rows
-        // by created_at (so we keep older rows linked to past sales / profit
-        // history). Sort desc by created_at then take first stockN.
-        const sorted = [...rows].sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''))
-        inStockIdsByBarcode.set(bc, sorted.slice(0, stockN).map(r => r.id))
-      }
-      const inStockIds = []
-      for (const ids of inStockIdsByBarcode.values()) inStockIds.push(...ids)
-      return { ...g, sold, inStock, inStockIds }
+      // Manifested inventory is treated as fully DEPLETED business-wide (sold
+      // live, pool-tagged, bundled, or scanner-missed) — same as the top-level
+      // Inventory totals, which count only pools as in-stock. So manifest
+      // variants are shown as sold-out (in-stock 0) instead of phantom in-stock;
+      // they stay searchable under "Show sold-out". Nothing is deleted, so
+      // inStockIds is empty (the "Delete unsold" button never touches them).
+      return { ...g, sold: g.items.length, inStock: 0, inStockIds: [] }
     })
 
     let visible = showSoldOut ? arr : arr.filter(g => g.inStock > 0)
