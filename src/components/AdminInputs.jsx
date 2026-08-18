@@ -196,7 +196,10 @@ function ManifestUpload() {
       notes: newLoad.notes,
       kind: newLoad.kind,
       pool_tag: poolTag,
-      landed: newLoad.landed
+      landed: newLoad.landed,
+      // A load's WAC applies from the day it lands (when we can sell it), not its
+      // paid date — so stamp landed_at when it's created already-landed.
+      landed_at: newLoad.landed ? new Date().toISOString().slice(0, 10) : null,
     })
 
     if (error) {
@@ -214,9 +217,12 @@ function ManifestUpload() {
   // Flip a load between in-transit and landed (arrived / selling started).
   async function toggleLanded(load) {
     const next = !load.landed
+    // Stamp the landing date so the pool WAC applies from when the load arrived
+    // (sellable), not its paid date. Clearing it on un-land falls back to paid date.
+    const landedAt = next ? new Date().toISOString().slice(0, 10) : null
     // optimistic update
-    setLoads(prev => prev.map(l => l.id === load.id ? { ...l, landed: next } : l))
-    const { error } = await supabase.from('loads').update({ landed: next }).eq('id', load.id)
+    setLoads(prev => prev.map(l => l.id === load.id ? { ...l, landed: next, landed_at: landedAt } : l))
+    const { error } = await supabase.from('loads').update({ landed: next, landed_at: landedAt }).eq('id', load.id)
     if (error) { setStatus(`❌ ${error.message}`); refreshLoads(); return }
     setStatus(`✅ ${load.id} marked ${next ? 'Landed' : 'In transit'}`)
   }
