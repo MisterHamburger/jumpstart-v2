@@ -1374,17 +1374,27 @@ function ExpenseUpload() {
         .map(e => {
           const desc = e.description.toLowerCase()
 
+          // Rent is always OPEX. Co-pilot mislabelled the Jul 2026 payment as
+          // INVENTORY, which pushed it into the dashboard's "Kickstart
+          // sourcing" bucket and understated that month's OpEx. Checked
+          // before the inventory-vendor rules so it always wins.
+          if (desc.includes('3720 4th ave')) return { ...e, category: 'OPEX' }
+
           // Vendor patterns that Co-pilot intermittently miscategorizes as
           // OPEX or SOURCING but are actually inventory purchases. Force
           // them to INVENTORY here.
           //   - Inmar / Smartlots / Httpsinmarliq: J.Crew + Madewell load wires
           //     (Co-pilot sometimes shortens the description to just
           //     "Sp Smartlots", so we match both halves of the pair)
+          //   - Remarketing: "Dhl Remarketing Liquidation" is Inmar's DBA on
+          //     the ACH — same vendor as the "Inmar-dhl" wires, but the string
+          //     "inmar" never appears, so it needs its own pattern
           //   - 888 Digital: Kickstart inventory supplier
           //   - Businessrsorensen / Reclectic / Dick: Kickstart inventory
           //     purchases (50%/50% split for the larger reclamation wires)
           const isInventoryVendor =
             desc.includes('inmar') ||
+            desc.includes('remarketing') ||
             desc.includes('smartlots') ||
             desc.includes('888 digital') ||
             desc.includes('businessrsor') ||
