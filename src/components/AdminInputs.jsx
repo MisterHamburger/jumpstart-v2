@@ -227,6 +227,89 @@ function ManifestUpload() {
     setStatus(`✅ ${load.id} marked ${next ? 'Landed' : 'In transit'}`)
   }
 
+  // ── REVISE LOAD COST ─────────────────────────────
+  // Load costs are first entered with an estimated freight figure and revised
+  // once the real freight invoice lands. Because the profitability view derives
+  // pool WAC live (SUM(total_cost)/SUM(quantity)) rather than snapshotting it at
+  // sale time, editing a cost silently restates COGS on units that already sold
+  // — so the editor previews the new WAC and that restatement before saving.
+  const [editingCostId, setEditingCostId] = useState(null)
+  const [costDraft, setCostDraft] = useState('')
+  const [costSoldUnits, setCostSoldUnits] = useState(null) // null = still counting
+  const [savingCost, setSavingCost] = useState(false)
+
+  // Cumulative pool figures across every load sharing this load's pool_tag.
+  // `overrideCost` swaps in the draft value for the load being edited so the
+  // preview shows what the pool WAC becomes if we save.
+  function poolStats(load, overrideCost) {
+    const members = load.pool_tag
+      ? loads.filter(l => l.pool_tag === load.pool_tag)
+      : [load]
+    let units = 0, cost = 0
+    for (const l of members) {
+      const q = Number(l.quantity) || 0
+      // A NULL-quantity pool load (cashflow-only) is excluded from WAC.
+      if (q <= 0) continue
+      const c = l.id === load.id && overrideCost != null
+        ? overrideCost
+        : Number(l.total_cost) || 0
+      units += q
+      cost += c
+    }
+    return { units, cost, wac: units > 0 ? cost / units : null, loadCount: members.length }
+  }
+
+  // How many units of this pool have already been sold (scanned with the pool
+  // token as their barcode) across both channels.
+  async function countPoolSold(poolTag) {
+    if (!poolTag) return 0
+    const tables = ['jumpstart_sold_scans', 'kickstart_sold_scans']
+    let total = 0
+    for (const t of tables) {
+      const { count, error } = await supabase
+        .from(t).select('id', { count: 'exact', head: true }).eq('barcode', poolTag)
+      if (error) throw error
+      total += count || 0
+    }
+    return total
+  }
+
+  async function startEditCost(load) {
+    setEditingCostId(load.id)
+    setCostDraft(load.total_cost == null ? '' : String(load.total_cost))
+    setCostSoldUnits(null)
+    if (!load.pool_tag) { setCostSoldUnits(0); return }
+    try {
+      setCostSoldUnits(await countPoolSold(load.pool_tag))
+    } catch (err) {
+      console.error('Pool sold count failed:', err)
+      setCostSoldUnits(-1) // signals "couldn't count"
+    }
+  }
+
+  function cancelEditCost() {
+    setEditingCostId(null)
+    setCostDraft('')
+    setCostSoldUnits(null)
+  }
+
+  async function saveCost(load) {
+    const next = parseFloat(costDraft)
+    if (!isFinite(next) || next < 0) { setStatus('❌ Enter a valid cost'); return }
+    if (next === Number(load.total_cost)) { cancelEditCost(); return }
+    setSavingCost(true)
+    const prev = Number(load.total_cost) || 0
+    // optimistic update
+    setLoads(ls => ls.map(l => l.id === load.id ? { ...l, total_cost: next } : l))
+    const { error } = await supabase.from('loads').update({ total_cost: next }).eq('id', load.id)
+    setSavingCost(false)
+    if (error) { setStatus(`❌ ${error.message}`); refreshLoads(); return }
+    const money = n => `$${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+    setStatus(`✅ ${load.id} cost ${money(prev)} → ${money(next)}`)
+    cancelEditCost()
+    refreshLoads()
+  }
+
   // Export a load's manifest as a Whatnot bulk-listing CSV. Pulls every
   // jumpstart_manifest row in the load (paginated), groups identical units
   // per jumpstartWhatnotCsv.groupKey, and downloads the resulting CSV.
@@ -489,7 +572,95 @@ function ManifestUpload() {
                   <div className="flex items-start gap-3">
                     <div className="text-right">
                       <div className="text-lg font-bold text-slate-300">{(l.item_count || l.quantity || 0).toLocaleString()} items</div>
-                      <div className="text-xs text-slate-500">${Number(l.total_cost || l.total_cost_actual || 0).toLocaleString(undefined, {minimumFractionDigits: 2})}</div>
+                      {editingCostId === l.id ? (
+                        <div onClick={e => e.stopPropagation()} className="mt-1">
+                          <div className="flex items-center justify-end gap-1">
+                            <span className="text-slate-500 text-xs">$</span>
+                            <input
+                              autoFocus
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              value={costDraft}
+                              onChange={e => setCostDraft(e.target.value)}
+                              onKeyDown={e => {
+                                if (e.key === 'Enter') { e.preventDefault(); saveCost(l) }
+                                if (e.key === 'Escape') { e.preventDefault(); cancelEditCost() }
+                              }}
+                              disabled={savingCost}
+                              className="w-28 bg-slate-900/80 border border-cyan-500/40 rounded-lg px-2 py-1 text-xs text-right text-white focus:outline-none focus:border-cyan-400 disabled:opacity-50"
+                            />
+                          </div>
+                          {(() => {
+                            const draft = parseFloat(costDraft)
+                            const before = poolStats(l)
+                            const after = poolStats(l, isFinite(draft) ? draft : null)
+                            const changed = isFinite(draft) && draft !== Number(l.total_cost)
+                            const money = n => `$${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                            const sold = costSoldUnits
+                            const delta = before.wac != null && after.wac != null ? after.wac - before.wac : null
+                            return (
+                              <div className="mt-2 w-60 text-left rounded-lg border border-white/10 bg-slate-900/70 p-2 space-y-1">
+                                <div className="text-[10px] uppercase tracking-wide text-slate-500 font-bold">
+                                  {l.pool_tag ? `${l.pool_tag} pool` : 'This load'}
+                                  {before.loadCount > 1 && ` · ${before.loadCount} loads`}
+                                </div>
+                                <div className="text-[11px] text-slate-400 flex justify-between gap-2">
+                                  <span>Pool WAC</span>
+                                  <span className="tabular-nums">
+                                    {before.wac == null ? '—' : money(before.wac)}
+                                    {changed && after.wac != null && (
+                                      <> → <span className="text-cyan-300 font-semibold">{money(after.wac)}</span></>
+                                    )}
+                                  </span>
+                                </div>
+                                {sold === null && (
+                                  <div className="text-[11px] text-slate-500">Counting sold units…</div>
+                                )}
+                                {sold === -1 && (
+                                  <div className="text-[11px] text-amber-400">Couldn’t count sold units — save will still work.</div>
+                                )}
+                                {sold > 0 && changed && delta != null && (
+                                  <div className="text-[11px] text-amber-300 leading-snug">
+                                    ⚠ {sold.toLocaleString()} unit{sold === 1 ? '' : 's'} already sold — COGS restates by{' '}
+                                    <span className="font-semibold tabular-nums">
+                                      {delta < 0 ? '−' : '+'}{money(Math.abs(delta * sold))}
+                                    </span>
+                                    {before.loadCount > 1 && ' (approx — multi-load pool)'}
+                                  </div>
+                                )}
+                                {sold === 0 && (
+                                  <div className="text-[11px] text-slate-500">No units sold from this pool yet.</div>
+                                )}
+                                <div className="flex gap-2 pt-1">
+                                  <button
+                                    onClick={() => saveCost(l)}
+                                    disabled={savingCost}
+                                    className="bg-cyan-600 text-white hover:bg-cyan-500 active:scale-95 rounded-lg px-2.5 py-1 text-[11px] font-bold transition-all disabled:opacity-50"
+                                  >
+                                    {savingCost ? 'Saving…' : 'Save'}
+                                  </button>
+                                  <button
+                                    onClick={cancelEditCost}
+                                    disabled={savingCost}
+                                    className="text-slate-400 hover:text-white px-2 py-1 text-[11px] font-medium transition-colors disabled:opacity-50"
+                                  >
+                                    Cancel
+                                  </button>
+                                </div>
+                              </div>
+                            )
+                          })()}
+                        </div>
+                      ) : (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); startEditCost(l) }}
+                          title="Click to revise cost"
+                          className="text-xs text-slate-500 hover:text-cyan-400 transition-colors cursor-pointer"
+                        >
+                          ${Number(l.total_cost || l.total_cost_actual || 0).toLocaleString(undefined, {minimumFractionDigits: 2})}
+                        </button>
+                      )}
                     </div>
                     <LandedToggle
                       value={l.landed}
