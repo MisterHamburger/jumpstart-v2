@@ -40,6 +40,14 @@ export default function AdminInventory() {
   const [doCount, setDoCount] = useState('')
   const [doingOut, setDoingOut] = useState(false)
 
+  // Off-platform sale (FB Marketplace, local pickup, wholesale…) — same
+  // rdm_bundle_sales mechanism as Damage out, but with a real sale price.
+  const [opPool, setOpPool] = useState('')
+  const [opQty, setOpQty] = useState('1')
+  const [opPrice, setOpPrice] = useState('')
+  const [opBuyer, setOpBuyer] = useState('')
+  const [opSaving, setOpSaving] = useState(false)
+
   useEffect(() => { loadStats() }, [])
 
   // Tag N units as damages: shrinkage write-down to $1/unit. Removes them from
@@ -108,6 +116,58 @@ export default function AdminInventory() {
       alert('Error — check console')
     }
     setDoingOut(false)
+  }
+
+  // Record a sale made outside Whatnot (FB Marketplace, local pickup, a wholesale
+  // lot…). Reuses the Part 2b bulk-sale mechanism: the profitability view costs
+  // each unit at the pool's landed WAC, charges 0% fees (it never touched
+  // Whatnot), and the inventory views deduct it by pool_tag.
+  //
+  // NOTE: profitability derives per-unit revenue as sale_price / quantity, so the
+  // price entered here is the TOTAL for the lot and is split evenly. Units that
+  // sold for different amounts must be recorded as separate sales.
+  async function offPlatformSale() {
+    const qty = parseInt(opQty, 10)
+    const price = parseFloat(opPrice)
+    if (!opPool || !(qty > 0) || !(price > 0) || opSaving) return
+    const label = stats.poolLabels?.[opPool] || opPool
+    const wac = Number(stats.poolWac?.[opPool] || 0)
+    const onHand = stats.poolOnHand?.[opPool] ?? 0
+    const cogs = qty * wac
+    const per = price / qty
+    const overdraw = qty > onHand
+      ? `\n\n⚠️ Only ${onHand.toLocaleString()} on hand — this will take the pool negative.`
+      : ''
+    const split = qty > 1
+      ? `\nPer unit: $${per.toFixed(2)} (total split evenly across ${qty})`
+      : ''
+    // A pool with no landed loads has no WAC yet, so COGS would come out $0 and
+    // the sale would book as pure profit. Say so plainly before it distorts P&L.
+    const noWac = wac === 0
+      ? `\n\n⚠️ ${label} has no landed loads, so its WAC is $0 — this sale would book as 100% profit with no COGS. Mark the load landed first if it has arrived.`
+      : ''
+    if (!confirm(
+      `Record off-platform sale of ${qty} ${label} unit${qty !== 1 ? 's' : ''} for $${price.toFixed(2)}?${split}\n\n` +
+      `Revenue: $${price.toFixed(2)}\nCOGS: $${cogs.toFixed(2)} (${qty} × $${wac.toFixed(2)} WAC)\n` +
+      `Fees: $0.00 (sold outside Whatnot)\nProfit: $${(price - cogs).toFixed(2)}${overdraw}${noWac}`
+    )) return
+    setOpSaving(true)
+    try {
+      const { error } = await supabase.from('rdm_bundle_sales').insert({
+        pool_tag: opPool,
+        quantity: qty,
+        sale_price: price,
+        buyer_name: opBuyer.trim() || 'Off-platform',
+        sold_at: new Date().toISOString(),
+      })
+      if (error) throw error
+      setOpPool(''); setOpQty('1'); setOpPrice(''); setOpBuyer('')
+      await loadStats()
+    } catch (e) {
+      console.error('offPlatformSale error', e)
+      alert(`Error recording sale: ${e?.message || e}`)
+    }
+    setOpSaving(false)
   }
 
   async function loadStats() {
@@ -411,6 +471,78 @@ export default function AdminInventory() {
             </button>
           </div>
         </div>
+      </div>
+
+      {/* Off-platform sale — sell pool units outside Whatnot at a real price (0% fees) */}
+      <div className="glass-card rounded-3xl p-6">
+        <div className="flex items-center justify-between gap-4 flex-wrap">
+          <div className="min-w-0">
+            <h3 className="font-bold text-lg">Off-platform sale</h3>
+            <p className="text-slate-500 text-sm mt-1 max-w-xl">
+              Record a sale made outside Whatnot — FB Marketplace, local pickup, a wholesale lot.
+              Books <span className="text-slate-300">revenue with 0% fees</span>, costs each unit at the
+              pool's WAC, and deducts them from stock. Price is the{' '}
+              <span className="text-slate-300">total for the lot</span> and is split evenly — record units
+              that sold for different amounts separately.
+            </p>
+          </div>
+          <div className="flex items-center gap-2 flex-wrap justify-end min-w-0">
+            <select
+              value={opPool} onChange={e => setOpPool(e.target.value)}
+              className="min-w-0 px-3 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white focus:outline-none focus:border-emerald-500/50 focus:ring-4 focus:ring-emerald-500/10 transition-all"
+            >
+              <option value="">Brand…</option>
+              {Object.keys(stats.poolOnHand || {}).filter(t => t !== 'DAMAGE').sort().map(tag => (
+                <option key={tag} value={tag}>
+                  {(stats.poolLabels?.[tag] || tag)} · {(stats.poolOnHand[tag] || 0).toLocaleString()} on hand
+                </option>
+              ))}
+            </select>
+            <input
+              type="number" min="1" inputMode="numeric" placeholder="# units"
+              value={opQty} onChange={e => setOpQty(e.target.value)}
+              className="w-24 px-3 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white placeholder-white/40 focus:outline-none focus:border-emerald-500/50 focus:ring-4 focus:ring-emerald-500/10 transition-all"
+            />
+            <input
+              type="number" min="0" step="0.01" inputMode="decimal" placeholder="$ total"
+              value={opPrice} onChange={e => setOpPrice(e.target.value)}
+              className="w-28 px-3 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white placeholder-white/40 focus:outline-none focus:border-emerald-500/50 focus:ring-4 focus:ring-emerald-500/10 transition-all"
+            />
+            <input
+              type="text" placeholder="Buyer / channel"
+              value={opBuyer} onChange={e => setOpBuyer(e.target.value)}
+              className="w-40 px-3 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white placeholder-white/40 focus:outline-none focus:border-emerald-500/50 focus:ring-4 focus:ring-emerald-500/10 transition-all"
+            />
+            <button
+              onClick={offPlatformSale}
+              disabled={opSaving || !opPool || !(parseInt(opQty, 10) > 0) || !(parseFloat(opPrice) > 0)}
+              className="px-5 py-2.5 rounded-xl font-bold text-sm bg-emerald-600 text-white shadow-lg shadow-emerald-600/30 hover:bg-emerald-500 active:scale-[0.98] transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              {opSaving ? 'Saving…' : 'Record sale'}
+            </button>
+          </div>
+        </div>
+        {(() => {
+          const qty = parseInt(opQty, 10)
+          const price = parseFloat(opPrice)
+          if (!opPool || !(qty > 0) || !(price > 0)) return null
+          const wac = Number(stats.poolWac?.[opPool] || 0)
+          const onHand = stats.poolOnHand?.[opPool] ?? 0
+          const cogs = qty * wac
+          const money = n => `$${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+          return (
+            <div className="mt-4 pt-4 border-t border-white/10 flex items-center gap-6 flex-wrap text-sm">
+              <span className="text-slate-500">Revenue <span className="text-white font-semibold tabular-nums">{money(price)}</span></span>
+              {qty > 1 && <span className="text-slate-500">Per unit <span className="text-white font-semibold tabular-nums">{money(price / qty)}</span></span>}
+              <span className="text-slate-500">COGS <span className="text-white font-semibold tabular-nums">{money(cogs)}</span> <span className="text-slate-600">({qty} × {money(wac)})</span></span>
+              <span className="text-slate-500">Fees <span className="text-white font-semibold tabular-nums">$0.00</span></span>
+              <span className="text-slate-500">Profit <span className={`font-semibold tabular-nums ${price - cogs >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>{money(price - cogs)}</span></span>
+              {wac === 0
+                ? <span className="text-amber-400 font-medium">⚠ no landed loads — WAC is $0, so this books as 100% profit</span>
+                : qty > onHand && <span className="text-amber-400 font-medium">⚠ only {onHand.toLocaleString()} on hand</span>}
+            </div>
+          )
+        })()}
       </div>
 
       {/* Damage out / Reconcile — remove units from any pool at $0 (WAC rises / zero-out a count) */}
