@@ -1,5 +1,6 @@
 -- ============================================================================
 -- Fix: Ghost (ghst.io) load payments leak into "Kickstart sourcing"
+-- SUPERSEDED by retire-kickstart-sourcing.sql -- run that one instead.
 -- Date: 2026-10-08
 -- ============================================================================
 --
