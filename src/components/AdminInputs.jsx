@@ -1560,12 +1560,14 @@ function ExpenseUpload() {
           //   - Remarketing: "Dhl Remarketing Liquidation" is Inmar's DBA on
           //     the ACH — same vendor as the "Inmar-dhl" wires, but the string
           //     "inmar" never appears, so it needs its own pattern
+          //   - Ghst.io: Ghost liquidation loads (e.g. Nuzzie Load 41)
           //   - 888 Digital: Kickstart inventory supplier
           //   - Businessrsorensen / Reclectic / Dick: Kickstart inventory
           //     purchases (50%/50% split for the larger reclamation wires)
           const isInventoryVendor =
             desc.includes('inmar') ||
             desc.includes('remarketing') ||
+            desc.includes('ghst') ||
             desc.includes('smartlots') ||
             desc.includes('888 digital') ||
             desc.includes('businessrsor') ||
