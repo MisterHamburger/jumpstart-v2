@@ -61,15 +61,23 @@ const BASE_POOL_CONFIG = {
     blurb: 'Direct-from-J.Crew batch — no per-unit barcodes.',
     hasBundles: false,
   },
+  JCM: {
+    label: 'J.Crew/Madewell',
+    vendorLabel: 'J.Crew/Madewell',
+    accent: 'emerald',
+    blurb: 'Blended J.Crew/Madewell pool — bulk units, no barcodes.',
+    hasBundles: false,
+  },
 }
 
 // Build the full pool-config map keyed by pool_tag from the loads rows.
-// RDM/UJC use BASE_POOL_CONFIG; any other tag (custom brand) is synthesized.
+// RDM/UJC/JCM use BASE_POOL_CONFIG; any other tag (custom brand) is synthesized.
 function buildPoolConfigs(poolLoads) {
   const cfgs = {}
   for (const l of poolLoads || []) {
     const tag = l.pool_tag
-    if (!tag || cfgs[tag]) continue
+    // Damage-removal adjustments (negative qty) aren't purchases — never name a pool after one.
+    if (!tag || cfgs[tag] || (Number(l.quantity) || 0) < 0) continue
     const base = BASE_POOL_CONFIG[tag]
     cfgs[tag] = base
       ? { ...base, key: `__pool_${tag}__`, scanBarcode: tag }
