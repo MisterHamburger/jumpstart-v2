@@ -230,67 +230,43 @@ function ManifestUpload() {
   // ── REVISE LOAD COST ─────────────────────────────
   // Load costs are first entered with an estimated freight figure and revised
   // once the real freight invoice lands. Because the profitability view derives
-  // pool WAC live (SUM(total_cost)/SUM(quantity)) rather than snapshotting it at
-  // sale time, editing a cost silently restates COGS on units that already sold
-  // — so the editor previews the new WAC and that restatement before saving.
+  // the running pool WAC live (pool_wac_schedule) rather than snapshotting it at
+  // sale time, editing a cost restates COGS on units sold since that load
+  // landed — so the editor previews today's WAC and the exact restatement
+  // (pool_wac_preview) before saving.
   const [editingCostId, setEditingCostId] = useState(null)
   const [costDraft, setCostDraft] = useState('')
-  const [costSoldUnits, setCostSoldUnits] = useState(null) // null = still counting
+  const [costPreview, setCostPreview] = useState(null) // null = loading, { error } on failure
   const [savingCost, setSavingCost] = useState(false)
 
-  // Cumulative pool figures across every load sharing this load's pool_tag.
-  // `overrideCost` swaps in the draft value for the load being edited so the
-  // preview shows what the pool WAC becomes if we save.
-  function poolStats(load, overrideCost) {
-    const members = load.pool_tag
-      ? loads.filter(l => l.pool_tag === load.pool_tag)
-      : [load]
-    let units = 0, cost = 0
-    for (const l of members) {
-      const q = Number(l.quantity) || 0
-      // A NULL-quantity pool load (cashflow-only) is excluded from WAC.
-      if (q <= 0) continue
-      const c = l.id === load.id && overrideCost != null
-        ? overrideCost
-        : Number(l.total_cost) || 0
-      units += q
-      cost += c
-    }
-    return { units, cost, wac: units > 0 ? cost / units : null, loadCount: members.length }
-  }
+  // Re-run the server preview (debounced) as the draft changes.
+  useEffect(() => {
+    if (!editingCostId) return
+    const load = loads.find(l => l.id === editingCostId)
+    if (!load?.pool_tag) { setCostPreview({ noPool: true }); return }
+    const draft = parseFloat(costDraft)
+    const cost = isFinite(draft) ? draft : Number(load.total_cost) || 0
+    let cancelled = false
+    setCostPreview(null)
+    const t = setTimeout(async () => {
+      const { data, error } = await supabase.rpc('pool_wac_preview', { p_load_id: load.id, p_new_cost: cost })
+      if (cancelled) return
+      if (error) { console.error('Pool WAC preview failed:', error); setCostPreview({ error: true }); return }
+      setCostPreview(data?.[0] || { error: true })
+    }, 350)
+    return () => { cancelled = true; clearTimeout(t) }
+  }, [editingCostId, costDraft]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // How many units of this pool have already been sold (scanned with the pool
-  // token as their barcode) across both channels.
-  async function countPoolSold(poolTag) {
-    if (!poolTag) return 0
-    const tables = ['jumpstart_sold_scans', 'kickstart_sold_scans']
-    let total = 0
-    for (const t of tables) {
-      const { count, error } = await supabase
-        .from(t).select('id', { count: 'exact', head: true }).eq('barcode', poolTag)
-      if (error) throw error
-      total += count || 0
-    }
-    return total
-  }
-
-  async function startEditCost(load) {
+  function startEditCost(load) {
     setEditingCostId(load.id)
     setCostDraft(load.total_cost == null ? '' : String(load.total_cost))
-    setCostSoldUnits(null)
-    if (!load.pool_tag) { setCostSoldUnits(0); return }
-    try {
-      setCostSoldUnits(await countPoolSold(load.pool_tag))
-    } catch (err) {
-      console.error('Pool sold count failed:', err)
-      setCostSoldUnits(-1) // signals "couldn't count"
-    }
+    setCostPreview(null)
   }
 
   function cancelEditCost() {
     setEditingCostId(null)
     setCostDraft('')
-    setCostSoldUnits(null)
+    setCostPreview(null)
   }
 
   async function saveCost(load) {
@@ -593,44 +569,46 @@ function ManifestUpload() {
                           </div>
                           {(() => {
                             const draft = parseFloat(costDraft)
-                            const before = poolStats(l)
-                            const after = poolStats(l, isFinite(draft) ? draft : null)
                             const changed = isFinite(draft) && draft !== Number(l.total_cost)
-                            const money = n => `$${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-                            const sold = costSoldUnits
-                            const delta = before.wac != null && after.wac != null ? after.wac - before.wac : null
+                            const money = n => `$${Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                            const p = costPreview
+                            const ready = p && !p.error && !p.noPool
+                            const restate = ready ? Number(p.cogs_after) - Number(p.cogs_before) : 0
                             return (
                               <div className="mt-2 w-60 text-left rounded-lg border border-white/10 bg-slate-900/70 p-2 space-y-1">
                                 <div className="text-[10px] uppercase tracking-wide text-slate-500 font-bold">
                                   {l.pool_tag ? `${l.pool_tag} pool` : 'This load'}
-                                  {before.loadCount > 1 && ` · ${before.loadCount} loads`}
                                 </div>
-                                <div className="text-[11px] text-slate-400 flex justify-between gap-2">
-                                  <span>Pool WAC</span>
-                                  <span className="tabular-nums">
-                                    {before.wac == null ? '—' : money(before.wac)}
-                                    {changed && after.wac != null && (
-                                      <> → <span className="text-cyan-300 font-semibold">{money(after.wac)}</span></>
-                                    )}
-                                  </span>
-                                </div>
-                                {sold === null && (
-                                  <div className="text-[11px] text-slate-500">Counting sold units…</div>
-                                )}
-                                {sold === -1 && (
-                                  <div className="text-[11px] text-amber-400">Couldn’t count sold units — save will still work.</div>
-                                )}
-                                {sold > 0 && changed && delta != null && (
-                                  <div className="text-[11px] text-amber-300 leading-snug">
-                                    ⚠ {sold.toLocaleString()} unit{sold === 1 ? '' : 's'} already sold — COGS restates by{' '}
-                                    <span className="font-semibold tabular-nums">
-                                      {delta < 0 ? '−' : '+'}{money(Math.abs(delta * sold))}
+                                {ready && (
+                                  <div className="text-[11px] text-slate-400 flex justify-between gap-2">
+                                    <span>Pool WAC today</span>
+                                    <span className="tabular-nums">
+                                      {p.wac_before == null ? '—' : money(p.wac_before)}
+                                      {changed && p.wac_after != null && (
+                                        <> → <span className="text-cyan-300 font-semibold">{money(p.wac_after)}</span></>
+                                      )}
                                     </span>
-                                    {before.loadCount > 1 && ' (approx — multi-load pool)'}
                                   </div>
                                 )}
-                                {sold === 0 && (
+                                {p === null && (
+                                  <div className="text-[11px] text-slate-500">Calculating…</div>
+                                )}
+                                {p?.error && (
+                                  <div className="text-[11px] text-amber-400">Couldn’t preview the WAC — save will still work.</div>
+                                )}
+                                {ready && changed && Math.abs(restate) >= 0.01 && (
+                                  <div className="text-[11px] text-amber-300 leading-snug">
+                                    ⚠ Restates COGS on units already sold by{' '}
+                                    <span className="font-semibold tabular-nums">
+                                      {restate < 0 ? '−' : '+'}{money(Math.abs(restate))}
+                                    </span>
+                                  </div>
+                                )}
+                                {ready && Number(p.units_sold) === 0 && (
                                   <div className="text-[11px] text-slate-500">No units sold from this pool yet.</div>
+                                )}
+                                {!l.landed && (
+                                  <div className="text-[11px] text-slate-500">In transit — affects the WAC once landed.</div>
                                 )}
                                 <div className="flex gap-2 pt-1">
                                   <button

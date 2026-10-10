@@ -169,6 +169,11 @@ export default function JumpstartInventory({ onClose, embed = false }) {
         bundleSoldByTag[t] = (bundleSoldByTag[t] || 0) + (Number(r.quantity) || 0)
       }
 
+      // Today's running pool WAC — what the profitability view costs sales at.
+      const { data: wacRows } = await supabase.from('pool_wac_current').select('pool_tag, avg_cost')
+      const currentWac = {}
+      for (const r of wacRows || []) currentWac[r.pool_tag] = Number(r.avg_cost) || 0
+
       const nextPools = {}
       for (const tag of poolTagSet) {
         const tagLoads = (poolLoads || []).filter(l => l.pool_tag === tag)
@@ -183,7 +188,7 @@ export default function JumpstartInventory({ onClose, embed = false }) {
           sold: scanSold + bundleSold,
           scanSold,
           bundleSold,
-          unitCost: purchased > 0 ? totalCost / purchased : 0,
+          unitCost: currentWac[tag] ?? (purchased > 0 ? totalCost / purchased : 0),
         }
       }
 
@@ -722,8 +727,8 @@ function PoolEditModal({ group, onClose, onSaved }) {
   const [saving, setSaving] = useState(false)
 
   // Adjusting in-stock writes back to loads.quantity on the pool's primary
-  // load (first by id). The cost basis is loads.total_cost / loads.quantity,
-  // which the WAC in the profitability view reads at sale time.
+  // load (first by id). The cost basis shown is the pool's running WAC
+  // (pool_wac_current), which the profitability view costs sales at.
   const newPurchased = Math.max(details.sold, details.sold + Number(targetInStock || 0))
   const delta = newPurchased - details.purchased
 
@@ -757,7 +762,7 @@ function PoolEditModal({ group, onClose, onSaved }) {
           <button onClick={onClose} className="text-slate-400 hover:text-white text-2xl leading-none">×</button>
         </div>
         <p className="text-xs text-slate-500 mb-4">
-          {cfg.blurb} Cost basis ${Number(details.unitCost || 0).toFixed(2)}/unit (loads.total_cost ÷ qty).
+          {cfg.blurb} Cost basis ${Number(details.unitCost || 0).toFixed(2)}/unit (running WAC).
         </p>
 
         <div className="grid grid-cols-3 gap-2 mb-5 text-center">

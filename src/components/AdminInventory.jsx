@@ -206,6 +206,13 @@ export default function AdminInventory() {
       if (b && poolTagSet.has(b)) poolScansByTag[b] = (poolScansByTag[b] || 0) + 1
     }
 
+    // Today's running WAC per pool (perpetual: sales deplete, each landed load
+    // re-blends only with what's still on hand) — the same cost the
+    // profitability view books today's sales at.
+    const { data: wacRows } = await supabase.from('pool_wac_current').select('pool_tag, avg_cost')
+    const currentWac = {}
+    for (const r of wacRows || []) currentWac[r.pool_tag] = Number(r.avg_cost) || 0
+
     // Bulk lot sales (whole-crate sales outside Whatnot) deplete their own pool:
     // JCM, DAMAGE, or legacy RDM (rows default to 'RDM').
     const { data: rdmBundleRows } = await supabase
@@ -274,9 +281,9 @@ export default function AdminInventory() {
 
     // Pool remaining, split into LANDED (physically on the shelf) and IN-TRANSIT
     // (purchased but not yet arrived). Sales can only draw from landed loads, so
-    // sold is apportioned pro-rata across a pool's landed loads only; in-transit
-    // loads keep their full quantity. This keeps "cost of units in stock"
-    // precise (physical) while still exposing total owned inventory value.
+    // landed remaining = landed qty − sold, valued at the running WAC; in-transit
+    // loads keep their full quantity at their own cost. This keeps "cost of
+    // units in stock" precise (physical) while still exposing total owned value.
     // On-hand excludes closed pools (legacy RDM/UJC — their remaining now lives
     // in the JCM opening balance, which is not closed and is counted here).
     const poolByTag = {}
@@ -287,25 +294,19 @@ export default function AdminInventory() {
     }
     let onShelfCount = 0, onShelfCost = 0     // landed & unsold
     let transitCount = 0, transitCost = 0     // purchased, not yet landed
-    const poolOnHand = {}, poolLabels = {}, poolWac = {}   // per-pool remaining, name, landed WAC (Damage-out)
+    const poolOnHand = {}, poolLabels = {}, poolWac = {}   // per-pool remaining, name, running WAC (Damage-out)
     for (const l of rows) { if (l.pool_tag) poolLabels[l.pool_tag] = l.pool_tag === 'JCM' ? 'J.Crew/Madewell' : (l.brand || l.pool_tag) }
     for (const tag of Object.keys(poolByTag)) {
       const landedLoads  = poolByTag[tag].filter(l => l.landed)
       const transitLoads = poolByTag[tag].filter(l => !l.landed)
       const landedQty = landedLoads.reduce((s, l) => s + (Number(l.quantity) || 0), 0)
-      const landedCost = landedLoads.reduce((s, l) => s + (Number(l.total_cost) || 0), 0)
-      poolWac[tag] = landedQty > 0 ? landedCost / landedQty : 0
-      const soldFromLanded = Math.min(landedQty, poolSoldByTag[tag] || 0)
-      let poolRemain = 0
-      for (const l of landedLoads) {
-        const qty = Number(l.quantity) || 0
-        const unitCost = qty > 0 ? (Number(l.total_cost) || 0) / qty : 0
-        const allocatedSold = landedQty > 0 ? Math.round(soldFromLanded * (qty / landedQty)) : 0
-        const remainingQty = Math.max(0, qty - allocatedSold)
-        onShelfCount += remainingQty
-        onShelfCost  += remainingQty * unitCost
-        poolRemain   += remainingQty
-      }
+      poolWac[tag] = currentWac[tag] || 0
+      // Landed units on the shelf are valued at the pool's running WAC, not at
+      // their original load costs — sold-out loads no longer carry any weight.
+      const landedRemain = Math.max(0, landedQty - (poolSoldByTag[tag] || 0))
+      onShelfCount += landedRemain
+      onShelfCost  += landedRemain * poolWac[tag]
+      let poolRemain = landedRemain
       for (const l of transitLoads) {
         const qty = Number(l.quantity) || 0
         const unitCost = qty > 0 ? (Number(l.total_cost) || 0) / qty : 0
