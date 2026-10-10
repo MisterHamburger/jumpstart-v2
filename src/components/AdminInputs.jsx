@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import Papa from 'papaparse'
 import { supabase, fetchAll } from '../lib/supabase'
 import { normalizeBarcode } from '../lib/barcodes'
+import { localToday } from '../lib/dates'
 import { generateJumpstartWhatnotCsv } from '../lib/jumpstartWhatnotCsv'
 import LandedToggle from './LandedToggle'
 
@@ -199,7 +200,7 @@ function ManifestUpload() {
       landed: newLoad.landed,
       // A load's WAC applies from the day it lands (when we can sell it), not its
       // paid date — so stamp landed_at when it's created already-landed.
-      landed_at: newLoad.landed ? new Date().toISOString().slice(0, 10) : null,
+      landed_at: newLoad.landed ? localToday() : null,
     })
 
     if (error) {
@@ -219,7 +220,7 @@ function ManifestUpload() {
     const next = !load.landed
     // Stamp the landing date so the pool WAC applies from when the load arrived
     // (sellable), not its paid date. Clearing it on un-land falls back to paid date.
-    const landedAt = next ? new Date().toISOString().slice(0, 10) : null
+    const landedAt = next ? localToday() : null
     // optimistic update
     setLoads(prev => prev.map(l => l.id === load.id ? { ...l, landed: next, landed_at: landedAt } : l))
     const { error } = await supabase.from('loads').update({ landed: next, landed_at: landedAt }).eq('id', load.id)

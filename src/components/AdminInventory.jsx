@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { supabase, fetchAll } from '../lib/supabase'
+import { localToday } from '../lib/dates'
 import JumpstartInventory from './JumpstartInventory'
 import LandedToggle from './LandedToggle'
 
@@ -61,7 +62,7 @@ export default function AdminInventory() {
     if (!confirm(`Tag ${n} unit${n !== 1 ? 's' : ''} as damages?\n\nRemoves them from the J.Crew/Madewell pool (raising its WAC) and moves them to the Damages line at $1/unit.`)) return
     setTaggingDmg(true)
     try {
-      const today = new Date().toISOString().slice(0, 10)
+      const today = localToday()
       await supabase.from('loads').insert({
         id: `DMG-ADJ-${Date.now()}`, kind: 'custom', pool_tag: 'JCM',
         vendor: 'Damage removal', notes: `Tagged ${n} units to damages`,
