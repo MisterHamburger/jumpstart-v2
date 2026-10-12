@@ -94,8 +94,11 @@ export async function loadBooks(year) {
 
   // Month-end inventory: closed months use the saved snapshot; open months are live.
   const today = todayStr()
+  // Live valuations run one month at a time: manifested_inventory_at scans the
+  // profitability view, and ten of them at once hit the statement timeout.
+  // Closed months skip this entirely, so it only gets lighter as months close.
   const inventory = {}
-  await Promise.all(months.map(async m => {
+  for (const m of months) {
     const c = closes[m]
     if (c?.status === 'closed' && c.inventory_value != null) {
       inventory[m] = { total: Number(c.inventory_value), ...(c.inventory_detail || {}), source: 'closed' }
@@ -103,10 +106,14 @@ export async function loadBooks(year) {
       inventory[m] = { total: Number(c.inventory_value), ...(c.inventory_detail || {}), source: 'override' }
     } else {
       const d = monthEnd(m) < today ? monthEnd(m) : today
-      try { inventory[m] = { ...(await inventoryAt(d)), source: 'live' } }
-      catch (e) { inventory[m] = { total: null, source: 'error', error: e.message } }
+      let lastErr = null
+      for (let attempt = 0; attempt < 2 && !inventory[m]; attempt++) {
+        try { inventory[m] = { ...(await inventoryAt(d)), source: 'live' } }
+        catch (e) { lastErr = e }
+      }
+      if (!inventory[m]) inventory[m] = { total: null, source: 'error', error: lastErr?.message }
     }
-  }))
+  }
 
   const opening = journal.filter(j => j.source === 'opening' && j.entry_date < start)
   const openingInventory = opening.filter(j => ['1015', '1016'].includes(j.account))
