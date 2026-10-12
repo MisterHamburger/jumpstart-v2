@@ -19,6 +19,7 @@ export default function App() {
         <Route path="/sales" element={<SalesSetup />} />
         <Route path="/sales/:showId" element={<SalesScanner />} />
         <Route path="/admin" element={<Admin />} />
+        <Route path="/admin/financials" element={<Admin />} />
         <Route path="/admin/targets" element={<Admin />} />
         <Route path="/admin/inputs" element={<Admin />} />
         <Route path="/admin/inventory" element={<Admin />} />

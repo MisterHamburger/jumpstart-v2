@@ -9,12 +9,14 @@ import AdminDataCheck from '../components/AdminDataCheck'
 import AdminAnalytics from '../components/AdminAnalytics'
 import AdminTargets from '../components/AdminTargets'
 import AdminStatements from '../components/AdminStatements'
+import AdminFinancials from '../components/AdminFinancials'
 
 const ADMIN_PW_KEY = 'jumpstart_admin_auth'
 const ADMIN_PW = 'MichaelGaryScott'
 
 const TABS = [
   { id: 'dashboard', path: '/admin', label: 'Dashboard', icon: 'lucide:layout-dashboard' },
+  { id: 'financials', path: '/admin/financials', label: 'Financials', icon: 'lucide:landmark' },
   { id: 'targets', path: '/admin/targets', label: 'Targets', icon: 'lucide:target' },
   { id: 'inputs', path: '/admin/inputs', label: 'Inputs', icon: 'lucide:upload' },
   { id: 'inventory', path: '/admin/inventory', label: 'Inventory', icon: 'lucide:package' },
@@ -153,6 +155,7 @@ export default function Admin() {
       {/* Main content */}
       <main className="flex-1 p-6 md:p-8 overflow-auto relative z-10">
         {activeTab === 'dashboard' && <AdminDashboard />}
+        {activeTab === 'financials' && <AdminFinancials />}
         {activeTab === 'targets' && <AdminTargets />}
         {activeTab === 'inputs' && <AdminInputs />}
         {activeTab === 'inventory' && <AdminInventory />}
