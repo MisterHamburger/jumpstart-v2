@@ -1530,6 +1530,14 @@ function ExpenseUpload() {
           // before the inventory-vendor rules so it always wins.
           if (desc.includes('3720 4th ave')) return { ...e, category: 'OPEX' }
 
+          // Owner draws: Co-pilot labels the transfers to Josh (Regions) and
+          // Wesley (Wells Fargo) as PAYROLL, but with multiple members in 2026
+          // they are draws (equity), not wages. OWNER_DRAW is outside every
+          // dashboard aggregate; the books map it to 3010 Owner Draws.
+          if (desc.includes('regions bank - josh sizemore') || desc.includes('wesley teague')) {
+            return { ...e, category: 'OWNER_DRAW' }
+          }
+
           // Vendor patterns that Co-pilot intermittently miscategorizes as
           // OPEX or SOURCING but are actually inventory purchases. Force
           // them to INVENTORY here.

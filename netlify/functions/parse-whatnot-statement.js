@@ -1,8 +1,10 @@
 // Parse an uploaded Whatnot financial statement PDF and return structured JSON.
 // Accepts: POST with { pdf_base64: "..." } body.
-// Returns: { period_start, period_end, period_label, statement_number,
-//            sales, tips, commission, processing, show_boost,
-//            seller_shipping, other_adjustments, payouts, raw_text }.
+// Returns: { account, period_start, period_end, period_label, statement_number,
+//            sales, tips, referral_credits, total_income, commission, processing,
+//            show_boost, seller_shipping, shipping_surcharges, order_refunds,
+//            other_adjustments, payouts, opening_balance, closing_balance,
+//            raw_text_preview }.
 // Does NOT write to DB — the frontend previews the result, lets the user
 // tweak dates, then inserts into whatnot_statements itself.
 
@@ -26,6 +28,25 @@ function extractAmount(text, label) {
   )
   const m = text.match(pattern)
   return m ? parseFloat(m[1].replace(/,/g, '')) : 0
+}
+
+// Like extractAmount, but keeps a leading minus ("Closing balance -$32.62").
+function extractSigned(text, label) {
+  const pattern = new RegExp(
+    label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '[^\\$\\n]*?(-?)\\$([\\d,]+\\.\\d{2})',
+    'i'
+  )
+  const m = text.match(pattern)
+  if (!m) return 0
+  const v = parseFloat(m[2].replace(/,/g, ''))
+  return m[1] === '-' ? -v : v
+}
+
+// Whatnot username printed under "Username" — tells us which store the
+// statement belongs to (jumpstartdeals → Jumpstart, kickstartdeals → Kickstart).
+function detectAccount(text) {
+  const m = text.match(/(jumpstartdeals|kickstartdeals)/i)
+  return m ? m[1].toLowerCase() : null
 }
 
 // Try to detect the period from the statement text.
@@ -106,14 +127,21 @@ export default async (req) => {
       period_end,
       period_label,
       statement_number: stmtMatch ? stmtMatch[1] : null,
+      account: detectAccount(text),
       sales: extractAmount(text, 'Sales'),
       tips: extractAmount(text, 'Tips'),
+      referral_credits: extractAmount(text, 'Buyer referral credits'),
+      total_income: extractAmount(text, 'Total income'),
       commission: extractAmount(text, 'Commission fees'),
       processing: extractAmount(text, 'Payment processing fees'),
       show_boost: extractAmount(text, 'Show boost and promote'),
       seller_shipping: extractAmount(text, 'Seller Paid Shipping'),
-      other_adjustments: extractAmount(text, 'Other adjustments'),
+      shipping_surcharges: extractAmount(text, 'Shipping surcharges'),
+      order_refunds: extractAmount(text, 'Order refunds'),
+      other_adjustments: extractAmount(text, 'Other adjustments (-)'),
       payouts: extractAmount(text, 'Payouts'),
+      opening_balance: extractSigned(text, 'Opening balance'),
+      closing_balance: extractSigned(text, 'Closing balance'),
       raw_text_preview: text.slice(0, 500)
     }
 

@@ -1,5 +1,11 @@
 import { useState, useEffect, useRef } from 'react'
-import { supabase } from '../lib/supabase'
+import { supabase, fetchAll } from '../lib/supabase'
+
+// Whatnot username → app sales channel / tax revenue account
+const ACCOUNTS = {
+  jumpstartdeals: { label: 'Jumpstart', channel: 'Jumpstart', badge: 'bg-cyan-500/15 text-cyan-300 border-cyan-500/30' },
+  kickstartdeals: { label: 'Kickstart', channel: 'Kickstart', badge: 'bg-pink-500/15 text-pink-300 border-pink-500/30' },
+}
 
 function fmt(n) {
   return `$${Number(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
@@ -50,6 +56,7 @@ export default function AdminStatements() {
       .from('whatnot_statements')
       .select('*')
       .order('period_start', { ascending: false })
+      .order('account', { ascending: true })
     if (error) console.error('Error loading statements:', error)
     setStatements(data || [])
     setLoading(false)
@@ -57,11 +64,18 @@ export default function AdminStatements() {
     // Fetch matching profitability-view aggregates for each statement's date range
     const map = {}
     for (const s of data || []) {
-      const { data: rows } = await supabase
-        .from('profitability')
-        .select('buyer_paid, total_fees, cost_freight, net_payout')
-        .gte('show_date', s.period_start)
-        .lte('show_date', s.period_end)
+      // Paginated (a busy month is well over the 1000-row API cap) and limited
+      // to the statement's own store, so each statement compares like-for-like.
+      const channel = ACCOUNTS[s.account]?.channel
+      const rows = await fetchAll(() => {
+        let q = supabase
+          .from('profitability')
+          .select('buyer_paid, total_fees, cost_freight, net_payout')
+          .gte('show_date', s.period_start)
+          .lte('show_date', s.period_end)
+        if (channel) q = q.eq('channel', channel)
+        return q
+      })
       if (rows) {
         let items = rows.length, hammer = 0, fees = 0, cogs = 0, net = 0
         for (const r of rows) {
@@ -97,7 +111,7 @@ export default function AdminStatements() {
         throw new Error(err.error || `Parser returned ${res.status}`)
       }
       const parsed = await res.json()
-      setPreview(parsed)
+      setPreview({ ...parsed, account: parsed.account || 'jumpstartdeals' })
       setPreviewFilename(file.name)
     } catch (err) {
       console.error('Upload error:', err)
@@ -120,22 +134,29 @@ export default function AdminStatements() {
     setSaving(true)
     setUploadError(null)
     const row = {
+      account: preview.account || 'jumpstartdeals',
       period_start: preview.period_start,
       period_end: preview.period_end,
       period_label: preview.period_label || null,
       statement_number: preview.statement_number || null,
       sales: Number(preview.sales) || 0,
       tips: Number(preview.tips) || 0,
+      referral_credits: Number(preview.referral_credits) || 0,
+      total_income: Number(preview.total_income) || 0,
       commission: Number(preview.commission) || 0,
       processing: Number(preview.processing) || 0,
       show_boost: Number(preview.show_boost) || 0,
       seller_shipping: Number(preview.seller_shipping) || 0,
+      shipping_surcharges: Number(preview.shipping_surcharges) || 0,
+      order_refunds: Number(preview.order_refunds) || 0,
       other_adjustments: Number(preview.other_adjustments) || 0,
       payouts: Number(preview.payouts) || 0,
+      opening_balance: Number(preview.opening_balance) || 0,
+      closing_balance: Number(preview.closing_balance) || 0,
       uploaded_filename: previewFilename || null,
     }
     const { error } = await supabase.from('whatnot_statements').upsert(row, {
-      onConflict: 'period_start,period_end'
+      onConflict: 'account,period_start,period_end'
     })
     if (error) {
       setUploadError(`Save failed: ${error.message}`)
@@ -230,6 +251,18 @@ export default function AdminStatements() {
             </button>
           </div>
 
+          <div className="mb-4">
+            <label className="block text-white/70 text-xs font-semibold mb-1">Whatnot account</label>
+            <select
+              value={preview.account || 'jumpstartdeals'}
+              onChange={(e) => updatePreview('account', e.target.value)}
+              className="w-full px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white focus:outline-none focus:border-pink-500/50"
+            >
+              <option value="jumpstartdeals">jumpstartdeals (Jumpstart)</option>
+              <option value="kickstartdeals">kickstartdeals (Kickstart)</option>
+            </select>
+          </div>
+
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
             <div>
               <label className="block text-white/70 text-xs font-semibold mb-1">Period start</label>
@@ -255,12 +288,18 @@ export default function AdminStatements() {
             {[
               ['sales', 'Sales'],
               ['tips', 'Tips'],
+              ['referral_credits', 'Buyer referral credits'],
+              ['total_income', 'Total income (1099-K)'],
               ['commission', 'Commission fees'],
               ['processing', 'Payment processing'],
               ['show_boost', 'Show boost & promote'],
               ['seller_shipping', 'Seller paid shipping'],
-              ['other_adjustments', 'Other adjustments'],
+              ['shipping_surcharges', 'Shipping surcharges'],
+              ['order_refunds', 'Order refunds'],
+              ['other_adjustments', 'Other adjustments (−)'],
               ['payouts', 'Payouts'],
+              ['opening_balance', 'Opening balance'],
+              ['closing_balance', 'Closing balance'],
             ].map(([field, label]) => (
               <div key={field} className="flex items-center justify-between gap-3 py-1 border-b border-white/5 last:border-b-0">
                 <span className="text-white/80 text-sm">{label}</span>
@@ -310,14 +349,19 @@ export default function AdminStatements() {
           {statements.map(s => {
             const r = rangeData[s.id]
             const actualFees = Number(s.commission || 0) + Number(s.processing || 0)
-            const totalCosts = Number(s.commission || 0) + Number(s.processing || 0) + Number(s.show_boost || 0) + Number(s.seller_shipping || 0) + Number(s.other_adjustments || 0)
+            const totalCosts = Number(s.commission || 0) + Number(s.processing || 0) + Number(s.show_boost || 0) + Number(s.seller_shipping || 0)
+              + Number(s.shipping_surcharges || 0) + Number(s.order_refunds || 0) + Number(s.other_adjustments || 0)
+            const acct = ACCOUNTS[s.account]
             const actualNetProfit = r ? Number(s.payouts || 0) - r.cogs : null
             const estDrift = r ? Number(s.payouts || 0) - r.net : null
             return (
               <div key={s.id} className="glass-card rounded-3xl p-6">
                 <div className="flex items-start justify-between gap-3 mb-4 pb-4 border-b border-white/5">
                   <div>
-                    <h3 className="text-xl font-black font-heading text-white">{s.period_label || `${s.period_start} → ${s.period_end}`}</h3>
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-xl font-black font-heading text-white">{s.period_label || `${s.period_start} → ${s.period_end}`}</h3>
+                      {acct && <span className={`text-xs font-bold px-2 py-0.5 rounded-full border ${acct.badge}`}>{acct.label}</span>}
+                    </div>
                     <p className="text-slate-500 text-xs mt-1">
                       {s.period_start} → {s.period_end}
                       {s.statement_number && <> · Statement #{s.statement_number}</>}
@@ -339,10 +383,14 @@ export default function AdminStatements() {
                     <div className="space-y-1 text-sm">
                       <Row label="Sales" value={fmt(s.sales)} />
                       <Row label="Tips" value={fmt(s.tips)} subtle />
+                      {Number(s.referral_credits) > 0 && <Row label="Buyer referral credits" value={fmt(s.referral_credits)} subtle />}
+                      {Number(s.total_income) > 0 && <Row label="Total income (1099-K)" value={fmt(s.total_income)} />}
                       <Row label={`Commission (${pct(s.commission, s.sales)})`} value={`−${fmt(s.commission)}`} dim />
                       <Row label={`Processing (${pct(s.processing, s.sales)})`} value={`−${fmt(s.processing)}`} dim />
                       <Row label="Show boost" value={`−${fmt(s.show_boost)}`} dim />
                       <Row label="Seller shipping" value={`−${fmt(s.seller_shipping)}`} dim />
+                      {Number(s.shipping_surcharges) > 0 && <Row label="Shipping surcharges" value={`−${fmt(s.shipping_surcharges)}`} dim />}
+                      {Number(s.order_refunds) > 0 && <Row label="Order refunds" value={`−${fmt(s.order_refunds)}`} dim />}
                       <Row label="Other adjustments" value={`−${fmt(s.other_adjustments)}`} dim />
                       <div className="border-t border-white/10 my-2"></div>
                       <Row label="Payouts" value={fmt(s.payouts)} emphasis />
@@ -354,7 +402,7 @@ export default function AdminStatements() {
 
                   {/* Matched from our data */}
                   <div>
-                    <p className="text-xs uppercase tracking-wider text-cyan-300 font-bold mb-2">From our data (same period)</p>
+                    <p className="text-xs uppercase tracking-wider text-cyan-300 font-bold mb-2">From our data (same period{acct ? `, ${acct.label} channel` : ''})</p>
                     {!r ? (
                       <p className="text-slate-500 text-sm">Loading…</p>
                     ) : r.items === 0 ? (
