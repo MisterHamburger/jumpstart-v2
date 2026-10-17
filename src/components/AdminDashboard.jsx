@@ -107,30 +107,40 @@ export default function AdminDashboard() {
       return
     }
 
-    const build = (r) => ({
+    // Revenue = gross sales (Whatnot statement sales + tips, plus off-platform
+    // bundle sales). Fees are the actual statement lines for closed months and
+    // an estimate at each account's real fee rates for the current month.
+    const NUM = ['items', 'whatnotSales', 'offplatformSales', 'revenue', 'commission', 'processing',
+      'showBoost', 'shipping', 'adjustments', 'fees', 'netRevenue', 'cogs', 'writeoffs', 'grossProfit']
+    const build = (r = {}) => ({
       items: Number(r.items) || 0,
+      whatnotSales: Number(r.whatnot_sales) || 0,
+      offplatformSales: Number(r.offplatform_sales) || 0,
       revenue: Number(r.revenue) || 0,
+      commission: Number(r.commission) || 0,
+      processing: Number(r.processing) || 0,
+      showBoost: Number(r.show_boost) || 0,
+      shipping: Number(r.shipping) || 0,
+      adjustments: Number(r.adjustments) || 0,
       fees: Number(r.fees) || 0,
+      feesEstimated: !!r.fees_estimated,
       netRevenue: Number(r.net_revenue) || 0,
       cogs: Number(r.cogs) || 0,
+      writeoffs: Number(r.writeoffs) || 0,
       grossProfit: Number(r.gross_profit) || 0,
     })
 
     const jumpstart = build(raw.jumpstart)
     const kickstart = build(raw.kickstart)
 
-    const combined = {
-      items: jumpstart.items + kickstart.items,
-      revenue: jumpstart.revenue + kickstart.revenue,
-      fees: jumpstart.fees + kickstart.fees,
-      netRevenue: jumpstart.netRevenue + kickstart.netRevenue,
-      cogs: jumpstart.cogs + kickstart.cogs,
-      grossProfit: jumpstart.grossProfit + kickstart.grossProfit,
-    }
+    const combined = { feesEstimated: jumpstart.feesEstimated || kickstart.feesEstimated }
+    for (const k of NUM) combined[k] = jumpstart[k] + kickstart[k]
 
     setData({
       jumpstart, kickstart, combined,
       totalOpex: Number(raw.expenses) || 0,
+      opexBreakdown: (raw.opex_breakdown || []).map(o => ({ ...o, amount: Number(o.amount) || 0 })),
+      ownerDraws: Number(raw.owner_draws) || 0,
       totalPayroll: Number(raw.payroll) || 0,
       totalPayrollSourcing: Number(raw.payroll_sourcing) || 0,
       loadCost: Number(raw.load_cost) || 0,
@@ -154,6 +164,7 @@ export default function AdminDashboard() {
   const profitPerUnit = stats && stats.items > 0 ? stats.grossProfit / stats.items : 0
   const margin = stats && stats.revenue > 0 ? (stats.grossProfit / stats.revenue) * 100 : 0
   const netProfit = stats ? stats.grossProfit - (data?.totalOpex || 0) - (data?.totalPayroll || 0) - (data?.totalPayrollSourcing || 0) : 0
+  const est = stats?.feesEstimated ? ' (est.)' : ''
   const pctOfRevenue = (v) => (stats && stats.revenue > 0 ? (v / stats.revenue) * 100 : 0)
 
   // Calculate calendar days for per-day metrics
@@ -164,11 +175,11 @@ export default function AdminDashboard() {
     const diff = Math.floor((end - start) / (1000 * 60 * 60 * 24)) + 1
     return Math.max(diff, 1)
   })()
-  const revenuePerDay = stats ? stats.netRevenue / calendarDays : 0
+  const revenuePerDay = stats ? stats.revenue / calendarDays : 0
   const profitPerDay = stats ? stats.grossProfit / calendarDays : 0
   const itemsPerDay = stats ? Math.round(stats.items / calendarDays) : 0
   const netProfitPerDay = stats ? netProfit / calendarDays : 0
-  const revenuePerItem = stats && stats.items > 0 ? stats.netRevenue / stats.items : 0
+  const revenuePerItem = stats && stats.items > 0 ? stats.revenue / stats.items : 0
   const cogsPerItem = stats && stats.items > 0 ? stats.cogs / stats.items : 0
   const grossProfitPerItem = stats && stats.items > 0 ? stats.grossProfit / stats.items : 0
   const netProfitPerItem = stats && stats.items > 0 ? netProfit / stats.items : 0
@@ -241,18 +252,18 @@ export default function AdminDashboard() {
         <>
           {/* Row 1: Totals — Revenue, Gross Profit, Expenses, Net Profit */}
           <div className={`grid grid-cols-2 ${isSummary ? 'md:grid-cols-4' : 'md:grid-cols-3'} gap-4 mb-4`}>
-            <GradientKPI label="Revenue" value={fmt(stats.netRevenue)} sub={`${stats.items.toLocaleString()} items sold`} />
-            <GradientKPI label="Gross Profit" value={fmt(stats.grossProfit)} sub={`${margin.toFixed(1)}% of Revenue`} negative={stats.grossProfit < 0} />
-            {isSummary && <GradientKPI label="Expenses" value={fmt(totalExpenses)} sub={`${pctOfRevenue(totalExpenses).toFixed(1)}% of Revenue`} />}
+            <GradientKPI label="Gross Sales" value={fmt(stats.revenue)} sub={`${stats.items.toLocaleString()} items · ${fmt(stats.netRevenue)} after Whatnot fees${stats.feesEstimated ? ' (est.)' : ''}`} />
+            <GradientKPI label="Gross Profit" value={fmt(stats.grossProfit)} sub={`${margin.toFixed(1)}% of gross sales`} negative={stats.grossProfit < 0} />
+            {isSummary && <GradientKPI label="Expenses" value={fmt(totalExpenses)} sub={`${pctOfRevenue(totalExpenses).toFixed(1)}% of gross sales`} />}
             {isSummary
-              ? <GradientKPI label="Net Profit" value={fmt(netProfit)} sub={`${pctOfRevenue(netProfit).toFixed(1)}% of Revenue`} negative={netProfit < 0} />
+              ? <GradientKPI label="Net Profit" value={fmt(netProfit)} sub={`${pctOfRevenue(netProfit).toFixed(1)}% of gross sales`} negative={netProfit < 0} />
               : <GradientKPI label="COGS" value={fmt(stats.cogs)} />
             }
           </div>
 
           {/* Row 2: Per-Day */}
           <div className={`grid grid-cols-2 ${isSummary ? 'md:grid-cols-4' : 'md:grid-cols-3'} gap-4 mb-4`}>
-            <GradientKPI label="Revenue / Day" value={fmt(revenuePerDay)} sub={`over ${calendarDays} days`} />
+            <GradientKPI label="Gross Sales / Day" value={fmt(revenuePerDay)} sub={`over ${calendarDays} days`} />
             <GradientKPI label="Gross Profit / Day" value={fmt(profitPerDay)} sub={`over ${calendarDays} days`} negative={profitPerDay < 0} />
             <GradientKPI label="Items Sold / Day" value={itemsPerDay.toLocaleString()} sub={`over ${calendarDays} days`} />
             {isSummary && <GradientKPI label="Net Profit / Day" value={fmt(netProfitPerDay)} sub={`over ${calendarDays} days`} negative={netProfitPerDay < 0} />}
@@ -260,7 +271,7 @@ export default function AdminDashboard() {
 
           {/* Row 3: Per-Item */}
           <div className={`grid grid-cols-2 ${isSummary ? 'md:grid-cols-4' : 'md:grid-cols-3'} gap-4 mb-4`}>
-            <GradientKPI label="Revenue / Item" value={fmt(revenuePerItem)} />
+            <GradientKPI label="Sale / Item" value={fmt(revenuePerItem)} />
             <GradientKPI label="COGS / Item" value={fmt(cogsPerItem)} />
             <GradientKPI label="Gross Profit / Item" value={fmt(grossProfitPerItem)} negative={grossProfitPerItem < 0} />
             {isSummary && <GradientKPI label="Net Profit / Item" value={fmt(netProfitPerItem)} negative={netProfitPerItem < 0} />}
@@ -270,7 +281,20 @@ export default function AdminDashboard() {
           <div className="glass-card rounded-3xl p-6 mt-4">
             <h3 className="font-bold font-heading text-lg mb-4">P&L Summary</h3>
             <div className="space-y-0">
-              <PLRow label="Revenue (net of Whatnot fees)" value={stats.netRevenue} bold />
+              <PLRow label="Gross Sales" value={stats.revenue} bold />
+              <PLRow label="Whatnot sales (incl. tips)" value={stats.whatnotSales} indent />
+              {stats.offplatformSales !== 0 && <PLRow label="Off-platform sales (bundles)" value={stats.offplatformSales} indent />}
+
+              <PLRow label={`Whatnot Fees${est}`} value={-stats.fees} bold />
+              <PLRow label="Commission" value={-stats.commission} indent />
+              <PLRow label="Payment processing" value={-stats.processing} indent />
+              <PLRow label="Show boost & promote" value={-stats.showBoost} indent />
+              <PLRow label="Seller-paid shipping" value={-stats.shipping} indent />
+              {stats.adjustments !== 0 && <PLRow label="Refunds & adjustments" value={-stats.adjustments} indent />}
+
+              <div className="border-t border-white/[0.1] mt-2 pt-2">
+                <PLRow label={`Net Sales (deposited)${est}`} value={stats.netRevenue} bold />
+              </div>
               {isSummary && (
                 <>
                   <PLRow label="Jumpstart" value={data.jumpstart.netRevenue} indent />
@@ -279,12 +303,8 @@ export default function AdminDashboard() {
               )}
 
               <PLRow label="Cost of Goods Sold (COGS)" value={-stats.cogs} bold />
-              {isSummary && (
-                <>
-                  <PLRow label="Jumpstart" value={-data.jumpstart.cogs} indent />
-                  <PLRow label="Kickstart" value={-data.kickstart.cogs} indent />
-                </>
-              )}
+              <PLRow label="Items sold" value={-(stats.cogs - stats.writeoffs)} indent />
+              {stats.writeoffs !== 0 && <PLRow label="Write-offs (damage / reconcile)" value={-stats.writeoffs} indent />}
 
               <div className="border-t border-white/[0.1] mt-2 pt-2">
                 <PLRow label="Gross Profit" value={stats.grossProfit} bold />
@@ -293,7 +313,10 @@ export default function AdminDashboard() {
               {isSummary && (
                 <>
                   <div className="mt-4">
-                    <PLRow label="OpEx" value={-(data?.totalOpex || 0)} />
+                    <PLRow label="Operating Expenses" value={-(data?.totalOpex || 0)} bold />
+                    {(data?.opexBreakdown || []).map(o => (
+                      <PLRow key={o.code || o.name} label={o.name} value={-o.amount} indent />
+                    ))}
                     <PLRow label="Payroll" value={-(data?.totalPayroll || 0)} />
                     <PLRow label="Sourcing Labor" value={-(data?.totalPayrollSourcing || 0)} />
                     <PLRow label="Total Expenses" value={-totalExpenses} bold />
@@ -311,7 +334,7 @@ export default function AdminDashboard() {
           <div className="glass-card rounded-3xl p-6 mt-4">
             <h3 className="font-bold font-heading text-lg mb-4">Cashflow Summary</h3>
             <div className="space-y-0">
-              <PLRow label="Revenue (net of Whatnot fees)" value={stats.netRevenue} bold />
+              <PLRow label={`Net Sales (deposited)${est}`} value={stats.netRevenue} bold />
               {isSummary && (
                 <>
                   <PLRow label="Jumpstart" value={data.jumpstart.netRevenue} indent />
@@ -362,8 +385,14 @@ export default function AdminDashboard() {
                     )}
 
                     <div className="border-t border-white/[0.1] mt-2 pt-2">
-                      <PLRow label="Cashflow" value={cashflow} bold accent />
+                      <PLRow label="Cashflow (before owner draws)" value={cashflow} bold accent />
                     </div>
+                    {isSummary && (data?.ownerDraws || 0) !== 0 && (
+                      <>
+                        <PLRow label="Owner draws" value={-(data?.ownerDraws || 0)} />
+                        <PLRow label="Cashflow after owner draws" value={cashflow - (data?.ownerDraws || 0)} bold accent />
+                      </>
+                    )}
                   </>
                 )
               })()}

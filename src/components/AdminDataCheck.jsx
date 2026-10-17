@@ -440,36 +440,50 @@ export default function AdminDataCheck() {
       }
 
       // ═══════════════════════════════════════════
-      // SECTION 17: ANALYTICS — PROFIT CONSISTENCY
-      // Sum of profit in profitability view = Dashboard gross profit
+      // SECTION 17: SCANNED SALES vs WHATNOT STATEMENTS
+      // The dashboard reports gross sales and fees from the monthly Whatnot
+      // statements. The item-level scans must add up to the same sales —
+      // a gap means an unscanned show, missing items, or a mis-dated show.
+      // Tolerance 2% per account-month.
       // ═══════════════════════════════════════════
       {
-        // PostgREST .range() pagination over a UNION ALL view is non-deterministic
-        // without an explicit order — different calls can shuffle rows across
-        // pages and produce duplicated/skipped rows. Order by scan_id so each
-        // page is stable.
+        const { data: stmts } = await supabase.from('whatnot_statements')
+          .select('account, period_start, period_end, sales, tips')
+          .gte('period_start', BUSINESS_START)
+        const monthly = (stmts || []).filter(s => s.period_start.endsWith('-01'))
         const PAGE = 1000
-        let totalProfit = 0, offset = 0
+        const scanned = {}   // `${channel}|${YYYY-MM}` -> buyer_paid
+        let offset = 0
         while (true) {
           const { data: rows } = await supabase.from('profitability')
-            .select('profit')
-            .eq('channel', 'Jumpstart')
+            .select('channel, show_date, buyer_paid, is_bundle')
             .gte('show_date', BUSINESS_START)
             .order('scan_id')
             .range(offset, offset + PAGE - 1)
           if (!rows || rows.length === 0) break
-          for (const r of rows) totalProfit += Number(r.profit) || 0
+          for (const r of rows) {
+            if (r.is_bundle) continue
+            const k = `${r.channel}|${r.show_date.slice(0, 7)}`
+            scanned[k] = (scanned[k] || 0) + (Number(r.buyer_paid) || 0)
+          }
           if (rows.length < PAGE) break
           offset += PAGE
         }
-        totalProfit = round2(totalProfit)
-        const dashGP = round2(data.jumpstart.grossProfit)
-        const diff = Math.abs(totalProfit - dashGP)
-        // Allow up to 0.1% drift from per-row rounding accumulation
-        const threshold = Math.max(1.00, Math.abs(dashGP) * 0.001)
-        const ok = diff < threshold
-        check('Analytics Profit = Dashboard GP (JS)', ok,
-          `Profitability sum: ${fmt(totalProfit)} | Dashboard GP: ${fmt(dashGP)} | Diff: ${fmt(diff)} (threshold: ${fmt(threshold)})${ok ? '' : ' — MISMATCH'}`)
+        const CH = { jumpstartdeals: 'Jumpstart', kickstartdeals: 'Kickstart' }
+        const fails = [], notes = []
+        for (const s of monthly.sort((x, y) => (x.period_start + x.account < y.period_start + y.account ? -1 : 1))) {
+          const m = s.period_start.slice(0, 7)
+          const stmt = round2(Number(s.sales) + Number(s.tips))
+          const scan = round2(scanned[`${CH[s.account]}|${m}`] || 0)
+          if (scan === 0) { notes.push(`${m} ${s.account}: no scans (manual month)`); continue }
+          const pct = stmt ? (scan - stmt) / stmt * 100 : 0
+          const line = `${m} ${s.account}: scans ${fmt(scan)} vs statement ${fmt(stmt)} (${pct >= 0 ? '+' : ''}${pct.toFixed(1)}%)`
+          if (Math.abs(pct) > 2) fails.push(line)
+        }
+        check('Scanned Sales = Whatnot Statements (±2%/month)', fails.length === 0,
+          fails.length === 0
+            ? `${monthly.length} account-months within 2%${notes.length ? ' · ' + notes.join(' · ') : ''}`
+            : fails.join(' | '))
       }
 
       // ═══════════════════════════════════════════

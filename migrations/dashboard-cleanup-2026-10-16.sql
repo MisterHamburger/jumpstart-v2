@@ -1,79 +1,43 @@
 -- ============================================================================
--- Dashboard cleanup after the YTD audit (2026-10-16)
+-- Truthful dashboard (2026-10-16, after the YTD audit)
 -- ============================================================================
 --
--- 1. Kickstart sourcing is retired. It used to be a LEFTOVER bucket (all of
---    SOURCING + INVENTORY minus known Jumpstart vendors), so every unknown
---    payment (Ghost/Nuzzie $103K, Cle Deals, Widover, Venmo...) leaked into
---    it and double-counted cashflow. It is now an IDENTIFIED set: only the
---    four real Kickstart sourcing vendors, and only through 2026-06-30 when
---    the FP wind-down ended sourcing. Nothing new can ever fall into it.
---    (Supersedes fix-ghost-vendor-exclusion.sql and retire-kickstart-sourcing.sql.)
+-- The dashboard now reports from the records of real money, not estimates:
 --
--- 2. Whatnot fees = actual statement fees. The profitability view estimates
---    12.3% of hammer, which misses show boost/promote, seller-paid shipping and
---    adjustments (~$24K Feb–Sep). For every calendar month fully inside the
---    requested range that has an uploaded statement, the RPC uses the
---    statement's "Fees & costs", so "Revenue (net of Whatnot fees)" equals what
---    Whatnot actually paid out. Months without a statement yet (e.g. the
---    current month) use the estimate x 1.1883 (Feb–Sep actual/estimated ratio).
+--   GROSS SALES  = Whatnot statement item sales + tips (+ referral credits),
+--                  plus off-platform bundle sales (FB Marketplace, bulk lots).
+--   WHATNOT FEES = every line from the statement: commission, payment
+--                  processing, show boost & promote, seller-paid shipping,
+--                  refunds & adjustments.
+--   NET SALES    = gross - fees  (= what Whatnot actually paid out, + bundles)
+--   COGS         = items sold at cost; write-offs ($0 reconcile/damage-out
+--                  bundles) reported separately so shrink is visible.
+--   OPEX         = bank/card expenses, also broken out by GL account.
 --
--- 3. Data fixes:
---    - Load 41 (Nuzzie): remove the $6,100 forklift estimate. Craneworks bills
---      the forklift directly and those bills are already in OPEX.
---    - Widover (freight broker) payments -> OPEX.
---    - Small non-inventory items that were filed as SOURCING/INVENTORY -> OPEX.
---    - January manual entry: fees $0 -> $17,304.55 (Jan statements, both accounts).
+-- Months with no statement yet (the current month) are estimated from the
+-- scanned sales x each account's ACTUAL 2026 fee rates per line, and flagged
+-- `estimated` so the UI can label them. A statement month is only used when
+-- the whole month is inside the requested range; partial months estimate.
+--
+-- Also:
+--   * Kickstart sourcing is RETIRED: an identified set (Reclectic, Businessrsor,
+--     888 Digital, Dick's) through 2026-06-30 only. It used to be a leftover
+--     bucket that absorbed Ghost/Nuzzie ($103K), Cle Deals, Widover... and
+--     double-counted cashflow. All inventory cash comes from `loads`.
+--   * Load 41 (Nuzzie): $6,100 forklift estimate removed (Craneworks bills it
+--     directly; those bills are OPEX).
+--   * Widover (freight broker) -> OPEX. Small non-inventory items -> OPEX.
+--   * The January manual entry keeps its COGS/items, but its revenue/fees are
+--     superseded by the January statements.
+--
+-- Supersedes fix-ghost-vendor-exclusion.sql and retire-kickstart-sourcing.sql.
+-- Safe to re-run.
 -- ============================================================================
 
 
 -- ---------------------------------------------------------------------------
--- 1. Monthly Whatnot statements (both accounts)
+-- 1. Data fixes
 -- ---------------------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS whatnot_monthly_statements (
-  account      TEXT    NOT NULL,          -- 'jumpstartdeals' | 'kickstartdeals'
-  month        DATE    NOT NULL,          -- first day of the month
-  sales        NUMERIC NOT NULL DEFAULT 0,
-  tips         NUMERIC NOT NULL DEFAULT 0,
-  total_income NUMERIC NOT NULL DEFAULT 0,
-  fees         NUMERIC NOT NULL DEFAULT 0, -- "Fees & costs" (commission, processing, boost, shipping, adjustments)
-  payouts      NUMERIC NOT NULL DEFAULT 0,
-  created_at   TIMESTAMPTZ DEFAULT now(),
-  PRIMARY KEY (account, month)
-);
-
-ALTER TABLE whatnot_monthly_statements ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS "Allow all" ON whatnot_monthly_statements;
-CREATE POLICY "Allow all" ON whatnot_monthly_statements FOR ALL USING (true) WITH CHECK (true);
-
-INSERT INTO whatnot_monthly_statements (account, month, sales, tips, total_income, fees, payouts) VALUES
-  ('jumpstartdeals','2026-01-01',72299.60,56.00,72355.60,11168.45,61214.29),
-  ('jumpstartdeals','2026-02-01',60415.65,83.00,60503.65,8643.40,51855.25),
-  ('jumpstartdeals','2026-03-01',94603.80,68.00,94671.80,13230.92,81440.88),
-  ('jumpstartdeals','2026-04-01',124497.50,33.00,124534.13,18688.26,105845.87),
-  ('jumpstartdeals','2026-05-01',63947.80,36.00,63983.80,10041.38,53899.02),
-  ('jumpstartdeals','2026-06-01',159777.00,26.00,159803.00,22883.96,136962.44),
-  ('jumpstartdeals','2026-07-01',202664.40,228.00,202892.40,30226.97,172678.84),
-  ('jumpstartdeals','2026-08-01',156273.60,76.00,156349.60,24404.68,131931.51),
-  ('jumpstartdeals','2026-09-01',188651.40,60.00,188711.40,26327.60,162383.80),
-  ('kickstartdeals','2026-01-01',46760.85,2.00,46762.85,6136.10,40594.13),
-  ('kickstartdeals','2026-02-01',12049.95,5.00,12054.95,1671.96,10382.99),
-  ('kickstartdeals','2026-03-01',14605.45,5.00,14610.45,2105.59,12504.86),
-  ('kickstartdeals','2026-04-01',18304.00,2.00,18311.00,1936.91,16369.09),
-  ('kickstartdeals','2026-05-01',25936.00,0.00,25936.00,3741.33,22194.67),
-  ('kickstartdeals','2026-06-01',46422.00,16.00,46438.00,6384.88,40053.12),
-  ('kickstartdeals','2026-07-01',19911.00,0.00,19911.00,2584.07,17326.93),
-  ('kickstartdeals','2026-08-01',5628.00,0.00,5628.00,901.55,4726.45),
-  ('kickstartdeals','2026-09-01',3713.00,0.00,3713.00,506.22,3206.78)
-ON CONFLICT (account, month) DO UPDATE SET
-  sales = EXCLUDED.sales, tips = EXCLUDED.tips, total_income = EXCLUDED.total_income,
-  fees = EXCLUDED.fees, payouts = EXCLUDED.payouts;
-
-
--- ---------------------------------------------------------------------------
--- 2. Data fixes
--- ---------------------------------------------------------------------------
--- Load 41 (Nuzzie): drop the $6,100 forklift estimate ($2,500 CA + $3,600 ATL).
 UPDATE loads
    SET total_cost = 102973.93,
        notes = 'CA (arrived; ATL manifest) $52,531.65 + freight $0 (shipper paid) = $52,531.65, 2,291u. '
@@ -81,153 +45,184 @@ UPDATE loads
             || 'Forklift ($6,100 est.) removed 2026-10-16 — Craneworks bills it directly in OPEX.'
  WHERE id = 'Load 41' AND total_cost = 109073.93;
 
--- Widover is the freight broker -> OPEX.
 UPDATE expenses SET category = 'OPEX'
  WHERE description ILIKE '%widover%' AND category IN ('INVENTORY', 'SOURCING');
 
--- Non-inventory odds and ends filed as SOURCING/INVENTORY -> OPEX
--- (Spectrum internet, Apple Cash, Abristow, a Craneworks bill, Target/FedEx refunds, membership fee adjustment).
+-- Spectrum internet, Apple Cash, Abristow, a Craneworks bill, Target/FedEx refunds, membership fee adjustment
 UPDATE expenses SET category = 'OPEX'
  WHERE id IN (9641, 9653, 9655, 9658, 9722, 9733, 10905, 10909, 11254)
    AND category IN ('INVENTORY', 'SOURCING');
 
--- January manual entry: real fees from the January statements (both accounts).
-UPDATE manual_revenue SET fees = 17304.55 WHERE id = 1 AND period_label = 'January 2026';
-
 
 -- ---------------------------------------------------------------------------
--- 3. RPC: statement fees + retired Kickstart sourcing
+-- 2. RPC
 -- ---------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION get_dashboard_summary(date_cutoff DATE DEFAULT NULL, date_end DATE DEFAULT NULL)
 RETURNS JSON LANGUAGE plpgsql AS $$
 DECLARE
-  result JSON;
-  js RECORD; ks RECORD;
-  mr_js RECORD; mr_ks RECORD;
-  total_expenses NUMERIC;
-  total_payroll NUMERIC;
-  total_payroll_sourcing NUMERIC;
-  total_load_cost NUMERIC;
-  total_sourcing NUMERIC;
-  effective_start DATE;
-  expense_start DATE;
-  js_wn_fees NUMERIC; ks_wn_fees NUMERIC;
-  js_items BIGINT; js_revenue NUMERIC; js_fees NUMERIC; js_cogs NUMERIC;
-  ks_items BIGINT; ks_revenue NUMERIC; ks_fees NUMERIC; ks_cogs NUMERIC;
-  fee_gap CONSTANT NUMERIC := 1.1883;   -- actual/estimated Whatnot fees, Feb–Sep 2026
+  d0 DATE := COALESCE(date_cutoff, DATE '2026-01-01');
+  d1 DATE := COALESCE(date_end, CURRENT_DATE);
+  effective_start DATE := GREATEST(COALESCE(date_cutoff, DATE '2026-02-07'), DATE '2026-02-07');
+  expense_start   DATE := COALESCE(date_cutoff, DATE '2026-02-07');
+  ch JSON;
+  total_expenses NUMERIC; total_payroll NUMERIC; total_payroll_sourcing NUMERIC;
+  total_load_cost NUMERIC; total_sourcing NUMERIC; owner_draws NUMERIC;
+  opex_breakdown JSON;
 BEGIN
-  effective_start := GREATEST(COALESCE(date_cutoff, '2026-02-07'), '2026-02-07');
-  expense_start   := COALESCE(date_cutoff, '2026-02-07');
-
-  SELECT COUNT(*)::BIGINT AS items, COALESCE(SUM(buyer_paid),0) AS revenue,
-         COALESCE(SUM(cost_freight),0) AS cogs
-    INTO js FROM profitability WHERE channel = 'Jumpstart'
-      AND (date_cutoff IS NULL OR show_date >= date_cutoff)
-      AND (date_end   IS NULL OR show_date <= date_end);
-
-  SELECT COUNT(*)::BIGINT AS items, COALESCE(SUM(buyer_paid),0) AS revenue,
-         COALESCE(SUM(cost_freight),0) AS cogs
-    INTO ks FROM profitability WHERE channel = 'Kickstart'
-      AND (date_cutoff IS NULL OR show_date >= date_cutoff)
-      AND (date_end   IS NULL OR show_date <= date_end);
-
-  -- Whatnot fees per channel: statement fees for whole months that have a
-  -- statement, otherwise the per-item estimate scaled by fee_gap.
-  -- Bundles / off-platform sales carry no Whatnot fees.
-  WITH est AS (
-    SELECT channel, date_trunc('month', show_date)::date AS m, SUM(total_fees) AS f
+  WITH chan(channel, account) AS (
+    VALUES ('Jumpstart', 'jumpstartdeals'), ('Kickstart', 'kickstartdeals')
+  ),
+  -- Whole statement months inside the range
+  st AS (
+    SELECT c.channel, s.period_start AS m,
+           s.sales + s.tips + COALESCE(s.referral_credits, 0)              AS gross,
+           s.commission, s.processing, s.show_boost,
+           s.seller_shipping + COALESCE(s.shipping_surcharges, 0)          AS shipping,
+           COALESCE(s.order_refunds, 0) + COALESCE(s.other_adjustments, 0) AS adjustments
+      FROM whatnot_statements s JOIN chan c ON c.account = s.account
+     WHERE s.period_start >= DATE '2026-01-01'
+       AND s.period_end = (s.period_start + INTERVAL '1 month' - INTERVAL '1 day')::date
+       AND s.period_start >= d0 AND s.period_end <= d1
+  ),
+  -- Each account's actual 2026 fee rates (per $ of sales) for estimating open months
+  rates AS (
+    SELECT c.channel,
+           SUM(s.commission) / NULLIF(SUM(s.sales), 0)                                              AS r_comm,
+           SUM(s.processing) / NULLIF(SUM(s.sales), 0)                                              AS r_proc,
+           SUM(s.show_boost) / NULLIF(SUM(s.sales), 0)                                              AS r_boost,
+           SUM(s.seller_shipping + COALESCE(s.shipping_surcharges, 0)) / NULLIF(SUM(s.sales), 0)    AS r_ship,
+           SUM(COALESCE(s.order_refunds, 0) + COALESCE(s.other_adjustments, 0)) / NULLIF(SUM(s.sales), 0) AS r_adj
+      FROM whatnot_statements s JOIN chan c ON c.account = s.account
+     WHERE s.period_start >= DATE '2026-01-01'
+     GROUP BY 1
+  ),
+  -- Scanned Whatnot sales per channel-month (bundles excluded)
+  wn AS (
+    SELECT channel, date_trunc('month', show_date)::date AS m, SUM(buyer_paid) AS paid
       FROM profitability
-     WHERE NOT COALESCE(is_bundle, false)
-       AND (date_cutoff IS NULL OR show_date >= date_cutoff)
-       AND (date_end   IS NULL OR show_date <= date_end)
+     WHERE NOT COALESCE(is_bundle, false) AND show_date BETWEEN d0 AND d1
      GROUP BY 1, 2
+  ),
+  whatnot_lines AS (
+    SELECT channel, gross, commission, processing, show_boost, shipping, adjustments, false AS est FROM st
+    UNION ALL
+    SELECT w.channel, w.paid, w.paid * r.r_comm, w.paid * r.r_proc, w.paid * r.r_boost,
+           w.paid * r.r_ship, w.paid * r.r_adj, true
+      FROM wn w JOIN rates r USING (channel)
+     WHERE NOT EXISTS (SELECT 1 FROM st WHERE st.channel = w.channel AND st.m = w.m)
+  ),
+  wl AS (
+    SELECT channel, SUM(gross) gross, SUM(commission) commission, SUM(processing) processing,
+           SUM(show_boost) show_boost, SUM(shipping) shipping, SUM(adjustments) adjustments,
+           bool_or(est) estimated
+      FROM whatnot_lines GROUP BY 1
+  ),
+  -- Item counts, off-platform sales, COGS, write-offs from the item-level data
+  items AS (
+    SELECT channel, COUNT(*) AS items,
+           SUM(CASE WHEN COALESCE(is_bundle, false) THEN buyer_paid ELSE 0 END)                         AS offplatform,
+           SUM(cost_freight)                                                                           AS cogs,
+           SUM(CASE WHEN COALESCE(is_bundle, false) AND COALESCE(buyer_paid, 0) = 0 THEN cost_freight ELSE 0 END) AS writeoffs
+      FROM profitability WHERE show_date BETWEEN d0 AND d1
+     GROUP BY 1
+  ),
+  -- Manual (pre-launch) months: COGS/items always; revenue only if no statement covers the month
+  mr AS (
+    SELECT m.channel, SUM(m.items) items, SUM(m.cogs) cogs,
+           SUM(CASE WHEN EXISTS (SELECT 1 FROM st WHERE st.channel = m.channel
+                                                     AND st.m = date_trunc('month', m.period_start)::date)
+                    THEN 0 ELSE m.revenue END) AS revenue
+      FROM manual_revenue m
+     WHERE m.period_start >= d0 AND m.period_end <= d1
+     GROUP BY 1
+  ),
+  per_ch AS (
+    SELECT c.channel,
+           COALESCE(i.items, 0) + COALESCE(mr.items, 0)                              AS items,
+           COALESCE(wl.gross, 0) + COALESCE(mr.revenue, 0)                           AS whatnot_sales,
+           COALESCE(i.offplatform, 0)                                                AS offplatform_sales,
+           COALESCE(wl.commission, 0) AS commission, COALESCE(wl.processing, 0) AS processing,
+           COALESCE(wl.show_boost, 0) AS show_boost, COALESCE(wl.shipping, 0)  AS shipping,
+           COALESCE(wl.adjustments, 0) AS adjustments,
+           COALESCE(wl.estimated, false)                                             AS fees_estimated,
+           COALESCE(i.cogs, 0) + COALESCE(mr.cogs, 0)                                AS cogs,
+           COALESCE(i.writeoffs, 0)                                                  AS writeoffs
+      FROM chan c
+      LEFT JOIN wl    ON wl.channel = c.channel
+      LEFT JOIN items i ON i.channel = c.channel
+      LEFT JOIN mr    ON mr.channel = c.channel
   )
-  SELECT
-    COALESCE(SUM(CASE WHEN e.channel = 'Jumpstart' THEN COALESCE(s.fees, e.f * fee_gap) END), 0),
-    COALESCE(SUM(CASE WHEN e.channel = 'Kickstart' THEN COALESCE(s.fees, e.f * fee_gap) END), 0)
-    INTO js_wn_fees, ks_wn_fees
-    FROM est e
-    LEFT JOIN whatnot_monthly_statements s
-      ON s.account = CASE e.channel WHEN 'Jumpstart' THEN 'jumpstartdeals' ELSE 'kickstartdeals' END
-     AND s.month = e.m
-     AND (date_cutoff IS NULL OR e.m >= date_cutoff)                                         -- month fully
-     AND (date_end   IS NULL OR (e.m + INTERVAL '1 month' - INTERVAL '1 day')::date <= date_end); -- inside range
-
-  SELECT COALESCE(SUM(items),0)::BIGINT AS items, COALESCE(SUM(revenue),0) AS revenue,
-         COALESCE(SUM(fees),0) AS fees, COALESCE(SUM(cogs),0) AS cogs
-    INTO mr_js FROM manual_revenue WHERE channel = 'Jumpstart'
-      AND (date_cutoff IS NULL OR period_start >= date_cutoff)
-      AND (date_end    IS NULL OR period_end   <= date_end);
-
-  SELECT COALESCE(SUM(items),0)::BIGINT AS items, COALESCE(SUM(revenue),0) AS revenue,
-         COALESCE(SUM(fees),0) AS fees, COALESCE(SUM(cogs),0) AS cogs
-    INTO mr_ks FROM manual_revenue WHERE channel = 'Kickstart'
-      AND (date_cutoff IS NULL OR period_start >= date_cutoff)
-      AND (date_end    IS NULL OR period_end   <= date_end);
-
-  js_items   := js.items   + mr_js.items;
-  js_revenue := js.revenue + mr_js.revenue;
-  js_fees    := ROUND(js_wn_fees + mr_js.fees, 2);
-  js_cogs    := js.cogs    + mr_js.cogs;
-
-  ks_items   := ks.items   + mr_ks.items;
-  ks_revenue := ks.revenue + mr_ks.revenue;
-  ks_fees    := ROUND(ks_wn_fees + mr_ks.fees, 2);
-  ks_cogs    := ks.cogs    + mr_ks.cogs;
+  SELECT json_object_agg(lower(channel), json_build_object(
+           'items', items,
+           'whatnot_sales', ROUND(whatnot_sales, 2),
+           'offplatform_sales', ROUND(offplatform_sales, 2),
+           'revenue', ROUND(whatnot_sales + offplatform_sales, 2),
+           'commission', ROUND(commission, 2),
+           'processing', ROUND(processing, 2),
+           'show_boost', ROUND(show_boost, 2),
+           'shipping', ROUND(shipping, 2),
+           'adjustments', ROUND(adjustments, 2),
+           'fees', ROUND(commission + processing + show_boost + shipping + adjustments, 2),
+           'fees_estimated', fees_estimated,
+           'net_revenue', ROUND(whatnot_sales + offplatform_sales
+                                - (commission + processing + show_boost + shipping + adjustments), 2),
+           'cogs', ROUND(cogs, 2),
+           'writeoffs', ROUND(writeoffs, 2),
+           'gross_profit', ROUND(whatnot_sales + offplatform_sales
+                                 - (commission + processing + show_boost + shipping + adjustments) - cogs, 2)
+         ))
+    INTO ch FROM per_ch;
 
   SELECT COALESCE(SUM(amount), 0) INTO total_expenses FROM expenses
-    WHERE category = 'OPEX' AND date >= expense_start
-    AND (date_end IS NULL OR date <= date_end);
+   WHERE category = 'OPEX' AND date >= expense_start AND date <= d1;
 
   SELECT COALESCE(SUM(amount), 0) INTO total_payroll FROM expenses
-    WHERE category = 'PAYROLL' AND date >= expense_start
-    AND (date_end IS NULL OR date <= date_end);
+   WHERE category = 'PAYROLL' AND date >= expense_start AND date <= d1;
 
   SELECT COALESCE(SUM(amount), 0) INTO total_payroll_sourcing FROM expenses
-    WHERE category = 'PAYROLL_SOURCING' AND date >= expense_start
-    AND (date_end IS NULL OR date <= date_end);
+   WHERE category = 'PAYROLL_SOURCING' AND date >= expense_start AND date <= d1;
 
-  -- All inventory cash = the loads table (opening carry-over loads excluded).
+  SELECT COALESCE(SUM(amount), 0) INTO owner_draws FROM expenses
+   WHERE category = 'OWNER_DRAW' AND date >= expense_start AND date <= d1;
+
+  -- OPEX by GL account (largest first)
+  SELECT COALESCE(json_agg(json_build_object('code', code, 'name', name, 'amount', amount) ORDER BY amount DESC), '[]'::json)
+    INTO opex_breakdown
+    FROM (SELECT e.gl_code AS code, COALESCE(a.name, 'Unmapped') AS name, ROUND(SUM(e.amount), 2) AS amount
+            FROM expenses_gl e LEFT JOIN gl_accounts a ON a.code = e.gl_code
+           WHERE e.category = 'OPEX' AND e.date >= expense_start AND e.date <= d1
+           GROUP BY 1, 2) x;
+
+  -- All inventory cash = the loads table (opening carry-over loads excluded)
   SELECT COALESCE(SUM(total_cost), 0) INTO total_load_cost FROM loads
-    WHERE date >= effective_start AND (date_end IS NULL OR date <= date_end)
-      AND COALESCE(is_opening, false) = false;
+   WHERE date >= effective_start AND date <= d1 AND COALESCE(is_opening, false) = false;
 
-  -- Kickstart sourcing (RETIRED): only the four real Kickstart sourcing
-  -- vendors, only through the end of the FP wind-down. Identified set — an
-  -- unrecognized payment can never land here again.
+  -- Kickstart sourcing (RETIRED): identified vendors only, through 2026-06-30
   SELECT COALESCE(SUM(amount), 0) INTO total_sourcing FROM expenses
-    WHERE category IN ('SOURCING', 'INVENTORY')
-      AND date <= '2026-06-30'
-      AND (   description ILIKE '%reclectic%'
-           OR description ILIKE '%businessrsor%'
-           OR description ILIKE '%888 digital%'
-           OR description ILIKE '%dick%sporting%'
-           OR description ILIKE '%dickssporting%')
-      AND date >= expense_start AND (date_end IS NULL OR date <= date_end);
+   WHERE category IN ('SOURCING', 'INVENTORY')
+     AND date <= DATE '2026-06-30'
+     AND (   description ILIKE '%reclectic%'
+          OR description ILIKE '%businessrsor%'
+          OR description ILIKE '%888 digital%'
+          OR description ILIKE '%dick%sporting%'
+          OR description ILIKE '%dickssporting%')
+     AND date >= expense_start AND date <= d1;
 
-  result := json_build_object(
-    'jumpstart', json_build_object(
-      'items', js_items, 'revenue', js_revenue, 'fees', js_fees,
-      'net_revenue', ROUND(js_revenue - js_fees, 2),
-      'cogs', js_cogs,
-      'gross_profit', ROUND(js_revenue - js_fees - js_cogs, 2)
-    ),
-    'kickstart', json_build_object(
-      'items', ks_items, 'revenue', ks_revenue, 'fees', ks_fees,
-      'net_revenue', ROUND(ks_revenue - ks_fees, 2),
-      'cogs', ks_cogs,
-      'gross_profit', ROUND(ks_revenue - ks_fees - ks_cogs, 2)
-    ),
-    'expenses', total_expenses, 'payroll', total_payroll,
+  RETURN json_build_object(
+    'jumpstart', ch -> 'jumpstart',
+    'kickstart', ch -> 'kickstart',
+    'expenses', total_expenses,
+    'opex_breakdown', opex_breakdown,
+    'payroll', total_payroll,
     'payroll_sourcing', total_payroll_sourcing,
+    'owner_draws', owner_draws,
     'load_cost', total_load_cost, 'load_freight', 0,
     'sourcing', total_sourcing, 'sourcing_direct', total_sourcing,
     'sourcing_venmo', 0, 'sourcing_ups', 0
   );
-  RETURN result;
 END; $$;
 
 NOTIFY pgrst, 'reload schema';
 
--- Verify (expected YTD: Kickstart sourcing ~$160.7K, fees up ~$46K):
+-- Verify:
 -- SELECT get_dashboard_summary('2026-01-01', '2026-12-31');
