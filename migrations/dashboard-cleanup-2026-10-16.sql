@@ -96,12 +96,21 @@ BEGIN
      WHERE s.period_start >= DATE '2026-01-01'
      GROUP BY 1
   ),
+  -- ONE pass over the (heavy) profitability view: per channel-month aggregates
+  agg AS MATERIALIZED (
+    SELECT channel, date_trunc('month', show_date)::date AS m,
+           COUNT(*)                                                                                     AS items,
+           SUM(CASE WHEN COALESCE(is_bundle, false) THEN 0 ELSE buyer_paid END)                         AS paid,
+           SUM(CASE WHEN COALESCE(is_bundle, false) THEN buyer_paid ELSE 0 END)                         AS offplatform,
+           SUM(cost_freight)                                                                           AS cogs,
+           SUM(CASE WHEN COALESCE(is_bundle, false) AND COALESCE(buyer_paid, 0) = 0 THEN cost_freight ELSE 0 END) AS writeoffs
+      FROM profitability
+     WHERE show_date BETWEEN d0 AND d1
+     GROUP BY 1, 2
+  ),
   -- Scanned Whatnot sales per channel-month (bundles excluded)
   wn AS (
-    SELECT channel, date_trunc('month', show_date)::date AS m, SUM(buyer_paid) AS paid
-      FROM profitability
-     WHERE NOT COALESCE(is_bundle, false) AND show_date BETWEEN d0 AND d1
-     GROUP BY 1, 2
+    SELECT channel, m, paid FROM agg WHERE paid <> 0
   ),
   whatnot_lines AS (
     SELECT channel, gross, commission, processing, show_boost, shipping, adjustments, false AS est FROM st
@@ -119,12 +128,9 @@ BEGIN
   ),
   -- Item counts, off-platform sales, COGS, write-offs from the item-level data
   items AS (
-    SELECT channel, COUNT(*) AS items,
-           SUM(CASE WHEN COALESCE(is_bundle, false) THEN buyer_paid ELSE 0 END)                         AS offplatform,
-           SUM(cost_freight)                                                                           AS cogs,
-           SUM(CASE WHEN COALESCE(is_bundle, false) AND COALESCE(buyer_paid, 0) = 0 THEN cost_freight ELSE 0 END) AS writeoffs
-      FROM profitability WHERE show_date BETWEEN d0 AND d1
-     GROUP BY 1
+    SELECT channel, SUM(items) AS items, SUM(offplatform) AS offplatform,
+           SUM(cogs) AS cogs, SUM(writeoffs) AS writeoffs
+      FROM agg GROUP BY 1
   ),
   -- Manual (pre-launch) months: COGS/items always; revenue only if no statement covers the month
   mr AS (
