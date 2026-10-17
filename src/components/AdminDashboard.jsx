@@ -339,19 +339,18 @@ export default function AdminDashboard() {
                 return (
                   <>
                     <PLRow label="Inventory Purchases" value={-invPurchases} bold />
-                    {isSummary && (
+                    {/* Kickstart sourcing ended 2026-06-30 — only shown for ranges that include it */}
+                    {isSummary && ksInvPurchases !== 0 && (
                       <>
-                        <PLRow label="Jumpstart" value={-jsInvPurchases} indent />
-                        <PLRow label="Kickstart" value={-ksInvPurchases} indent />
+                        <PLRow label="Loads" value={-jsInvPurchases} indent />
+                        <PLRow label="Kickstart sourcing (ended Jun 30)" value={-ksInvPurchases} indent />
                       </>
                     )}
                     {channel === 'Jumpstart' && (
                       <PLRow label="Load Costs" value={-(data?.loadCost || 0)} indent />
                     )}
-                    {channel === 'Kickstart' && (
-                      <>
-                        <PLRow label="Sourcing" value={-(data?.sourcing || 0)} indent />
-                      </>
+                    {channel === 'Kickstart' && ksInvPurchases !== 0 && (
+                      <PLRow label="Sourcing (ended Jun 30)" value={-(data?.sourcing || 0)} indent />
                     )}
 
                     {isSummary && (

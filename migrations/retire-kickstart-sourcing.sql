@@ -1,3 +1,4 @@
+-- SUPERSEDED by dashboard-cleanup-2026-10-16.sql — do not run.
 -- ============================================================================
 -- Retire "Kickstart sourcing" after the FP wind-down (supersedes
 -- fix-ghost-vendor-exclusion.sql -- run this one instead)
