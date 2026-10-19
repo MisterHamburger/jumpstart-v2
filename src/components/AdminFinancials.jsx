@@ -180,13 +180,16 @@ function ManagementTable({ books, ytd, selected, onSelect }) {
         <Line label="Cost of goods sold" values={row(c => -c.cogs)} />
         <Line label="Gross profit" values={row(c => c.gp)} bold top />
         <Line label="Gross margin" values={row(c => pct(c.gp, c.netRevenue))} dim pctRow />
-        <Line label="Labor (payroll, contractors)" values={row(c => -c.labor)} />
+        <Line label="Labor (payroll, contractors, partners)" values={row(c => -c.labor)} />
         <Line label="Operating expenses" values={row(c => -c.opex)} />
         <Line label="Other income / (expense)" values={row(c => -c.otherInc)} />
         <Line label="Net profit" values={row(c => c.net)} bold top />
         <Line label="Net margin" values={row(c => pct(c.net, c.netRevenue))} dim pctRow />
         <Line label="vs. $23K/mo target" values={[...books.months.map(m => books.pnl[m].netIncome - TARGET_MONTHLY_NET), ytd.netIncome - TARGET_MONTHLY_NET * books.months.length]} dim />
-        <Line label="Owner draws (not an expense)" values={[...books.months.map(m => books.pnl[m].ownerDraws), books.months.reduce((s, m) => s + books.pnl[m].ownerDraws, 0)]} dim top />
+        <Line label="Guaranteed payments to partners (in Labor)" values={[...books.months.map(m => books.pnl[m].guaranteedPayments), books.months.reduce((s, m) => s + books.pnl[m].guaranteedPayments, 0)]} dim top />
+        {books.months.some(m => books.pnl[m].ownerDraws) && (
+          <Line label="Owner draws (not an expense)" values={[...books.months.map(m => books.pnl[m].ownerDraws), books.months.reduce((s, m) => s + books.pnl[m].ownerDraws, 0)]} dim />
+        )}
         <Line label="Capital invested" values={[...books.months.map(m => books.pnl[m].capitalIn), books.months.reduce((s, m) => s + books.pnl[m].capitalIn, 0)]} dim />
         <Line label="Inventory at month-end" values={[...books.months.map(m => books.pnl[m].endInventory), books.pnl[books.months[books.months.length - 1]].endInventory]} dim />
       </tbody>

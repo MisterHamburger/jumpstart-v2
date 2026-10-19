@@ -180,6 +180,7 @@ export async function loadBooks(year) {
       inventory: inv, status: closes[m]?.status || 'open', close: closes[m] || null,
       unmapped: expenses.filter(e => e.date >= m && e.date <= me && e.gl_code === '7099'),
       ownerDraws: round2(expenses.filter(e => e.date >= m && e.date <= me && e.gl_code === '3010').reduce((s, e) => s + Number(e.amount), 0)),
+      guaranteedPayments: round2(expenses.filter(e => e.date >= m && e.date <= me && e.gl_code === '6070').reduce((s, e) => s + Number(e.amount), 0)),
       capitalIn: round2(-expenses.filter(e => e.date >= m && e.date <= me && e.gl_code === '3000').reduce((s, e) => s + Number(e.amount), 0)),
       statementsLoaded: Object.keys(STORE_REVENUE).filter(a => statements.find(s => s.account === a && s.period_start === m)),
     }
