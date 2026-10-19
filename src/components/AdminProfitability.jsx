@@ -4,11 +4,11 @@ import { supabase } from '../lib/supabase'
 function formatShowName(name) {
   if (!name) return 'All Shows'
   // New format: 02-19-2026-Jumpstart-Bri
-  const newMatch = name.match(/^(\d{2})-(\d{2})-(\d{4})-(\w+)-(\w+)$/)
+  const newMatch = name.match(/^(\d{2})-(\d{2})-(\d{4})-(\w+)-(\w+?)(?:-(\d+))?$/)
   if (newMatch) {
-    const [, month, day, year, channel, streamer] = newMatch
+    const [, month, day, year, channel, streamer, seq] = newMatch
     const monthNames = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-    return `${monthNames[parseInt(month)]} ${parseInt(day)} - ${streamer}`
+    return `${monthNames[parseInt(month)]} ${parseInt(day)} - ${streamer}${seq ? ` (${seq})` : ''}`
   }
   // Old format: 2026-02-19-Jumpstart-evening
   const oldMatch = name.match(/(\d{4})-(\d{2})-(\d{2})-(\w+)-(\w+)/)
@@ -39,11 +39,11 @@ function formatItemTitle(item) {
 function formatShowNameFull(name) {
   if (!name) return 'All Shows'
   // New format: 02-19-2026-Jumpstart-Bri
-  const newMatch = name.match(/^(\d{2})-(\d{2})-(\d{4})-(\w+)-(\w+)$/)
+  const newMatch = name.match(/^(\d{2})-(\d{2})-(\d{4})-(\w+)-(\w+?)(?:-(\d+))?$/)
   if (newMatch) {
-    const [, month, day, year, channel, streamer] = newMatch
+    const [, month, day, year, channel, streamer, seq] = newMatch
     const monthNames = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-    return `${monthNames[parseInt(month)]} ${parseInt(day)} - ${channel} - ${streamer}`
+    return `${monthNames[parseInt(month)]} ${parseInt(day)} - ${channel} - ${streamer}${seq ? ` (${seq})` : ''}`
   }
   // Old format: 2026-02-19-Jumpstart-evening
   const oldMatch = name.match(/(\d{4})-(\d{2})-(\d{2})-(\w+)-(\w+)/)

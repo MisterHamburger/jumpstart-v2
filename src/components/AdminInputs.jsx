@@ -815,7 +815,7 @@ function ShowUpload() {
 
     Papa.parse(file, {
       header: true, skipEmptyLines: true,
-      complete: (results) => {
+      complete: async (results) => {
         const rows = results.data
 
         // Collect all timestamps
@@ -877,10 +877,27 @@ function ShowUpload() {
         }
 
         // Check if this show already exists
-        // Format: 02-19-2026-Jumpstart-Bri
+        // Format: 02-19-2026-Jumpstart-Bri; a streamer's 2nd show that day
+        // gets a -2 suffix (02-19-2026-Jumpstart-Bri-2). A same-name show is
+        // only a duplicate if it already holds this CSV's Whatnot order IDs.
         const [year, month, day] = showDate.split('-')
-        const showName = `${month}-${day}-${year}-${channel}-${streamer}`
-        const alreadyExists = existingShows.some(s => s.name === showName)
+        const baseName = `${month}-${day}-${year}-${channel}-${streamer}`
+        const sameDay = existingShows.filter(s => s.name === baseName || s.name.startsWith(`${baseName}-`))
+        let alreadyExists = false
+        let showName = baseName
+        if (sameDay.length > 0) {
+          const orderIds = new Set(rows.map(r => getField(r, 'order id', 'Order ID')).filter(Boolean))
+          const { data: prior } = await supabase.from('show_items')
+            .select('whatnot_order_id')
+            .in('show_id', sameDay.map(s => s.id))
+            .not('whatnot_order_id', 'is', null)
+          alreadyExists = orderIds.size === 0 || (prior || []).some(p => orderIds.has(p.whatnot_order_id))
+          if (!alreadyExists) {
+            let n = 2
+            while (sameDay.some(s => s.name === `${baseName}-${n}`)) n++
+            showName = `${baseName}-${n}`
+          }
+        }
 
         setDetected({ date: showDate, timeOfDay, orderCount: validCount, failedCount, cancelledCount, showName, alreadyExists, firstOrder: timestamps[0], lastOrder: timestamps[timestamps.length - 1] })
         setPendingFile({ file, rows })
@@ -1064,10 +1081,10 @@ function ShowUpload() {
   // Format show name for display: "02-19-2026-Jumpstart-Bri"
   function formatShowDisplay(show) {
     // Try to parse from the name if it's in the new format
-    const match = show.name.match(/^(\d{2})-(\d{2})-(\d{4})-(\w+)-(\w+)$/)
+    const match = show.name.match(/^(\d{2})-(\d{2})-(\d{4})-(\w+)-(\w+?)(?:-(\d+))?$/)
     if (match) {
-      const [, month, day, year, ch, streamer] = match
-      return { date: `${month}-${day}-${year}`, channel: ch, streamer }
+      const [, month, day, year, ch, streamer, seq] = match
+      return { date: `${month}-${day}-${year}`, channel: ch, streamer: seq ? `${streamer} (${seq})` : streamer }
     }
     // Old format: 2026-02-19-Jumpstart-evening
     const oldMatch = show.name.match(/^(\d{4})-(\d{2})-(\d{2})-(\w+)-(\w+)$/)
