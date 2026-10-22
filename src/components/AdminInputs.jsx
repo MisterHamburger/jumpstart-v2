@@ -1532,12 +1532,18 @@ function ExpenseUpload() {
           if (c === 'PAYROLL - SOURCING FEES' || c === 'PAYROLL-SOURCING FEES' || c === 'PAYROLL SOURCING FEES' || c === 'PAYROLL_SOURCING') return 'PAYROLL_SOURCING'
           return c
         }
-        const parsed = results.data.map(row => ({
-          date: getField(row, 'date', 'Date') || null,
-          description: getField(row, 'name', 'Description', 'Vendor') || '',
-          amount: parseFloat((getField(row, 'amount', 'Amount') || '0').toString().replace(/[$,]/g, '')) || 0,
-          category: normalizeCategory(getField(row, 'category', 'Category'))
-        })).filter(e => e.date && e.amount && ['OPEX', 'PAYROLL', 'PAYROLL_SOURCING', 'SOURCING', 'INVENTORY'].includes(e.category))
+        // Pending charges are pre-authorizations (hotel holds, pre-tip amounts) that
+        // later post at a different amount — never import them.
+        const parsed = results.data
+          .filter(row => (getField(row, 'status', 'Status') || 'posted').toLowerCase() !== 'pending')
+          .map(row => ({
+            date: getField(row, 'date', 'Date') || null,
+            description: getField(row, 'name', 'Description', 'Vendor') || '',
+            amount: parseFloat((getField(row, 'amount', 'Amount') || '0').toString().replace(/[$,]/g, '')) || 0,
+            category: normalizeCategory(getField(row, 'category', 'Category')),
+            account: getField(row, 'account', 'Account') || null,
+            account_mask: getField(row, 'account mask', 'Account Mask') || null,
+          })).filter(e => e.date && e.amount && ['OPEX', 'PAYROLL', 'PAYROLL_SOURCING', 'SOURCING', 'INVENTORY'].includes(e.category))
         .map(e => {
           const desc = e.description.toLowerCase()
 
@@ -1587,40 +1593,71 @@ function ExpenseUpload() {
           return
         }
 
-        setStatus(`Found ${parsed.length} expense/payroll rows. Checking for duplicates...`)
+        setStatus(`Found ${parsed.length} posted expense rows. Syncing open months...`)
 
-        // Fetch all existing records to deduplicate.
-        // Key uses normalized description so trivial formatting differences between
-        // feeds (transaction codes, whitespace, trailing punctuation) still collide.
-        const existing = await fetchAll(() => supabase.from('expenses').select('date, description, amount'))
-        const keyFor = (e) => `${e.date}|${normalizeExpenseDesc(e.description)}|${Number(e.amount).toFixed(2)}`
-        // Count matches instead of using a set: the same charge can legitimately
-        // appear twice on one day (e.g. two identical Dick's orders), so a CSV row is
-        // only a duplicate while an unmatched existing row with the same key remains.
-        const existingCounts = new Map()
-        for (const e of existing) existingCounts.set(keyFor(e), (existingCounts.get(keyFor(e)) || 0) + 1)
-
-        const newRows = parsed.filter(e => {
-          const k = keyFor(e)
-          const n = existingCounts.get(k) || 0
-          if (n > 0) { existingCounts.set(k, n - 1); return false }
-          return true
-        })
-
-        if (newRows.length === 0) {
-          setStatus(`✅ All ${parsed.length} rows already exist — nothing to upload`)
+        // 1. Closed months are locked: they were reconciled to bank and card
+        //    statements, so the feed never writes into them again.
+        const { data: closes } = await supabase.from('month_closes').select('month, status')
+        // Everything up to the latest closed month is locked, including years before
+        // the books started (2025 and earlier are filed).
+        const closedMonths = (closes || []).filter(c => c.status === 'closed').map(c => c.month.slice(0, 7)).sort()
+        const lastClosed = closedMonths[closedMonths.length - 1] || '2025-12'
+        const closed = { has: (ym) => ym <= lastClosed || closedMonths.includes(ym) }
+        const open = parsed.filter(e => !closed.has(e.date.slice(0, 7)))
+        const lockedCount = parsed.length - open.length
+        if (open.length === 0) {
+          setStatus(`✅ Nothing to import — all ${parsed.length} rows fall in closed months (locked).`)
           await supabase.from('expense_upload_log').insert({ rows_added: 0, rows_skipped: parsed.length, filename })
           fetchLog()
           return
         }
 
-        const { error } = await supabase.from('expenses').insert(newRows)
-        if (error) { setStatus(`❌ Error: ${error.message}`); return }
+        // 2. Open months mirror Co-pilot's current list. Within the CSV's date range,
+        //    a CSV row matches an existing row on date + amount + description, then on
+        //    date + amount alone (Co-pilot sometimes renames a charge between exports).
+        //    Counts, not sets: two identical charges on one day are both real.
+        const dates = open.map(e => e.date).sort()
+        const from = dates[0], to = dates[dates.length - 1]
+        const managed = ['OPEX', 'PAYROLL', 'PAYROLL_SOURCING', 'SOURCING', 'INVENTORY', 'OWNER_DRAW']
+        const existing = (await fetchAll(() => supabase.from('expenses')
+          .select('id, date, description, amount, category, gl_account, account, account_mask, created_at')
+          .gte('date', from).lte('date', to).in('category', managed)))
+          .filter(e => !closed.has(e.date.slice(0, 7)))
 
-        const skipped = parsed.length - newRows.length
-        setStatus(`✅ Uploaded ${newRows.length} new rows${skipped > 0 ? ` (${skipped} duplicates skipped)` : ''}`)
+        const amt = (x) => Number(x).toFixed(2)
+        const unmatched = [...existing]
+        const take = (pred) => { const i = unmatched.findIndex(pred); return i < 0 ? null : unmatched.splice(i, 1)[0] }
+        const toInsert = [], toTag = []
+        for (const e of open) {
+          const m = take(x => x.date === e.date && amt(x.amount) === amt(e.amount) && normalizeExpenseDesc(x.description) === normalizeExpenseDesc(e.description))
+            || take(x => x.date === e.date && amt(x.amount) === amt(e.amount))
+          if (!m) toInsert.push(e)
+          else if (!m.account_mask && e.account_mask) toTag.push({ id: m.id, account: e.account, account_mask: e.account_mask })
+        }
+        // Rows Co-pilot no longer has (old pending holds, renamed copies) — back up, then remove.
+        const toRemove = unmatched
 
-        await supabase.from('expense_upload_log').insert({ rows_added: newRows.length, rows_skipped: skipped, filename })
+        if (toRemove.length) {
+          const { error: bErr } = await supabase.from('expense_import_removed').insert(toRemove.map(r => ({
+            id: r.id, date: r.date, description: r.description, amount: r.amount, category: r.category,
+            gl_account: r.gl_account, account: r.account, account_mask: r.account_mask, created_at: r.created_at,
+            reason: `not in Co-pilot export ${filename}`,
+          })))
+          if (bErr) { setStatus(`❌ Backup of removed rows failed, nothing changed: ${bErr.message}`); return }
+          const { error: dErr } = await supabase.from('expenses').delete().in('id', toRemove.map(r => r.id))
+          if (dErr) { setStatus(`❌ Error removing stale rows: ${dErr.message}`); return }
+        }
+        for (const t of toTag) {
+          await supabase.from('expenses').update({ account: t.account, account_mask: t.account_mask }).eq('id', t.id)
+        }
+        if (toInsert.length) {
+          const { error } = await supabase.from('expenses').insert(toInsert)
+          if (error) { setStatus(`❌ Error: ${error.message}`); return }
+        }
+
+        setStatus(`✅ ${from} → ${to}: +${toInsert.length} new, −${toRemove.length} no longer in Co-pilot (backed up), ${open.length - toInsert.length} unchanged` +
+          (lockedCount ? ` · ${lockedCount} rows in closed months skipped (locked)` : ''))
+        await supabase.from('expense_upload_log').insert({ rows_added: toInsert.length, rows_skipped: parsed.length - toInsert.length, filename })
         fetchLog()
       }
     })
@@ -1630,26 +1667,12 @@ function ExpenseUpload() {
     <div className="relative overflow-hidden rounded-3xl glass-card p-5 shadow-xl shadow-black/30">
       <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent" />
       <h3 className="font-bold text-lg font-heading mb-2">Upload Expenses CSV</h3>
-      <p className="text-sm text-slate-400 mb-4">Upload Copilot transactions CSV. Only OPEX and PAYROLL rows are imported. Everything else is ignored. Duplicates are automatically skipped.</p>
+      <p className="text-sm text-slate-400 mb-4">Upload the Co-pilot transactions CSV. Open months are synced to Co-pilot (pending charges skipped, stale rows backed up and removed). Closed months are locked — they tie to bank and card statements.</p>
       <DropZone onFile={handleFile} label="Drop expenses CSV here" />
       {status && <p className="text-sm text-slate-300 mt-3">{status}</p>}
 
       <div className="mt-5 pt-4 border-t border-white/10 flex items-center justify-between mb-2">
         <h4 className="text-sm font-semibold text-white/70">Upload History</h4>
-        <button
-          onClick={async () => {
-            if (!window.confirm('⚠️ DELETE ALL EXPENSE DATA?\n\nThis will permanently remove ALL OpEx and Payroll rows from the database. You will need to re-upload your Copilot CSV to restore the data.\n\nAre you sure?')) return
-            setStatus('Deleting all expenses...')
-            const { error } = await supabase.from('expenses').delete().neq('id', 0)
-            if (error) { setStatus(`❌ Delete failed: ${error.message}`); return }
-            await supabase.from('expense_upload_log').delete().neq('id', 0)
-            setStatus('✅ All expense data deleted. Upload a new CSV to reload.')
-            fetchLog()
-          }}
-          className="text-xs text-red-400 hover:text-red-300 hover:bg-red-500/10 px-2 py-1 rounded transition-colors"
-        >
-          Delete All
-        </button>
       </div>
       <div>
         {logLoading ? (
