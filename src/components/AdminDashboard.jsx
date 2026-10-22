@@ -1,431 +1,343 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { supabase } from '../lib/supabase'
+import { loadBooks, monthLabel, sumLines, totals } from '../lib/books'
 
-// Three independent filter dropdowns:
-//   - preset: relative ranges (default "This month")
-//   - year:   specific calendar year (overrides preset when set)
-//   - month:  specific month (overrides both — uses `year` or current year)
-// Business data starts in 2026; the year dropdown auto-extends as the
-// calendar year advances.
+// One rulebook (docs/financial-rules.md). Closed months come straight from the
+// books (Financials tab); open months are the same engine's estimate — item
+// cost at vendor cost for COGS, Whatnot fees from statements or each account's
+// actual fee rates. The Sales Pulse below is item-level and labeled as such.
+
 const BUSINESS_START_YEAR = 2026
+const GOAL = { year: 2026, netIncome: 200000 }
+// Unit-economics targets (from the former Targets tab): 40% gross margin.
+const PER_ITEM = { netRevenue: 12.5, maxCost: 9.32, grossProfit: 5.0 }
 
-const DATE_RANGES = [
-  { label: 'Year to date', value: 'ytd' },
-  { label: 'This month', value: 'month' },
-  { label: 'Last month', value: 'lastmonth' },
-  { label: 'Last 7 days', value: '7d' },
-  { label: 'Last 30 days', value: '30d' },
-  { label: 'Custom', value: 'custom' },
+const LINE_GROUPS = [
+  { label: 'Gross sales', codes: ['4000', '4001', '4004', '4002'], sign: 1, kind: 'sales' },
+  { label: 'Refunds', codes: ['4005'], sign: 1, kind: 'refunds' },
+  { label: 'Whatnot fees', codes: ['7080', '7085', '7090', '7095'], sign: -1, kind: 'fees' },
 ]
-
-const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December']
-
-function yearOptions() {
-  const currentYear = new Date().getFullYear()
-  const out = []
-  for (let y = currentYear; y >= BUSINESS_START_YEAR; y--) out.push(y)
-  return out
-}
-
-function getDateRange(range) {
-  const now = new Date()
-  let start, end = null
-  if (range === 'ytd') {
-    start = new Date(now.getFullYear(), 0, 1)
-  } else if (range === 'month') {
-    start = new Date(now.getFullYear(), now.getMonth(), 1)
-  } else if (range === 'lastmonth') {
-    start = new Date(now.getFullYear(), now.getMonth() - 1, 1)
-    end = new Date(now.getFullYear(), now.getMonth(), 0)
-  } else if (range === '7d') {
-    start = new Date(now); start.setDate(start.getDate() - 7)
-  } else if (range === '30d') {
-    start = new Date(now); start.setDate(start.getDate() - 30)
-  }
-  return {
-    start: start ? start.toISOString().split('T')[0] : null,
-    end: end ? end.toISOString().split('T')[0] : null,
-  }
-}
-
-// Resolve the active date range from the three filter selectors. Year+month
-// take priority over the preset when set; clearing them (back to "Any") falls
-// back to the preset.
-function resolveRange(preset, year, month, customStart, customEnd) {
-  // Specific month (with year defaulting to current year)
-  if (month !== null && month !== undefined) {
-    const y = year ?? new Date().getFullYear()
-    const lastDay = new Date(y, month + 1, 0).getDate()
-    const pad = n => String(n).padStart(2, '0')
-    return {
-      start: `${y}-${pad(month + 1)}-01`,
-      end:   `${y}-${pad(month + 1)}-${pad(lastDay)}`,
-    }
-  }
-  // Full year
-  if (year !== null && year !== undefined) {
-    return { start: `${year}-01-01`, end: `${year}-12-31` }
-  }
-  // Custom or preset
-  if (preset === 'custom') {
-    return { start: customStart || null, end: customEnd || null }
-  }
-  return getDateRange(preset)
-}
+const LABOR = ['6000', '6005', '6060', '6050', '6070']
+const WHATNOT_FEES = ['7080', '7085', '7090', '7095']
 
 export default function AdminDashboard() {
-  const [channel, setChannel] = useState('all')
-  const [dateRange, setDateRange] = useState('month')
-  const [customStart, setCustomStart] = useState('')
-  const [customEnd, setCustomEnd] = useState('')
-  const [filterYear, setFilterYear] = useState(null)   // null = no override
-  const [filterMonth, setFilterMonth] = useState(null) // null = no override (0-11)
-  const [data, setData] = useState(null)
-  const [loading, setLoading] = useState(true)
+  const now = new Date()
+  const [year, setYear] = useState(now.getFullYear())
+  const [period, setPeriod] = useState('month') // 'month' | 'ytd' | 'YYYY-MM-01'
+  const [books, setBooks] = useState(null)
+  const [error, setError] = useState(null)
 
   useEffect(() => {
-    if (dateRange === 'custom' && filterYear == null && filterMonth == null) {
-      if (customStart) loadDashboard()
-    } else {
-      loadDashboard()
-    }
-  }, [dateRange, customStart, customEnd, filterYear, filterMonth])
+    let live = true
+    setBooks(null); setError(null)
+    loadBooks(year, { fast: true }).then(b => { if (live) setBooks(b) }).catch(e => { if (live) setError(e.message) })
+    return () => { live = false }
+  }, [year])
 
-  async function loadDashboard() {
-    setLoading(true)
-    const { start, end } = resolveRange(dateRange, filterYear, filterMonth, customStart, customEnd)
+  const view = useMemo(() => {
+    if (!books) return null
+    const months = books.months
+    const current = months[months.length - 1]
+    let sel
+    if (period === 'ytd') sel = months
+    else if (period === 'month') sel = [current]
+    else sel = months.includes(period) ? [period] : [current]
+    const lines = sumLines(sel.map(m => books.pnl[m]))
+    const t = totals(lines, books.accounts)
+    const closedCount = sel.filter(m => books.pnl[m].status === 'closed').length
+    return { sel, lines, t, closedCount, estimated: sel.some(m => books.pnl[m].status !== 'closed') }
+  }, [books, period])
 
-    const { data: raw, error } = await supabase.rpc('get_dashboard_summary', {
-      date_cutoff: start,
-      date_end: end,
-    })
-
-    if (error || !raw) {
-      console.error('Dashboard RPC error:', error?.message)
-      setData(null)
-      setLoading(false)
-      return
-    }
-
-    // Revenue = gross sales (Whatnot statement sales + tips, plus off-platform
-    // bundle sales). Fees are the actual statement lines for closed months and
-    // an estimate at each account's real fee rates for the current month.
-    const NUM = ['items', 'whatnotSales', 'offplatformSales', 'revenue', 'commission', 'processing',
-      'showBoost', 'shipping', 'adjustments', 'fees', 'netRevenue', 'cogs', 'writeoffs', 'grossProfit']
-    const build = (r = {}) => ({
-      items: Number(r.items) || 0,
-      whatnotSales: Number(r.whatnot_sales) || 0,
-      offplatformSales: Number(r.offplatform_sales) || 0,
-      revenue: Number(r.revenue) || 0,
-      commission: Number(r.commission) || 0,
-      processing: Number(r.processing) || 0,
-      showBoost: Number(r.show_boost) || 0,
-      shipping: Number(r.shipping) || 0,
-      adjustments: Number(r.adjustments) || 0,
-      fees: Number(r.fees) || 0,
-      feesEstimated: !!r.fees_estimated,
-      netRevenue: Number(r.net_revenue) || 0,
-      cogs: Number(r.cogs) || 0,
-      writeoffs: Number(r.writeoffs) || 0,
-      grossProfit: Number(r.gross_profit) || 0,
-    })
-
-    const jumpstart = build(raw.jumpstart)
-    const kickstart = build(raw.kickstart)
-
-    const combined = { feesEstimated: jumpstart.feesEstimated || kickstart.feesEstimated }
-    for (const k of NUM) combined[k] = jumpstart[k] + kickstart[k]
-
-    setData({
-      jumpstart, kickstart, combined,
-      totalOpex: Number(raw.expenses) || 0,
-      opexBreakdown: (raw.opex_breakdown || []).map(o => ({ ...o, amount: Number(o.amount) || 0 })),
-      ownerDraws: Number(raw.owner_draws) || 0,
-      totalPayroll: Number(raw.payroll) || 0,
-      totalPayrollSourcing: Number(raw.payroll_sourcing) || 0,
-      loadCost: Number(raw.load_cost) || 0,
-      sourcing: Number(raw.sourcing) || 0,
-      sourcingDirect: Number(raw.sourcing_direct) || 0,
-      sourcingVenmo: Number(raw.sourcing_venmo) || 0,
-      sourcingUps: Number(raw.sourcing_ups) || 0,
-    })
-    setLoading(false)
-  }
-
-
-  const stats = data
-    ? channel === 'Jumpstart' ? data.jumpstart
-    : channel === 'Kickstart' ? data.kickstart
-    : data.combined
-    : null
-
-  const isSummary = channel === 'all'
-  const avgSalePrice = stats && stats.items > 0 ? stats.revenue / stats.items : 0
-  const profitPerUnit = stats && stats.items > 0 ? stats.grossProfit / stats.items : 0
-  const margin = stats && stats.revenue > 0 ? (stats.grossProfit / stats.revenue) * 100 : 0
-  const netProfit = stats ? stats.grossProfit - (data?.totalOpex || 0) - (data?.totalPayroll || 0) - (data?.totalPayrollSourcing || 0) : 0
-  const est = stats?.feesEstimated ? ' (est.)' : ''
-  const pctOfRevenue = (v) => (stats && stats.revenue > 0 ? (v / stats.revenue) * 100 : 0)
-
-  // Calculate calendar days for per-day metrics
-  const calendarDays = (() => {
-    const { start: s, end: e } = resolveRange(dateRange, filterYear, filterMonth, customStart, customEnd)
-    const start = s ? new Date(s + 'T00:00:00') : new Date('2026-01-01T00:00:00')
-    const end = e ? new Date(e + 'T00:00:00') : new Date()
-    const diff = Math.floor((end - start) / (1000 * 60 * 60 * 24)) + 1
-    return Math.max(diff, 1)
-  })()
-  const revenuePerDay = stats ? stats.revenue / calendarDays : 0
-  const profitPerDay = stats ? stats.grossProfit / calendarDays : 0
-  const itemsPerDay = stats ? Math.round(stats.items / calendarDays) : 0
-  const netProfitPerDay = stats ? netProfit / calendarDays : 0
-  const revenuePerItem = stats && stats.items > 0 ? stats.revenue / stats.items : 0
-  const cogsPerItem = stats && stats.items > 0 ? stats.cogs / stats.items : 0
-  const grossProfitPerItem = stats && stats.items > 0 ? stats.grossProfit / stats.items : 0
-  const netProfitPerItem = stats && stats.items > 0 ? netProfit / stats.items : 0
-  const totalExpenses = (data?.totalOpex || 0) + (data?.totalPayroll || 0) + (data?.totalPayrollSourcing || 0)
+  const years = []
+  for (let y = now.getFullYear(); y >= BUSINESS_START_YEAR; y--) years.push(y)
 
   return (
-    <div>
-      {/* Channel tabs */}
-      <div className="flex items-center justify-between mb-4">
-        <div className="flex gap-2">
-          {['all', 'Jumpstart', 'Kickstart'].map(c => (
-            <button key={c} onClick={() => setChannel(c)}
-              className={`px-4 py-2 rounded-2xl text-sm font-bold transition-all
-                ${channel === c
-                  ? 'bg-cyan-600 text-white shadow-lg shadow-cyan-600/30 glow-cyan'
-                  : 'text-slate-400 hover:bg-white/[0.06] border border-transparent'}`}>
-              {c === 'all' ? 'Summary' : c}
-            </button>
-          ))}
-        </div>
+    <div className="space-y-4">
+      {/* Period controls */}
+      <div className="flex flex-wrap items-center gap-2">
+        {[['month', 'This month'], ['ytd', 'Year to date']].map(([v, l]) => (
+          <button key={v} onClick={() => setPeriod(v)}
+            className={`px-4 py-2 rounded-2xl text-sm font-bold transition-all ${period === v
+              ? 'bg-cyan-600 text-white shadow-lg shadow-cyan-600/30' : 'text-slate-400 hover:bg-white/[0.06]'}`}>{l}</button>
+        ))}
+        <select value={period.length > 7 ? period : ''} onChange={e => setPeriod(e.target.value || 'month')}
+          className="bg-white/5 border border-white/10 text-white text-sm rounded-2xl px-4 py-2 focus:outline-none focus:border-cyan-500/50">
+          <option value="">Pick a month…</option>
+          {(books?.months || []).map(m => <option key={m} value={m}>{monthLabel(m)}</option>)}
+        </select>
+        <select value={year} onChange={e => { setYear(Number(e.target.value)); setPeriod('ytd') }}
+          className="bg-white/5 border border-white/10 text-white text-sm rounded-2xl px-4 py-2 focus:outline-none focus:border-cyan-500/50">
+          {years.map(y => <option key={y} value={y}>{y}</option>)}
+        </select>
       </div>
 
-      {/* Date range */}
-      <div className="flex flex-wrap items-center gap-3 mb-6">
-        <span className="text-sm text-slate-400">Date range:</span>
-        <select value={dateRange} onChange={e => setDateRange(e.target.value)}
-          className="bg-white/5 border border-white/10 text-white text-sm rounded-2xl px-4 py-2 focus:outline-none focus:border-cyan-500/50 focus:ring-4 focus:ring-cyan-500/10 transition-all">
-          {DATE_RANGES.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
-        </select>
-        <select
-          value={filterYear == null ? '' : String(filterYear)}
-          onChange={e => setFilterYear(e.target.value === '' ? null : parseInt(e.target.value, 10))}
-          className="bg-white/5 border border-white/10 text-white text-sm rounded-2xl px-4 py-2 focus:outline-none focus:border-cyan-500/50 focus:ring-4 focus:ring-cyan-500/10 transition-all"
-        >
-          <option value="">Any year</option>
-          {yearOptions().map(y => <option key={y} value={y}>{y}</option>)}
-        </select>
-        <select
-          value={filterMonth == null ? '' : String(filterMonth)}
-          onChange={e => setFilterMonth(e.target.value === '' ? null : parseInt(e.target.value, 10))}
-          className="bg-white/5 border border-white/10 text-white text-sm rounded-2xl px-4 py-2 focus:outline-none focus:border-cyan-500/50 focus:ring-4 focus:ring-cyan-500/10 transition-all"
-        >
-          <option value="">Any month</option>
-          {MONTH_NAMES.map((m, i) => <option key={i} value={i}>{m}</option>)}
-        </select>
-        {(filterYear != null || filterMonth != null) && (
-          <button
-            onClick={() => { setFilterYear(null); setFilterMonth(null) }}
-            className="text-xs text-cyan-400 hover:text-cyan-300"
-          >
-            Clear year/month
-          </button>
-        )}
-        {dateRange === 'custom' && filterYear == null && filterMonth == null && (
-          <div className="flex items-center gap-2">
-            <input type="date" value={customStart} onChange={e => setCustomStart(e.target.value)}
-              className="bg-white/5 border border-white/10 text-white text-sm rounded-2xl px-4 py-2 focus:outline-none focus:border-cyan-500/50 focus:ring-4 focus:ring-cyan-500/10 transition-all" />
-            <span className="text-slate-500 text-sm">to</span>
-            <input type="date" value={customEnd} onChange={e => setCustomEnd(e.target.value)}
-              className="bg-white/5 border border-white/10 text-white text-sm rounded-2xl px-4 py-2 focus:outline-none focus:border-cyan-500/50 focus:ring-4 focus:ring-cyan-500/10 transition-all" />
-          </div>
-        )}
-      </div>
+      {error && <div className="glass-card rounded-3xl p-6 text-red-400 text-sm">Couldn’t load the books: {error}</div>}
+      {!books && !error && <div className="text-slate-400 py-12 text-center">Loading…</div>}
 
-      {loading ? (
-        <div className="text-slate-400 py-12 text-center">Loading dashboard...</div>
-      ) : !stats ? (
-        <div className="text-slate-400 py-12 text-center">No data yet. Upload manifests and show CSVs in Inputs.</div>
-      ) : (
+      {view && (
         <>
-          {/* Row 1: Totals — Revenue, Gross Profit, Expenses, Net Profit */}
-          <div className={`grid grid-cols-2 ${isSummary ? 'md:grid-cols-4' : 'md:grid-cols-3'} gap-4 mb-4`}>
-            <GradientKPI label="Gross Sales" value={fmt(stats.revenue)} sub={`${stats.items.toLocaleString()} items · ${fmt(stats.netRevenue)} after Whatnot fees${stats.feesEstimated ? ' (est.)' : ''}`} />
-            <GradientKPI label="Gross Profit" value={fmt(stats.grossProfit)} sub={`${margin.toFixed(1)}% of gross sales`} negative={stats.grossProfit < 0} />
-            {isSummary && <GradientKPI label="Expenses" value={fmt(totalExpenses)} sub={`${pctOfRevenue(totalExpenses).toFixed(1)}% of gross sales`} />}
-            {isSummary
-              ? <GradientKPI label="Net Profit" value={fmt(netProfit)} sub={`${pctOfRevenue(netProfit).toFixed(1)}% of gross sales`} negative={netProfit < 0} />
-              : <GradientKPI label="COGS" value={fmt(stats.cogs)} />
-            }
+          <StatusBadge view={view} books={books} />
+
+          {/* Headline numbers */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <KPI label="Gross sales" value={fmt(view.t.grossSales)} sub={`${fmt(view.t.revenueNetOfFees)} after Whatnot fees`} />
+            <KPI label="Gross profit" value={fmt(view.t.grossProfitAfterFees)}
+              sub={`${pct(view.t.grossProfitAfterFees, view.t.revenueNetOfFees)} of revenue after fees`} negative={view.t.grossProfitAfterFees < 0} />
+            <KPI label="Labor + operating" value={fmt(view.t.labor + view.t.operatingExFees)} sub="excl. Whatnot fees" />
+            <KPI label="Net income" value={fmt(view.t.netIncome)} sub={`${pct(view.t.netIncome, view.t.revenueNetOfFees)} of revenue after fees`} negative={view.t.netIncome < 0} accent />
           </div>
 
-          {/* Row 2: Per-Day */}
-          <div className={`grid grid-cols-2 ${isSummary ? 'md:grid-cols-4' : 'md:grid-cols-3'} gap-4 mb-4`}>
-            <GradientKPI label="Gross Sales / Day" value={fmt(revenuePerDay)} sub={`over ${calendarDays} days`} />
-            <GradientKPI label="Gross Profit / Day" value={fmt(profitPerDay)} sub={`over ${calendarDays} days`} negative={profitPerDay < 0} />
-            <GradientKPI label="Items Sold / Day" value={itemsPerDay.toLocaleString()} sub={`over ${calendarDays} days`} />
-            {isSummary && <GradientKPI label="Net Profit / Day" value={fmt(netProfitPerDay)} sub={`over ${calendarDays} days`} negative={netProfitPerDay < 0} />}
-          </div>
+          {year === GOAL.year && <GoalCard books={books} />}
 
-          {/* Row 3: Per-Item */}
-          <div className={`grid grid-cols-2 ${isSummary ? 'md:grid-cols-4' : 'md:grid-cols-3'} gap-4 mb-4`}>
-            <GradientKPI label="Sale / Item" value={fmt(revenuePerItem)} />
-            <GradientKPI label="COGS / Item" value={fmt(cogsPerItem)} />
-            <GradientKPI label="Gross Profit / Item" value={fmt(grossProfitPerItem)} negative={grossProfitPerItem < 0} />
-            {isSummary && <GradientKPI label="Net Profit / Item" value={fmt(netProfitPerItem)} negative={netProfitPerItem < 0} />}
-          </div>
+          <PnL view={view} books={books} />
 
-          {/* P&L Summary Table */}
-          <div className="glass-card rounded-3xl p-6 mt-4">
-            <h3 className="font-bold font-heading text-lg mb-4">P&L Summary</h3>
-            <div className="space-y-0">
-              <PLRow label="Gross Sales" value={stats.revenue} bold />
-              <PLRow label="Whatnot sales (incl. tips)" value={stats.whatnotSales} indent />
-              {stats.offplatformSales !== 0 && <PLRow label="Off-platform sales (bundles)" value={stats.offplatformSales} indent />}
+          <MonthTable books={books} onPick={setPeriod} selected={view.sel.length === 1 ? view.sel[0] : null} />
 
-              <PLRow label={`Whatnot Fees${est}`} value={-stats.fees} bold />
-              <PLRow label="Commission" value={-stats.commission} indent />
-              <PLRow label="Payment processing" value={-stats.processing} indent />
-              <PLRow label="Show boost & promote" value={-stats.showBoost} indent />
-              <PLRow label="Seller-paid shipping" value={-stats.shipping} indent />
-              {stats.adjustments !== 0 && <PLRow label="Refunds & adjustments" value={-stats.adjustments} indent />}
-
-              <div className="border-t border-white/[0.1] mt-2 pt-2">
-                <PLRow label={`Net Sales (deposited)${est}`} value={stats.netRevenue} bold />
-              </div>
-              {isSummary && (
-                <>
-                  <PLRow label="Jumpstart" value={data.jumpstart.netRevenue} indent />
-                  <PLRow label="Kickstart" value={data.kickstart.netRevenue} indent />
-                </>
-              )}
-
-              <PLRow label="Cost of Goods Sold (COGS)" value={-stats.cogs} bold />
-              <PLRow label="Items sold" value={-(stats.cogs - stats.writeoffs)} indent />
-              {stats.writeoffs !== 0 && <PLRow label="Write-offs (damage / reconcile)" value={-stats.writeoffs} indent />}
-
-              <div className="border-t border-white/[0.1] mt-2 pt-2">
-                <PLRow label="Gross Profit" value={stats.grossProfit} bold />
-              </div>
-
-              {isSummary && (
-                <>
-                  <div className="mt-4">
-                    <PLRow label="Operating Expenses" value={-(data?.totalOpex || 0)} bold />
-                    {(data?.opexBreakdown || []).map(o => (
-                      <PLRow key={o.code || o.name} label={o.name} value={-o.amount} indent />
-                    ))}
-                    <PLRow label="Payroll" value={-(data?.totalPayroll || 0)} />
-                    <PLRow label="Sourcing Labor" value={-(data?.totalPayrollSourcing || 0)} />
-                    <PLRow label="Total Expenses" value={-totalExpenses} bold />
-                  </div>
-
-                  <div className="border-t border-white/[0.1] mt-2 pt-2">
-                    <PLRow label="Net Profit" value={netProfit} bold accent />
-                  </div>
-                </>
-              )}
-            </div>
-          </div>
-
-          {/* Cashflow Summary */}
-          <div className="glass-card rounded-3xl p-6 mt-4">
-            <h3 className="font-bold font-heading text-lg mb-4">Cashflow Summary</h3>
-            <div className="space-y-0">
-              <PLRow label={`Net Sales (deposited)${est}`} value={stats.netRevenue} bold />
-              {isSummary && (
-                <>
-                  <PLRow label="Jumpstart" value={data.jumpstart.netRevenue} indent />
-                  <PLRow label="Kickstart" value={data.kickstart.netRevenue} indent />
-                </>
-              )}
-
-              {(() => {
-                // Freight is baked into load payments (or arrives as separate OPEX) — no 0.45/item add-on
-                const jsInvPurchases = (data?.loadCost || 0)
-                const ksInvPurchases = data?.sourcing || 0
-                const totalInvPurchases = jsInvPurchases + ksInvPurchases
-
-                const invPurchases = channel === 'Jumpstart' ? jsInvPurchases
-                  : channel === 'Kickstart' ? ksInvPurchases
-                  : totalInvPurchases
-
-                // Sourcing-team labor (Venmo) lives in PAYROLL_SOURCING — real cash out
-                const cashflowPayroll = (data?.totalPayroll || 0) + (data?.totalPayrollSourcing || 0)
-
-                const cashflow = isSummary
-                  ? stats.netRevenue - totalInvPurchases - (data?.totalOpex || 0) - cashflowPayroll
-                  : stats.netRevenue - invPurchases
-
-                return (
-                  <>
-                    <PLRow label="Inventory Purchases" value={-invPurchases} bold />
-                    {/* Kickstart sourcing ended 2026-06-30 — only shown for ranges that include it */}
-                    {isSummary && ksInvPurchases !== 0 && (
-                      <>
-                        <PLRow label="Loads" value={-jsInvPurchases} indent />
-                        <PLRow label="Kickstart sourcing (ended Jun 30)" value={-ksInvPurchases} indent />
-                      </>
-                    )}
-                    {channel === 'Jumpstart' && (
-                      <PLRow label="Load Costs" value={-(data?.loadCost || 0)} indent />
-                    )}
-                    {channel === 'Kickstart' && ksInvPurchases !== 0 && (
-                      <PLRow label="Sourcing (ended Jun 30)" value={-(data?.sourcing || 0)} indent />
-                    )}
-
-                    {isSummary && (
-                      <>
-                        <PLRow label="OpEx" value={-(data?.totalOpex || 0)} />
-                        <PLRow label="Payroll" value={-(data?.totalPayroll || 0)} />
-                        <PLRow label="Sourcing Labor" value={-(data?.totalPayrollSourcing || 0)} />
-                      </>
-                    )}
-
-                    <div className="border-t border-white/[0.1] mt-2 pt-2">
-                      <PLRow label="Cashflow (before owner draws)" value={cashflow} bold accent />
-                    </div>
-                    {isSummary && (data?.ownerDraws || 0) !== 0 && (
-                      <>
-                        <PLRow label="Owner draws" value={-(data?.ownerDraws || 0)} />
-                        <PLRow label="Cashflow after owner draws" value={cashflow - (data?.ownerDraws || 0)} bold accent />
-                      </>
-                    )}
-                  </>
-                )
-              })()}
-            </div>
-          </div>
-
+          <SalesPulse />
         </>
       )}
     </div>
   )
 }
 
-function fmt(n) {
-  return `$${Number(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+function StatusBadge({ view, books }) {
+  const { sel, closedCount, estimated } = view
+  const open = sel.filter(m => books.pnl[m].status !== 'closed')
+  let text
+  if (!estimated) text = sel.length === 1 ? 'Closed books — ties to bank, card and Whatnot statements' : `All ${sel.length} months closed`
+  else if (closedCount === 0) text = `Estimate — ${open.map(monthLabel).join(', ')} is open. COGS is item cost at vendor cost; shrinkage and write-offs are caught at close.`
+  else text = `${closedCount} closed month${closedCount > 1 ? 's' : ''} + estimate for ${open.map(monthLabel).join(', ')}`
+  return (
+    <div className={`rounded-2xl px-4 py-2.5 text-xs border ${estimated
+      ? 'border-amber-500/30 bg-amber-500/10 text-amber-200' : 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200'}`}>
+      {text}
+    </div>
+  )
 }
 
-function GradientKPI({ label, value, sub, negative }) {
+function GoalCard({ books }) {
+  const closed = books.months.filter(m => books.pnl[m].status === 'closed')
+  const closedNI = closed.reduce((s, m) => s + books.pnl[m].netIncome, 0)
+  const openMonths = books.months.filter(m => books.pnl[m].status !== 'closed')
+  const openNI = openMonths.reduce((s, m) => s + books.pnl[m].netIncome, 0)
+  const remainingMonths = 12 - closed.length
+  const needed = (GOAL.netIncome - closedNI) / Math.max(remainingMonths, 1)
+  const progress = Math.max(0, Math.min(1, closedNI / GOAL.netIncome))
+  return (
+    <div className="glass-card rounded-3xl p-6">
+      <div className="flex items-baseline justify-between mb-3">
+        <h3 className="font-bold font-heading text-lg">2026 goal: {fmt0(GOAL.netIncome)} net income</h3>
+        <span className="text-xs text-slate-500">closed months only</span>
+      </div>
+      <div className="h-2 rounded-full bg-white/10 overflow-hidden mb-3">
+        <div className="h-full bg-cyan-500" style={{ width: `${progress * 100}%` }} />
+      </div>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+        <Stat label={`Through ${closed.length ? monthLabel(closed[closed.length - 1]) : '—'}`} value={fmt0(closedNI)} negative={closedNI < 0} />
+        <Stat label="Still needed" value={fmt0(GOAL.netIncome - closedNI)} />
+        <Stat label={`Per month (${remainingMonths} left)`} value={fmt0(needed)} />
+        <Stat label="Open month(s), estimate" value={fmt0(openNI)} negative={openNI < 0} />
+      </div>
+    </div>
+  )
+}
+
+function PnL({ view, books }) {
+  const { lines, t } = view
+  const amt = c => lines[c]?.amount || 0
+  const name = c => books.acct[c]?.name?.replace(/^Sales-/, '').replace(/^Whatnot-/, '') || c
+  const opex = books.accounts.filter(a => a.section === 'Operating' && !WHATNOT_FEES.includes(a.code) && amt(a.code))
+    .sort((a, b) => amt(b.code) - amt(a.code))
+  const otherCodes = books.accounts.filter(a => a.section === 'Other' && amt(a.code))
+  return (
+    <div className="glass-card rounded-3xl p-6">
+      <h3 className="font-bold font-heading text-lg mb-4">Income statement</h3>
+      {LINE_GROUPS.map(g => {
+        const total = g.kind === 'sales' ? t.grossSales : g.kind === 'refunds' ? -t.refunds : -t.whatnotFees
+        if (!total && g.kind !== 'sales') return null
+        return (
+          <div key={g.label}>
+            <Row label={g.label} value={total} bold />
+            {g.kind !== 'refunds' && g.codes.filter(c => amt(c)).map(c =>
+              <Row key={c} label={name(c)} value={g.sign * amt(c)} indent />)}
+          </div>
+        )
+      })}
+      <Row label="Revenue after Whatnot fees" value={t.revenueNetOfFees} bold rule />
+      <Row label="Cost of goods sold" value={-t.cogs} bold />
+      <Row label="Gross profit" value={t.grossProfitAfterFees} bold rule />
+      <Row label="Labor" value={-t.labor} bold />
+      {LABOR.filter(c => amt(c)).map(c => <Row key={c} label={name(c)} value={-amt(c)} indent />)}
+      <Row label="Operating expenses" value={-t.operatingExFees} bold />
+      {opex.map(a => <Row key={a.code} label={a.name} value={-amt(a.code)} indent />)}
+      {otherCodes.length > 0 && (
+        <>
+          <Row label="Other income & expense" value={-t.other} bold />
+          {otherCodes.map(a => <Row key={a.code} label={a.name} value={-amt(a.code)} indent />)}
+        </>
+      )}
+      <Row label="Net income" value={t.netIncome} bold accent rule />
+    </div>
+  )
+}
+
+function MonthTable({ books, onPick, selected }) {
+  return (
+    <div className="glass-card rounded-3xl p-6 overflow-x-auto">
+      <h3 className="font-bold font-heading text-lg mb-4">By month</h3>
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="text-slate-500 text-xs text-right">
+            <th className="text-left font-medium pb-2">Month</th>
+            <th className="font-medium pb-2">Gross sales</th>
+            <th className="font-medium pb-2 hidden md:table-cell">After fees</th>
+            <th className="font-medium pb-2">Gross margin</th>
+            <th className="font-medium pb-2">Net income</th>
+          </tr>
+        </thead>
+        <tbody>
+          {books.months.map(m => {
+            const p = books.pnl[m]
+            return (
+              <tr key={m} onClick={() => onPick(m)}
+                className={`border-t border-white/[0.06] text-right cursor-pointer hover:bg-white/[0.03] ${selected === m ? 'bg-white/[0.05]' : ''}`}>
+                <td className="text-left py-2 text-slate-300">
+                  {monthLabel(m)}
+                  {p.status !== 'closed' && <span className="ml-2 text-[10px] text-amber-300 uppercase">est.</span>}
+                </td>
+                <td className="text-slate-300">{fmt0(p.grossSales)}</td>
+                <td className="text-slate-400 hidden md:table-cell">{fmt0(p.revenueNetOfFees)}</td>
+                <td className="text-slate-400">{pct(p.grossProfitAfterFees, p.revenueNetOfFees)}</td>
+                <td className={p.netIncome < 0 ? 'text-red-400' : 'text-emerald-400'}>{fmt0(p.netIncome)}</td>
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+// Item-level sales pulse for short windows (days, not months). Same fee lines as
+// the books (statement rates), refunds separate, item cost at vendor cost. Not a
+// P&L: labor and operating expenses aren't spread across days.
+const PULSE_RANGES = [
+  { v: 'today', l: 'Today', days: 0 },
+  { v: '7d', l: 'Last 7 days', days: 6 },
+  { v: 'month', l: 'This month', days: null },
+  { v: '30d', l: 'Last 30 days', days: 29 },
+]
+
+function SalesPulse() {
+  const [range, setRange] = useState('7d')
+  const [channel, setChannel] = useState('all')
+  const [data, setData] = useState(null)
+  const [days, setDays] = useState(1)
+
+  useEffect(() => {
+    let live = true
+    const d = new Date()
+    const iso = x => `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}`
+    const end = iso(d)
+    const r = PULSE_RANGES.find(x => x.v === range)
+    const s = new Date(d)
+    if (r.days == null) s.setDate(1); else s.setDate(s.getDate() - r.days)
+    setDays(Math.round((d - s) / 86400000) + 1)
+    setData(null)
+    supabase.rpc('get_dashboard_summary', { date_cutoff: iso(s), date_end: end }).then(({ data: raw }) => {
+      if (!live || !raw) return
+      const pick = k => ['jumpstart', 'kickstart'].filter(c => channel === 'all' || c === channel)
+        .reduce((t, c) => t + Number(raw[c]?.[k] || 0), 0)
+      const sales = pick('whatnot_sales') + pick('offplatform_sales')
+      const refunds = pick('adjustments')
+      const fees = pick('commission') + pick('processing') + pick('show_boost') + pick('shipping')
+      const cost = pick('cogs')
+      setData({ items: pick('items'), sales, refunds, fees, cost, gp: sales - refunds - fees - cost, writeoffs: pick('writeoffs') })
+    })
+    return () => { live = false }
+  }, [range, channel])
+
+  const per = (v) => (data?.items ? v / data.items : 0)
+  return (
+    <div className="glass-card rounded-3xl p-6">
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
+        <h3 className="font-bold font-heading text-lg">Sales pulse</h3>
+        <div className="flex flex-wrap gap-1">
+          {[['all', 'All'], ['jumpstart', 'Jumpstart'], ['kickstart', 'Kickstart']].map(([v, l]) => (
+            <button key={v} onClick={() => setChannel(v)}
+              className={`px-3 py-1 rounded-xl text-xs font-bold ${channel === v ? 'bg-cyan-600 text-white' : 'text-slate-400 hover:bg-white/[0.06]'}`}>{l}</button>
+          ))}
+        </div>
+      </div>
+      <p className="text-xs text-slate-500 mb-4">Item-level, from scanned sales: Whatnot fees from statements (estimated from statement rates for open months), item cost at vendor cost. Labor and operating costs are in the income statement above.</p>
+      <div className="flex flex-wrap gap-1 mb-4">
+        {PULSE_RANGES.map(r => (
+          <button key={r.v} onClick={() => setRange(r.v)}
+            className={`px-3 py-1 rounded-xl text-xs font-bold ${range === r.v ? 'bg-white/10 text-white' : 'text-slate-400 hover:bg-white/[0.06]'}`}>{r.l}</button>
+        ))}
+      </div>
+      {!data ? <div className="text-slate-500 text-sm">Loading…</div> : (
+        <>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+            <Stat label="Items sold" value={data.items.toLocaleString()} sub={`${Math.round(data.items / days).toLocaleString()} / day`} />
+            <Stat label="Gross sales" value={fmt0(data.sales)} sub={`${fmt0(data.sales / days)} / day`} />
+            <Stat label="Gross profit (item level)" value={fmt0(data.gp)} sub={`${fmt0(data.gp / days)} / day`} negative={data.gp < 0} />
+            <Stat label="Item cost / sales" value={pct(data.cost, data.sales)} sub={data.writeoffs ? `incl. ${fmt0(data.writeoffs)} write-offs` : ''} />
+          </div>
+          <div className="text-xs text-slate-500 mb-2">Per item vs. target (40% margin)</div>
+          <div className="grid grid-cols-3 gap-3">
+            <Target label="After fees" actual={per(data.sales - data.refunds - data.fees)} target={PER_ITEM.netRevenue} higherIsBetter />
+            <Target label="Item cost" actual={per(data.cost)} target={PER_ITEM.maxCost} />
+            <Target label="Gross profit" actual={per(data.gp)} target={PER_ITEM.grossProfit} higherIsBetter />
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
+function Target({ label, actual, target, higherIsBetter }) {
+  const good = higherIsBetter ? actual >= target : actual <= target
+  return (
+    <div className="rounded-2xl bg-white/[0.03] border border-white/[0.06] p-3">
+      <div className="text-xs text-slate-400">{label}</div>
+      <div className={`text-lg font-bold font-heading ${good ? 'text-emerald-400' : 'text-amber-300'}`}>{fmt(actual)}</div>
+      <div className="text-[11px] text-slate-500">target {higherIsBetter ? '≥' : '≤'} {fmt(target)}</div>
+    </div>
+  )
+}
+
+function KPI({ label, value, sub, negative, accent }) {
   return (
     <div className="glass-card rounded-3xl p-5">
       <div className="text-xs text-slate-400 mb-1 font-medium">{label}</div>
-      <div className={`text-xl font-bold font-heading ${negative ? 'text-red-400' : 'text-white'}`}>{value}</div>
+      <div className={`text-xl font-bold font-heading ${negative ? 'text-red-400' : accent ? 'text-emerald-400' : 'text-white'}`}>{value}</div>
       {sub && <div className="text-xs text-slate-500 mt-1">{sub}</div>}
     </div>
   )
 }
 
-function PLRow({ label, value, bold, accent, indent }) {
-  const v = Number(value) || 0
-  const color = accent ? (v >= 0 ? 'text-emerald-400' : 'text-red-400') : v < 0 ? 'text-red-400' : 'text-slate-200'
+function Stat({ label, value, sub, negative }) {
   return (
-    <div className={`flex justify-between items-center py-2.5 ${bold ? '' : 'border-b border-white/[0.04]'}`}>
-      <span className={`${bold ? 'font-semibold text-white' : 'text-slate-300'} ${indent ? 'pl-4 text-sm text-slate-400' : ''}`}>{label}</span>
-      <span className={`${color} ${bold ? 'font-bold text-lg' : ''} ${indent ? 'text-sm text-slate-400' : ''}`}>{fmt(v)}</span>
+    <div>
+      <div className="text-xs text-slate-400">{label}</div>
+      <div className={`font-bold font-heading ${negative ? 'text-red-400' : 'text-white'}`}>{value}</div>
+      {sub && <div className="text-[11px] text-slate-500">{sub}</div>}
     </div>
   )
 }
+
+function Row({ label, value, bold, accent, indent, rule }) {
+  const v = Number(value) || 0
+  const color = accent ? (v >= 0 ? 'text-emerald-400' : 'text-red-400') : v < 0 ? 'text-red-300' : 'text-slate-200'
+  return (
+    <div className={`flex justify-between items-center ${indent ? 'py-1' : 'py-2'} ${rule ? 'border-t border-white/[0.1] mt-1' : ''}`}>
+      <span className={indent ? 'pl-4 text-sm text-slate-400' : bold ? 'font-semibold text-white' : 'text-slate-300'}>{label}</span>
+      <span className={`${indent ? 'text-sm text-slate-400' : color} ${bold ? 'font-bold' : ''}`}>{fmt(v)}</span>
+    </div>
+  )
+}
+
+const fmt = n => `${n < 0 ? '−' : ''}$${Math.abs(Number(n || 0)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+const fmt0 = n => `${n < 0 ? '−' : ''}$${Math.abs(Math.round(Number(n || 0))).toLocaleString()}`
+const pct = (a, b) => (b ? `${((a / b) * 100).toFixed(1)}%` : '—')

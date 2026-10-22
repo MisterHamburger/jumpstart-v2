@@ -12,9 +12,6 @@ import { supabase, fetchAll } from './supabase'
 
 export const STORE_REVENUE = { jumpstartdeals: '4000', kickstartdeals: '4001' }
 const STORE_CHANNEL = { jumpstartdeals: 'jumpstart', kickstartdeals: 'kickstart' }
-// Whatnot's commission share of the dashboard's 12.3% fee estimate.
-const EST_COMMISSION = 0.072
-const EST_TOTAL_FEES = 0.123
 
 // Balance-sheet accounts whose month-end value comes from a statement.
 export const STATEMENT_ACCOUNTS = ['1000', '1001', '1002', '1003', '1004', '1011', '1012', '1013', '2001', '2002', '2003']
@@ -63,7 +60,12 @@ export async function inventoryAt(date) {
   return detail
 }
 
-export async function loadBooks(year) {
+// options.fast: open months skip the live inventory valuation. Their cost of
+// goods sold is the item-level cost at vendor cost (the rulebook's daily
+// estimate) and the month's inventory purchases stay in inventory. Closed months
+// are identical either way. Used by the Dashboard; the Financials close uses the
+// full valuation.
+export async function loadBooks(year, { fast = false } = {}) {
   const start = `${year}-01-01`, end = `${year}-12-31`
   const months = monthsOf(year)
   const [acctRes, stmtRes, expenses, journal, closeRes, balRes] = await Promise.all([
@@ -83,8 +85,10 @@ export async function loadBooks(year) {
   const closes = Object.fromEntries((closeRes.data || []).map(c => [c.month, c]))
   const statements = (stmtRes.data || []).filter(s => s.period_start.endsWith('-01') && s.period_end === monthEnd(s.period_start))
 
-  // Whatnot estimates for months that don't have a statement yet.
-  const needEstimate = months.filter(m => Object.keys(STORE_REVENUE).some(a =>
+  // Item-level estimates (get_dashboard_summary) for months without a statement
+  // yet, and in fast mode for every open month (its item cost is the COGS estimate).
+  const isOpen = m => !(closeRes.data || []).some(c => c.month === m && c.status === 'closed')
+  const needEstimate = months.filter(m => (fast && isOpen(m)) || Object.keys(STORE_REVENUE).some(a =>
     !statements.find(s => s.account === a && s.period_start === m)))
   const estimates = {}
   await Promise.all(needEstimate.map(async m => {
@@ -104,6 +108,8 @@ export async function loadBooks(year) {
       inventory[m] = { total: Number(c.inventory_value), ...(c.inventory_detail || {}), source: 'closed' }
     } else if (c?.inventory_value != null && c.inventory_note) {
       inventory[m] = { total: Number(c.inventory_value), ...(c.inventory_detail || {}), source: 'override' }
+    } else if (fast) {
+      inventory[m] = { total: null, source: 'estimate' }
     } else {
       const d = monthEnd(m) < today ? monthEnd(m) : today
       let lastErr = null
@@ -142,13 +148,18 @@ export async function loadBooks(year) {
         add('7090', Number(s.seller_shipping || 0) + Number(s.shipping_surcharges || 0), 'whatnot')
         add('4005', -(Number(s.order_refunds || 0) + Number(s.other_adjustments || 0)), 'whatnot')
       } else {
+        // No statement yet: scanned sales at each account's actual fee rates,
+        // laid out per the rulebook (fees by type, refunds on their own line).
         const ch = estimates[m]?.[STORE_CHANNEL[store]]
-        const rev = Number(ch?.revenue || 0)
-        if (rev) {
+        if (ch && (Number(ch.whatnot_sales) || Number(ch.offplatform_sales))) {
           estimated = true
-          add(revCode, rev, 'estimate')
-          add('7080', rev * EST_COMMISSION, 'estimate')
-          add('7085', Number(ch.fees || rev * EST_TOTAL_FEES) - rev * EST_COMMISSION, 'estimate')
+          add(revCode, Number(ch.whatnot_sales || 0), 'estimate')
+          add('4004', Number(ch.offplatform_sales || 0), 'estimate')
+          add('7080', Number(ch.commission || 0), 'estimate')
+          add('7085', Number(ch.processing || 0), 'estimate')
+          add('7095', Number(ch.show_boost || 0), 'estimate')
+          add('7090', Number(ch.shipping || 0), 'estimate')
+          add('4005', -Number(ch.adjustments || 0), 'estimate')
         }
       }
     }
@@ -167,8 +178,20 @@ export async function loadBooks(year) {
       add(j.account, a.type === 'revenue' ? -net : net, 'journal')
     }
     const inv = inventory[m]
+    if (inv?.source === 'estimate') {
+      // Fast mode, open month: COGS = item cost of what sold (incl. write-offs);
+      // this month's purchases go into inventory instead of COGS.
+      const purchases = lines['5000']?.amount || 0
+      const itemCost = ['jumpstart', 'kickstart'].reduce((t, c) => t + Number(estimates[m]?.[c]?.cogs || 0), 0)
+      delete lines['5000']
+      add('5000', itemCost, 'item cost estimate')
+      inv.total = round2(prevInventory + purchases - itemCost)
+      inv.purchases = round2(purchases)
+      estimated = true
+    }
     const endInv = inv?.total
-    if (endInv != null) add('5000', round2(prevInventory - endInv), 'inventory change')
+    // (In fast-mode open months COGS was set above from item cost; don't add the change again.)
+    if (endInv != null && inv.source !== 'estimate') add('5000', round2(prevInventory - endInv), 'inventory change')
     const inventoryChange = endInv != null ? round2(prevInventory - endInv) : null
     const beginInventory = prevInventory
     if (endInv != null) prevInventory = endInv
@@ -243,7 +266,14 @@ export function totals(lines, accounts) {
   const operating = bySection('Operating')
   const other = bySection('Other')
   const whatnotFees = ['7080', '7085', '7090', '7095'].reduce((t, c) => t + (lines[c]?.amount || 0), 0)
+  // Rulebook subtotals (docs/financial-rules.md): gross sales → refunds → Whatnot
+  // fees → revenue net of fees → COGS → gross profit → labor → operating → other.
+  const refunds = -(lines['4005']?.amount || 0)
+  const grossSales = revenue + refunds
+  const revenueNetOfFees = revenue - whatnotFees
   return {
+    grossSales: round2(grossSales), refunds: round2(refunds), revenueNetOfFees: round2(revenueNetOfFees),
+    grossProfitAfterFees: round2(revenueNetOfFees - cogs), operatingExFees: round2(operating - whatnotFees),
     revenue: round2(revenue), cogs: round2(cogs), grossProfit: round2(revenue - cogs),
     labor: round2(labor), operating: round2(operating), totalExpenses: round2(labor + operating),
     operatingIncome: round2(revenue - cogs - labor - operating), other: round2(other),

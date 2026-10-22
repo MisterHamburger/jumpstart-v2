@@ -4,7 +4,7 @@ import {
   loadBooks, inventoryAt, monthEnd, monthLabel, totals, sumLines, STATEMENT_ACCOUNTS,
 } from '../lib/books'
 
-// 2026 goal from the Targets tab ($200K net in 2026).
+// 2026 goal (also shown on the Dashboard) ($200K net in 2026).
 const TARGET_MONTHLY_NET = 23041
 const TARGET_ANNUAL_NET = 200000
 
