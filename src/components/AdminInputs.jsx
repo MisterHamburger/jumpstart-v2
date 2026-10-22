@@ -1594,9 +1594,18 @@ function ExpenseUpload() {
         // feeds (transaction codes, whitespace, trailing punctuation) still collide.
         const existing = await fetchAll(() => supabase.from('expenses').select('date, description, amount'))
         const keyFor = (e) => `${e.date}|${normalizeExpenseDesc(e.description)}|${Number(e.amount).toFixed(2)}`
-        const existingKeys = new Set(existing.map(keyFor))
+        // Count matches instead of using a set: the same charge can legitimately
+        // appear twice on one day (e.g. two identical Dick's orders), so a CSV row is
+        // only a duplicate while an unmatched existing row with the same key remains.
+        const existingCounts = new Map()
+        for (const e of existing) existingCounts.set(keyFor(e), (existingCounts.get(keyFor(e)) || 0) + 1)
 
-        const newRows = parsed.filter(e => !existingKeys.has(keyFor(e)))
+        const newRows = parsed.filter(e => {
+          const k = keyFor(e)
+          const n = existingCounts.get(k) || 0
+          if (n > 0) { existingCounts.set(k, n - 1); return false }
+          return true
+        })
 
         if (newRows.length === 0) {
           setStatus(`✅ All ${parsed.length} rows already exist — nothing to upload`)
