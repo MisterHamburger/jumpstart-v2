@@ -48,6 +48,12 @@ Channel-aware barcode filtering prevents cross-contamination during scanning.
 
 ---
 
+## Financial Rules (one rulebook)
+
+`docs/financial-rules.md` defines revenue, Whatnot fees, cost of goods sold (vendor cost only — freight/forklift always OPEX), inventory, labor and owner money. The Dashboard, Financials tab, Targets and any export must all follow it. Change the rule there first, then every page.
+
+---
+
 ## Database Tables (Supabase)
 
 ### Critical Table Rules
