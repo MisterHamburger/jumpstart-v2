@@ -100,7 +100,7 @@ function mgmt(p) {
   const labor = p.labor + L('8000')
   const opex = p.operating - p.whatnotFees
   const otherInc = p.other - L('8000')
-  return { whatnotGross, otherSales, refunds, whatnotFees: p.whatnotFees, netRevenue, cogs: p.cogs, gp, labor, opex, otherInc, net: p.netIncome }
+  return { whatnotGross, otherSales, refunds, whatnotFees: p.whatnotFees, netRevenue, cogs: p.cogs, cogsInventory: L('5000'), cogsLanded: L('5010'), gp, labor, opex, otherInc, net: p.netIncome }
 }
 
 function Scorecard({ books, ytd }) {
@@ -178,6 +178,8 @@ function ManagementTable({ books, ytd, selected, onSelect }) {
         <Line label="Whatnot fees" values={row(c => -c.whatnotFees)} />
         <Line label="Net revenue" values={row(c => c.netRevenue)} bold top />
         <Line label="Cost of goods sold" values={row(c => -c.cogs)} />
+        <Line label="Inventory cost" values={row(c => -c.cogsInventory)} dim indent />
+        <Line label="Freight & forklift" values={row(c => -c.cogsLanded)} dim indent />
         <Line label="Gross profit" values={row(c => c.gp)} bold top />
         <Line label="Gross margin" values={row(c => pct(c.gp, c.netRevenue))} dim pctRow />
         <Line label="Labor (payroll, contractors, partners)" values={row(c => -c.labor)} />
