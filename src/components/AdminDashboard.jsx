@@ -165,6 +165,12 @@ function PnL({ view, books }) {
       })}
       <Row label="Revenue after Whatnot fees" value={t.revenueNetOfFees} bold rule />
       <Row label="Cost of goods sold" value={-t.cogs} bold />
+      {amt('5010') !== 0 && (
+        <>
+          <Row label="Inventory cost" value={-amt('5000')} indent />
+          <Row label="Freight & forklift" value={-amt('5010')} indent />
+        </>
+      )}
       <Row label="Gross profit" value={t.grossProfitAfterFees} bold rule />
       <Row label="Labor" value={-t.labor} bold />
       {LABOR.filter(c => amt(c)).map(c => <Row key={c} label={name(c)} value={-amt(c)} indent />)}

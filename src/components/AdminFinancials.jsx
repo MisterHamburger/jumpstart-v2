@@ -307,11 +307,14 @@ function ClosePanel({ books, month, onChange, busy }) {
 
   const snapshot = () => run('Inventory snapshot', async () => {
     const d = await inventoryAt(me)
-    await upsertClose({ inventory_value: d.total, inventory_detail: d, inventory_note: null })
+    await upsertClose({ inventory_value: d.total, landed_cost_value: d.landed_costs, inventory_detail: d, inventory_note: null })
   })
   const saveOverride = () => run('Inventory override', async () => {
     if (!override.note.trim()) throw new Error('add a note explaining the value')
-    await upsertClose({ inventory_value: Number(override.value), inventory_detail: { total: Number(override.value), override: true }, inventory_note: override.note.trim() })
+    // The entered value is landed cost; record the freight/forklift inside it from the app.
+    const lc = await supabase.rpc('landed_costs_inventory_at', { p_date: me })
+    if (lc.error) throw lc.error
+    await upsertClose({ inventory_value: Number(override.value), landed_cost_value: Number(lc.data || 0), inventory_detail: { total: Number(override.value), override: true, landed_costs: Number(lc.data || 0) }, inventory_note: override.note.trim() })
   })
   const saveBalances = () => run('Statement balances', async () => {
     const rows = Object.entries(bal).filter(([, v]) => v !== '' && !Number.isNaN(Number(v)))

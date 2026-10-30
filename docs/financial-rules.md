@@ -13,23 +13,37 @@ then in every page.
 3. **Whatnot fees**: commission, payment processing, seller-paid shipping (incl. surcharges), show boost/promote.
    Actual statement amounts once the month's statement is in; a calibrated estimate before that.
 4. **Revenue net of Whatnot fees** = 1 − 2 − 3.
-5. **Cost of goods sold**: inventory cost only (see below).
+5. **Cost of goods sold**: landed inventory cost (see below), shown as two lines:
+   - **Inventory cost** (GL 5000): vendor cost of what sold.
+   - **Freight & forklift** (GL 5010): freight and per-load forklift capitalized into loads, as it sells.
 6. **Gross profit** = 4 − 5.
 7. **Labor**: gross wages, employer payroll taxes, payroll processing fees, contract labor (sourcing team, hourly
    Venmo help, consultants), guaranteed payments to partners (Josh, Wesley).
-8. **Operating expenses**: everything else, including shipping and freight.
+8. **Operating expenses**: everything else, including customer shipping (Pirate Ship/UPS) and the monthly
+   forklift rental. Freight and forklift bills tied to a load are inventory, not operating expenses.
 9. **Other income**: interest, card cash-back, bank credits.
 10. **Net income**.
 
 ## Cost of goods sold and inventory
 
-- A load's cost is **exactly what was paid to the vendor** for the goods (`loads.total_cost`; manifest item
-  `cost_freight` scaled so a manifest sums to the vendor payment). If a load is paid in pieces (card + wire,
-  deposits), the cost is the sum of the pieces.
-- **Never** add freight, freight broker (Widover / "The William System"), forklift (Craneworks), or shipping
-  estimates to a load. Those are always operating expenses (Shipping).
-- Inventory is valued at that vendor cost: perpetual running average per pool, manifest item cost for manifested
-  loads. Damaged/written-off units and shrinkage are cost of goods sold.
+- A load's cost is its **landed cost** (decision 2026-10-30, applied to all of 2026):
+  - **Vendor cost** = exactly what was paid to the vendor for the goods (`loads.total_cost`; manifest item
+    `cost_freight` scaled so a manifest sums to the vendor payment). If a load is paid in pieces (card + wire,
+    deposits), the cost is the sum of the pieces.
+  - **Freight** = the freight bill(s) for that load: freight broker (Widover / "The William System"), carrier, or
+    freight the vendor bills separately (`loads.freight_cost`).
+  - **Forklift** = forklift charges for unloading that load (`loads.forklift_cost`). The recurring monthly
+    forklift rental (Craneworks, ~$829/month) is an operating expense, not part of any load.
+  - Freight/forklift can be entered as an estimate when a load is recorded. When the bill arrives it is linked to
+    the load (`expenses.load_id`, Inputs → Add New Load → select the load); the load then uses the bill amount.
+    A linked bill is inventory (GL 5010), never also an operating expense.
+  - Freight a vendor builds into its price (delivered loads) is already in the vendor cost — don't add it again.
+- Balance sheet value of a load = vendor + freight + forklift (`loads.landed_cost`). Adjusted cost per unit =
+  landed cost ÷ units.
+- Inventory is valued at landed cost: perpetual running average per pool, manifest item cost for manifested
+  loads (plus the load's freight/forklift in proportion to the manifest cost still on hand). The pool average is
+  tracked as vendor + freight parts, so cost of goods sold splits exactly into lines 5000 and 5010. Damaged/
+  written-off units and shrinkage are cost of goods sold.
 - A load that is paid but not yet landed is still inventory (in transit). A load that has landed but isn't paid
   yet is not counted until it's paid (books are cash basis).
 - Kickstart: item cost is `cost × 1.08` (sales tax); sourcing-team reimbursements for inventory are inventory.

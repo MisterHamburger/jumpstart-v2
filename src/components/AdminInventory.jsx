@@ -182,7 +182,7 @@ export default function AdminInventory() {
     // manifest-join doesn't cover).
     const { data: loadsInfo } = await supabase
       .from('loads')
-      .select('id, kind, pool_tag, vendor, notes, quantity, total_cost, date, landed, closed, is_opening')
+      .select('id, kind, pool_tag, vendor, notes, quantity, total_cost, freight_cost, forklift_cost, date, landed, closed, is_opening')
 
     // Pool tokens (RDM, UJC, custom brands) from the loads table.
     const poolTagSet = new Set((loadsInfo || []).map(l => l.pool_tag).filter(Boolean))
@@ -241,12 +241,18 @@ export default function AdminInventory() {
           date: l.date || null,
           brand: l.vendor || l.notes || '',
           item_count: Number(summary.item_count) || 0,
-          total_cost: Number(summary.total_cost) || 0,
-          avg_cost: Number(summary.avg_cost) || 0,
+          // Landed cost (docs/financial-rules.md): manifest vendor cost + the load's freight & forklift.
+          vendor_cost: Number(summary.total_cost) || 0,
+          landed_costs: (Number(l.freight_cost) || 0) + (Number(l.forklift_cost) || 0),
+          total_cost: (Number(summary.total_cost) || 0) + (Number(l.freight_cost) || 0) + (Number(l.forklift_cost) || 0),
+          avg_cost: (Number(summary.item_count) || 0) > 0
+            ? ((Number(summary.total_cost) || 0) + (Number(l.freight_cost) || 0) + (Number(l.forklift_cost) || 0)) / Number(summary.item_count)
+            : Number(summary.avg_cost) || 0,
         })
       } else {
         const qty = Number(l.quantity) || 0
-        const cost = Number(l.total_cost) || 0
+        const landedCosts = (Number(l.freight_cost) || 0) + (Number(l.forklift_cost) || 0)
+        const cost = (Number(l.total_cost) || 0) + landedCosts   // landed cost
         rows.push({
           load_id: l.id,
           kind: l.kind,
@@ -257,6 +263,8 @@ export default function AdminInventory() {
             : l.kind === 'unmanifested' ? 'Unmanifested J.Crew'
             : (l.vendor || l.pool_tag || 'Custom'),
           item_count: qty,
+          vendor_cost: Number(l.total_cost) || 0,
+          landed_costs: landedCosts,
           total_cost: cost,
           avg_cost: qty > 0 ? cost / qty : 0,
         })
@@ -310,7 +318,7 @@ export default function AdminInventory() {
       let poolRemain = landedRemain
       for (const l of transitLoads) {
         const qty = Number(l.quantity) || 0
-        const unitCost = qty > 0 ? (Number(l.total_cost) || 0) / qty : 0
+        const unitCost = qty > 0 ? ((Number(l.total_cost) || 0) + (Number(l.freight_cost) || 0) + (Number(l.forklift_cost) || 0)) / qty : 0
         transitCount += qty
         transitCost  += qty * unitCost
         poolRemain   += qty
@@ -437,9 +445,17 @@ export default function AdminInventory() {
                   </div>
                 )}
                 <div className="flex justify-between text-xs text-slate-400 mt-1">
-                  <span>Total: ${Number(load.total_cost).toLocaleString(undefined, {maximumFractionDigits: 0})}</span>
-                  <span>Avg: ${Number(load.avg_cost).toFixed(2)}/item</span>
+                  <span title="Balance sheet value: vendor cost + freight + forklift">Total: ${Number(load.total_cost).toLocaleString(undefined, {maximumFractionDigits: 0})}</span>
+                  <span title="Adjusted (landed) cost per unit">Avg: ${Number(load.avg_cost).toFixed(2)}/item</span>
                 </div>
+                {load.landed_costs > 0 ? (
+                  <div className="flex justify-between text-[11px] text-slate-500 mt-0.5">
+                    <span>Vendor ${Number(load.vendor_cost).toLocaleString(undefined, {maximumFractionDigits: 0})} + freight/forklift ${Number(load.landed_costs).toLocaleString(undefined, {maximumFractionDigits: 0})}</span>
+                    <span>vendor ${(load.item_count ? load.vendor_cost / load.item_count : 0).toFixed(2)}</span>
+                  </div>
+                ) : (
+                  <div className="text-[11px] text-slate-600 mt-0.5">No freight/forklift recorded</div>
+                )}
               </div>
             )
           })}

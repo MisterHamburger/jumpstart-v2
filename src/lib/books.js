@@ -51,12 +51,15 @@ export async function inventoryAt(date) {
   const detail = {
     date,
     pools: round2(sum(poolRows, 'value')),
-    pool_rows: poolRows.map(p => ({ pool: p.pool_tag, units: Number(p.units), avg_cost: Number(p.avg_cost), value: Number(p.value) })),
+    pool_rows: poolRows.map(p => ({ pool: p.pool_tag, units: Number(p.units), avg_cost: Number(p.avg_cost), value: Number(p.value), landed_costs: Number(p.landed_costs_value || 0) })),
     in_transit: round2(sum(transit.data, 'value')),
     manifested: round2(Number(manifested.data?.[0]?.value || 0)),
     kickstart_intake: round2(Number(ks.data?.[0]?.value || 0)),
   }
   detail.total = round2(detail.pools + detail.in_transit + detail.manifested + detail.kickstart_intake)
+  // Freight/forklift included in the values above (landed cost); the rest is vendor cost.
+  detail.landed_costs = round2(sum(poolRows, 'landed_costs_value') + sum(transit.data, 'landed_costs_value')
+    + Number(manifested.data?.[0]?.landed_costs_value || 0))
   return detail
 }
 
@@ -91,9 +94,14 @@ export async function loadBooks(year, { fast = false } = {}) {
   const needEstimate = months.filter(m => (fast && isOpen(m)) || Object.keys(STORE_REVENUE).some(a =>
     !statements.find(s => s.account === a && s.period_start === m)))
   const estimates = {}
+  const landedSold = {}   // freight/forklift part of the item cost estimate (fast-mode open months)
   await Promise.all(needEstimate.map(async m => {
     const { data } = await supabase.rpc('get_dashboard_summary', { date_cutoff: m, date_end: monthEnd(m) })
     estimates[m] = typeof data === 'string' ? JSON.parse(data) : data
+    if (fast && isOpen(m)) {
+      const r = await supabase.rpc('landed_costs_sold', { p_start: m, p_end: monthEnd(m) })
+      landedSold[m] = r.error ? 0 : Number(r.data || 0)
+    }
   }))
 
   // Month-end inventory: closed months use the saved snapshot; open months are live.
@@ -104,10 +112,12 @@ export async function loadBooks(year, { fast = false } = {}) {
   const inventory = {}
   for (const m of months) {
     const c = closes[m]
+    // inventory_value is landed; landed_cost_value is the freight/forklift inside it.
+    const closedLanded = c => Number(c.landed_cost_value ?? c.inventory_detail?.landed_costs ?? 0)
     if (c?.status === 'closed' && c.inventory_value != null) {
-      inventory[m] = { total: Number(c.inventory_value), ...(c.inventory_detail || {}), source: 'closed' }
+      inventory[m] = { ...(c.inventory_detail || {}), total: Number(c.inventory_value), landed_costs: closedLanded(c), source: 'closed' }
     } else if (c?.inventory_value != null && c.inventory_note) {
-      inventory[m] = { total: Number(c.inventory_value), ...(c.inventory_detail || {}), source: 'override' }
+      inventory[m] = { ...(c.inventory_detail || {}), total: Number(c.inventory_value), landed_costs: closedLanded(c), source: 'override' }
     } else if (fast) {
       inventory[m] = { total: null, source: 'estimate' }
     } else {
@@ -128,6 +138,7 @@ export async function loadBooks(year, { fast = false } = {}) {
   // ── Income statement per month ──
   const pnl = {}
   let prevInventory = openingInventory
+  let prevLanded = 0   // freight/forklift inside prevInventory (none in the opening balance)
   for (const m of months) {
     const me = monthEnd(m)
     const lines = {}   // code -> { amount, sources:Set }
@@ -177,24 +188,35 @@ export async function loadBooks(year, { fast = false } = {}) {
       const net = Number(j.debit) - Number(j.credit)
       add(j.account, a.type === 'revenue' ? -net : net, 'journal')
     }
+    // Cost of goods sold, split per the rulebook: 5000 = vendor (inventory) cost,
+    // 5010 = freight & forklift capitalized into loads (landed cost).
     const inv = inventory[m]
     if (inv?.source === 'estimate') {
       // Fast mode, open month: COGS = item cost of what sold (incl. write-offs);
       // this month's purchases go into inventory instead of COGS.
-      const purchases = lines['5000']?.amount || 0
+      const purchasesVendor = lines['5000']?.amount || 0
+      const purchasesLanded = lines['5010']?.amount || 0
       const itemCost = ['jumpstart', 'kickstart'].reduce((t, c) => t + Number(estimates[m]?.[c]?.cogs || 0), 0)
+      const landedCost = Math.min(landedSold[m] || 0, itemCost)
       delete lines['5000']
-      add('5000', itemCost, 'item cost estimate')
-      inv.total = round2(prevInventory + purchases - itemCost)
-      inv.purchases = round2(purchases)
+      delete lines['5010']
+      add('5000', itemCost - landedCost, 'item cost estimate')
+      add('5010', landedCost, 'item cost estimate')
+      inv.total = round2(prevInventory + purchasesVendor + purchasesLanded - itemCost)
+      inv.landed_costs = round2(prevLanded + purchasesLanded - landedCost)
+      inv.purchases = round2(purchasesVendor + purchasesLanded)
       estimated = true
     }
     const endInv = inv?.total
+    const endLanded = endInv != null ? Number(inv.landed_costs || 0) : null
     // (In fast-mode open months COGS was set above from item cost; don't add the change again.)
-    if (endInv != null && inv.source !== 'estimate') add('5000', round2(prevInventory - endInv), 'inventory change')
+    if (endInv != null && inv.source !== 'estimate') {
+      add('5000', round2((prevInventory - prevLanded) - (endInv - endLanded)), 'inventory change')
+      add('5010', round2(prevLanded - endLanded), 'inventory change')
+    }
     const inventoryChange = endInv != null ? round2(prevInventory - endInv) : null
     const beginInventory = prevInventory
-    if (endInv != null) prevInventory = endInv
+    if (endInv != null) { prevInventory = endInv; prevLanded = endLanded }
 
     const out = {}
     for (const [k, v] of Object.entries(lines)) out[k] = { amount: round2(v.amount), sources: [...v.sources] }

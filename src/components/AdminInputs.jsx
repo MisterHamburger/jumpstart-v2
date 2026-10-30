@@ -5,6 +5,7 @@ import { normalizeBarcode } from '../lib/barcodes'
 import { localToday } from '../lib/dates'
 import { generateJumpstartWhatnotCsv } from '../lib/jumpstartWhatnotCsv'
 import LandedToggle from './LandedToggle'
+import LoadLandedCosts, { landedSummary } from './LoadLandedCosts'
 
 export default function AdminInputs() {
   const [activeSection, setActiveSection] = useState('shows')
@@ -135,7 +136,7 @@ function getField(row, ...names) {
 function ManifestUpload() {
   const [loads, setLoads] = useState([])
   const [loadId, setLoadId] = useState('')
-  const [newLoad, setNewLoad] = useState({ date: '', vendor: '', total_cost: '', quantity: '', notes: '', kind: '', landed: false })
+  const [newLoad, setNewLoad] = useState({ date: '', vendor: '', total_cost: '', freight_cost: '', forklift_cost: '', quantity: '', notes: '', kind: '', landed: false })
   const [showNewLoad, setShowNewLoad] = useState(false)
   const [status, setStatus] = useState('')
   const [progress, setProgress] = useState(null)
@@ -193,6 +194,8 @@ function ManifestUpload() {
       date: newLoad.date,
       vendor: newLoad.vendor,
       total_cost: parseFloat(newLoad.total_cost) || null,
+      freight_cost: parseFloat(newLoad.freight_cost) || 0,
+      forklift_cost: parseFloat(newLoad.forklift_cost) || 0,
       quantity: parseInt(newLoad.quantity) || null,
       notes: newLoad.notes,
       kind: newLoad.kind,
@@ -209,7 +212,7 @@ function ManifestUpload() {
     }
 
     setStatus(`✅ Created ${loadIdNew}${newLoad.landed ? '' : ' (in transit)'}`)
-    setNewLoad({ date: '', vendor: '', total_cost: '', quantity: '', notes: '', kind: '', landed: false })
+    setNewLoad({ date: '', vendor: '', total_cost: '', freight_cost: '', forklift_cost: '', quantity: '', notes: '', kind: '', landed: false })
     setShowNewLoad(false)
     setLoadId(loadIdNew)
     refreshLoads()
@@ -229,8 +232,8 @@ function ManifestUpload() {
   }
 
   // ── REVISE LOAD COST ─────────────────────────────
-  // A load's cost is exactly what was paid the vendor (docs/financial-rules.md):
-  // no freight or forklift — those are OPEX. Revise it when the final vendor
+  // This edits the load's VENDOR cost (docs/financial-rules.md); freight and
+  // forklift are edited/linked separately (LoadLandedCosts). Revise it when the final vendor
   // invoice/payment differs from the first entry. Because the profitability view derives
   // the running pool WAC live (pool_wac_schedule) rather than snapshotting it at
   // sale time, editing a cost restates COGS on units sold since that load
@@ -462,11 +465,27 @@ function ManifestUpload() {
                 required 
               />
               <input
-                placeholder="Total Cost"
+                placeholder="Vendor cost (paid to vendor)"
                 type="number"
                 step="0.01"
                 value={newLoad.total_cost}
                 onChange={e => setNewLoad({...newLoad, total_cost: e.target.value})}
+                className="bg-white/5 border border-white/10 rounded-2xl px-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500/50 focus:ring-4 focus:ring-cyan-500/10 transition-all"
+              />
+              <input
+                placeholder="Freight (estimate ok)"
+                type="number"
+                step="0.01"
+                value={newLoad.freight_cost}
+                onChange={e => setNewLoad({...newLoad, freight_cost: e.target.value})}
+                className="bg-white/5 border border-white/10 rounded-2xl px-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500/50 focus:ring-4 focus:ring-cyan-500/10 transition-all"
+              />
+              <input
+                placeholder="Forklift (this load only)"
+                type="number"
+                step="0.01"
+                value={newLoad.forklift_cost}
+                onChange={e => setNewLoad({...newLoad, forklift_cost: e.target.value})}
                 className="bg-white/5 border border-white/10 rounded-2xl px-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500/50 focus:ring-4 focus:ring-cyan-500/10 transition-all"
               />
               <input
@@ -483,6 +502,18 @@ function ManifestUpload() {
                 className="bg-white/5 border border-white/10 rounded-2xl px-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500/50 focus:ring-4 focus:ring-cyan-500/10 transition-all"
               />
             </div>
+            {(() => {
+              const s = landedSummary({ total_cost: newLoad.total_cost, freight_cost: newLoad.freight_cost, forklift_cost: newLoad.forklift_cost, quantity: newLoad.quantity })
+              if (!s.landed) return null
+              const m = n => `$${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+              return (
+                <p className="text-xs text-slate-400">
+                  Balance sheet value <span className="text-white font-semibold">{m(s.landed)}</span>
+                  {s.perUnit != null && <> · Adjusted cost/unit <span className="text-white font-semibold">{m(s.perUnit)}</span></>}
+                  <span className="text-slate-500"> — freight &amp; forklift are part of inventory cost. Link the actual bills to the load once they arrive.</span>
+                </p>
+              )
+            })()}
             <div>
               <label className="block text-xs font-semibold text-slate-400 mb-1.5">Status</label>
               <div className="inline-flex rounded-2xl border border-white/10 overflow-hidden">
@@ -661,6 +692,17 @@ function ManifestUpload() {
                     </button>
                   </div>
                 </div>
+                {(() => {
+                  const s = landedSummary(l)
+                  return (Number(l.freight_cost) || Number(l.forklift_cost)) ? (
+                    <div className="text-[11px] text-slate-500 mt-1">
+                      Landed ${s.landed.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      {s.perUnit != null && <> · ${s.perUnit.toFixed(2)}/unit</>}
+                      <span> (incl. freight &amp; forklift ${(s.freight + s.forklift).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })})</span>
+                    </div>
+                  ) : null
+                })()}
+                {loadId === l.id && !l.is_opening && <LoadLandedCosts load={l} onChange={refreshLoads} />}
               </div>
             )
           })}
