@@ -312,9 +312,8 @@ function ClosePanel({ books, month, onChange, busy }) {
   const saveOverride = () => run('Inventory override', async () => {
     if (!override.note.trim()) throw new Error('add a note explaining the value')
     // The entered value is landed cost; record the freight/forklift inside it from the app.
-    const lc = await supabase.rpc('landed_costs_inventory_at', { p_date: me })
-    if (lc.error) throw lc.error
-    await upsertClose({ inventory_value: Number(override.value), landed_cost_value: Number(lc.data || 0), inventory_detail: { total: Number(override.value), override: true, landed_costs: Number(lc.data || 0) }, inventory_note: override.note.trim() })
+    const lc = (await inventoryAt(me)).landed_costs || 0
+    await upsertClose({ inventory_value: Number(override.value), landed_cost_value: lc, inventory_detail: { total: Number(override.value), override: true, landed_costs: lc }, inventory_note: override.note.trim() })
   })
   const saveBalances = () => run('Statement balances', async () => {
     const rows = Object.entries(bal).filter(([, v]) => v !== '' && !Number.isNaN(Number(v)))
