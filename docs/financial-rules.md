@@ -9,6 +9,8 @@ then in every page.
 
 1. **Gross sales**: what buyers paid on Whatnot (statement "total income", the 1099-K basis), plus wholesale
    (QuickBooks Payments deposits) and direct/Venmo sales.
+   Giveaways ($0 sold price) are not sales: the show uploader skips them, so they never count as sold
+   items or take a unit out of inventory (since 2026-11-02).
 2. **Refunds**: customer refunds (Whatnot order refunds, Venmo refunds) reduce sales.
 3. **Whatnot fees**: commission, payment processing, seller-paid shipping (incl. surcharges), show boost/promote.
    Actual statement amounts once the month's statement is in; a calibrated estimate before that.

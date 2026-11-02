@@ -122,6 +122,14 @@ function groupShowRows(rows, mode) {
 }
 
 // ── Shared: Flexible field getter ─────────────────
+// Giveaways ($0 sold price, no coupon) are not sales: they are left out of the
+// show entirely, so they never count as sold items or pull inventory.
+function isGiveaway(row) {
+  const sold = parseDollar(getField(row, 'sold price', 'Sold Price', 'original item price', 'Original Item Price'))
+  const coupon = parseDollar(getField(row, 'coupon price', 'Coupon Amount'))
+  return sold + coupon === 0
+}
+
 function getField(row, ...names) {
   for (const name of names) {
     if (row[name] !== undefined && row[name] !== '') return row[name]
@@ -859,7 +867,8 @@ function ShowUpload() {
     Papa.parse(file, {
       header: true, skipEmptyLines: true,
       complete: async (results) => {
-        const rows = results.data
+        const giveawayCount = results.data.filter(isGiveaway).length
+        const rows = results.data.filter(r => !isGiveaway(r))
 
         // Collect all timestamps
         const timestamps = []
@@ -942,7 +951,7 @@ function ShowUpload() {
           }
         }
 
-        setDetected({ date: showDate, timeOfDay, orderCount: validCount, failedCount, cancelledCount, showName, alreadyExists, firstOrder: timestamps[0], lastOrder: timestamps[timestamps.length - 1] })
+        setDetected({ date: showDate, timeOfDay, orderCount: validCount, failedCount, cancelledCount, giveawayCount, showName, alreadyExists, firstOrder: timestamps[0], lastOrder: timestamps[timestamps.length - 1] })
         setPendingFile({ file, rows })
         setStatus('')
       }
@@ -1089,7 +1098,8 @@ function ShowUpload() {
     const failed = showItems.filter(i => i.status === 'failed').length
     const cancelled = showItems.filter(i => i.status === 'cancelled').length
     const autoNote = autoLinked > 0 ? `, ${autoLinked} auto-linked from SKU` : ''
-    setStatus(`✅ "${showName}" — ${validCount} scannable, ${failed} failed, ${cancelled} cancelled${autoNote}`)
+    const giveNote = detected.giveawayCount > 0 ? `, ${detected.giveawayCount} giveaway${detected.giveawayCount === 1 ? '' : 's'} skipped` : ''
+    setStatus(`✅ "${showName}" — ${validCount} scannable, ${failed} failed, ${cancelled} cancelled${giveNote}${autoNote}`)
     setDetected(null)
     setPendingFile(null)
     refreshShows()
@@ -1201,13 +1211,14 @@ function ShowUpload() {
                 <span className="text-slate-500 text-xs block">Scannable</span>
                 <span className="font-semibold text-emerald-400">{detected.orderCount}</span>
               </div>
-              {(detected.failedCount > 0 || detected.cancelledCount > 0) && (
+              {(detected.failedCount > 0 || detected.cancelledCount > 0 || detected.giveawayCount > 0) && (
                 <div>
                   <span className="text-slate-500 text-xs block">Excluded</span>
                   <span className="font-semibold text-red-400">
                     {detected.failedCount > 0 && `${detected.failedCount} failed`}
                     {detected.failedCount > 0 && detected.cancelledCount > 0 && ', '}
                     {detected.cancelledCount > 0 && `${detected.cancelledCount} cancelled`}
+                    {detected.giveawayCount > 0 && `${detected.failedCount > 0 || detected.cancelledCount > 0 ? ', ' : ''}${detected.giveawayCount} giveaway${detected.giveawayCount === 1 ? '' : 's'}`}
                   </span>
                 </div>
               )}
