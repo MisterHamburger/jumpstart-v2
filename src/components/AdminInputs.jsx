@@ -886,18 +886,23 @@ function ShowUpload() {
         // Timestamps from Whatnot are UTC but don't have 'Z' suffix — append
         // 'Z' to force UTC parsing, then convert via the America/Chicago zone
         // (handles CST/CDT automatically, no hardcoded offset).
-        const rawTs = timestamps[0].trim()
-        const utcTs = rawTs.includes('Z') ? rawTs : rawTs.replace(' ', 'T') + 'Z'
-        const firstTs = new Date(utcTs)
-
-        const parts = new Intl.DateTimeFormat('en-CA', {
-          timeZone: 'America/Chicago',
-          year: 'numeric', month: '2-digit', day: '2-digit',
-          hour: '2-digit', hourCycle: 'h23'
-        }).formatToParts(firstTs)
-        const getPart = (type) => parts.find(p => p.type === type).value
-        const showDate = `${getPart('year')}-${getPart('month')}-${getPart('day')}`
-        const centralHour = parseInt(getPart('hour'), 10)
+        const toCentral = (raw) => {
+          const t = raw.trim()
+          const parsed = new Date(t.includes('Z') ? t : t.replace(' ', 'T') + 'Z')
+          const parts = new Intl.DateTimeFormat('en-CA', {
+            timeZone: 'America/Chicago',
+            year: 'numeric', month: '2-digit', day: '2-digit',
+            hour: '2-digit', hourCycle: 'h23'
+          }).formatToParts(parsed)
+          const p = (type) => parts.find(x => x.type === type).value
+          return { ms: parsed.getTime(), date: `${p('year')}-${p('month')}-${p('day')}`, hour: parseInt(p('hour'), 10) }
+        }
+        // Use the median order's date, not the first row's: Buy Now / flash
+        // sale orders placed on an earlier day can show up in a show's CSV
+        // (often as the first row) and would otherwise date the whole show wrong.
+        const times = timestamps.map(toCentral).filter(t => !isNaN(t.ms)).sort((a, b) => a.ms - b.ms)
+        const showDate = times[Math.floor(times.length / 2)].date
+        const centralHour = times.find(t => t.date === showDate).hour
 
         // Morning shows: 6am-3pm Central
         // Evening shows: 3pm-6am Central
