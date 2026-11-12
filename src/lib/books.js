@@ -37,6 +37,20 @@ export function monthsOf(year) {
 
 const round2 = n => Math.round((n + Number.EPSILON) * 100) / 100
 
+// get_dashboard_summary reads the profitability view (~1s alone), but several
+// calls at once hit the statement timeout. Call it one at a time, retry a
+// failure once, and throw rather than let a failed month read as $0.
+export async function dashboardSummary(date_cutoff, date_end) {
+  let error
+  for (let attempt = 0; attempt < 3; attempt++) {
+    if (attempt) await new Promise(r => setTimeout(r, 1500 * attempt))
+    const res = await supabase.rpc('get_dashboard_summary', { date_cutoff, date_end })
+    if (!res.error && res.data) return typeof res.data === 'string' ? JSON.parse(res.data) : res.data
+    error = res.error
+  }
+  throw new Error(`Dashboard summary ${date_cutoff}–${date_end ?? 'today'} failed: ${error?.message || 'no data'}`)
+}
+
 // Live month-end inventory at cost from the app's item/pool data.
 export async function inventoryAt(date) {
   const [pools, transit, manifested, ks] = await Promise.all([
@@ -95,14 +109,13 @@ export async function loadBooks(year, { fast = false } = {}) {
     !statements.find(s => s.account === a && s.period_start === m)))
   const estimates = {}
   const landedSold = {}   // freight/forklift part of the item cost estimate (fast-mode open months)
-  await Promise.all(needEstimate.map(async m => {
-    const { data } = await supabase.rpc('get_dashboard_summary', { date_cutoff: m, date_end: monthEnd(m) })
-    estimates[m] = typeof data === 'string' ? JSON.parse(data) : data
+  for (const m of needEstimate) {   // sequential: parallel calls time out
+    estimates[m] = await dashboardSummary(m, monthEnd(m))
     if (fast && isOpen(m)) {
       const r = await supabase.rpc('landed_costs_sold', { p_start: m, p_end: monthEnd(m) })
       landedSold[m] = r.error ? 0 : Number(r.data || 0)
     }
-  }))
+  }
 
   // Month-end inventory: closed months use the saved snapshot; open months are live.
   const today = todayStr()

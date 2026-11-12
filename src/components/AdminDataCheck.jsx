@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
+import { dashboardSummary } from '../lib/books'
 
 const BUSINESS_START = '2026-02-07'
 
@@ -26,10 +27,8 @@ export default function AdminDataCheck() {
     setResults(null)
 
     // Load dashboard data first (needed for P&L checks)
-    const { data: raw, error } = await supabase.rpc('get_dashboard_summary', {
-      date_cutoff: BUSINESS_START,
-      date_end: null,
-    })
+    const { data: raw, error } = await dashboardSummary(BUSINESS_START, null)
+      .then(data => ({ data }), error => ({ error }))
 
     if (error || !raw) {
       setResults([{ label: 'Dashboard Load', pass: false, detail: `Failed to load dashboard data: ${error?.message}` }])
@@ -129,11 +128,11 @@ export default function AdminDataCheck() {
             }
           }
 
-          // Query all months + All Time in parallel
-          const monthResults = await Promise.all(
-            months.map(m => supabase.rpc('get_dashboard_summary', { date_cutoff: m.start, date_end: m.end }))
-          )
-          const allRes = await supabase.rpc('get_dashboard_summary', { date_cutoff: BUSINESS_START, date_end: null })
+          // Query all months + All Time one at a time (parallel calls time out)
+          const summary = (s, e) => dashboardSummary(s, e).then(data => ({ data }), error => ({ error }))
+          const monthResults = []
+          for (const m of months) monthResults.push(await summary(m.start, m.end))
+          const allRes = await summary(BUSINESS_START, null)
 
           const anyError = monthResults.some(r => r.error) || allRes.error
           if (anyError) {
@@ -352,9 +351,8 @@ export default function AdminDataCheck() {
       // SECTION 12: EXPENSE DATE CLAMPING
       // ═══════════════════════════════════════════
       {
-        const { data: bsData, error: expErr } = await supabase.rpc('get_dashboard_summary', {
-          date_cutoff: BUSINESS_START, date_end: null,
-        })
+        // Same arguments as the load at the top: reuse it instead of another call
+        const bsData = raw, expErr = null
         if (expErr) {
           check('Expense Date Clamping', false, `Query error: ${expErr.message}`)
         } else {

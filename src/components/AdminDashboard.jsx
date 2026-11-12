@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import { supabase } from '../lib/supabase'
-import { loadBooks, monthLabel, sumLines, totals } from '../lib/books'
+import { loadBooks, monthLabel, sumLines, totals, dashboardSummary } from '../lib/books'
 
 // One rulebook (docs/financial-rules.md). Closed months come straight from the
 // books (Financials tab); open months are the same engine's estimate — item
@@ -250,7 +250,7 @@ function SalesPulse() {
     if (r.days == null) s.setDate(1); else s.setDate(s.getDate() - r.days)
     setDays(Math.round((d - s) / 86400000) + 1)
     setData(null)
-    supabase.rpc('get_dashboard_summary', { date_cutoff: iso(s), date_end: end }).then(({ data: raw }) => {
+    dashboardSummary(iso(s), end).catch(() => null).then(raw => {
       if (!live || !raw) return
       const pick = k => ['jumpstart', 'kickstart'].filter(c => channel === 'all' || c === channel)
         .reduce((t, c) => t + Number(raw[c]?.[k] || 0), 0)
