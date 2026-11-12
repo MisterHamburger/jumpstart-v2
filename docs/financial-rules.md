@@ -14,6 +14,10 @@ then in every page.
 2. **Refunds**: customer refunds (Whatnot order refunds, Venmo refunds) reduce sales.
 3. **Whatnot fees**: commission, payment processing, seller-paid shipping (incl. surcharges), show boost/promote.
    Actual statement amounts once the month's statement is in; a calibrated estimate before that.
+   Estimate (`get_dashboard_summary`): scanned Whatnot sales × each account's median 2026 statement-month rate for
+   processing, boost, shipping and refunds. Commission from 2026-09-21 uses Whatnot's 4-week sales tier
+   (Fashion: <$15K 8%, $15K+ 7%, $35K+ 6.5%, $50K+ 5.5%, $100K+ 5%, $250K+ 4.5%; the previous window's
+   sales set the rate; windows reset Mondays from 2026-09-21). Before that it is the statement average.
 4. **Revenue net of Whatnot fees** = 1 − 2 − 3.
 5. **Cost of goods sold**: landed inventory cost (see below), shown as two lines:
    - **Inventory cost** (GL 5000): vendor cost of what sold.
