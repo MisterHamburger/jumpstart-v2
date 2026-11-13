@@ -67,13 +67,17 @@ export async function inventoryAt(date) {
     pools: round2(sum(poolRows, 'value')),
     pool_rows: poolRows.map(p => ({ pool: p.pool_tag, units: Number(p.units), avg_cost: Number(p.avg_cost), value: Number(p.value), landed_costs: Number(p.landed_costs_value || 0) })),
     in_transit: round2(sum(transit.data, 'value')),
-    manifested: round2(Number(manifested.data?.[0]?.value || 0)),
-    kickstart_intake: round2(Number(ks.data?.[0]?.value || 0)),
+    // Written off at the June 2026 close (see docs/financial-rules.md): manifested
+    // leftovers and Kickstart intake still in the data are not inventory. Shown
+    // for reference only, never in the total.
+    manifested: 0,
+    kickstart_intake: 0,
+    written_off_manifest_leftovers: round2(Number(manifested.data?.[0]?.value || 0)),
+    written_off_kickstart_intake: round2(Number(ks.data?.[0]?.value || 0)),
   }
-  detail.total = round2(detail.pools + detail.in_transit + detail.manifested + detail.kickstart_intake)
+  detail.total = round2(detail.pools + detail.in_transit)
   // Freight/forklift included in the values above (landed cost); the rest is vendor cost.
-  detail.landed_costs = round2(sum(poolRows, 'landed_costs_value') + sum(transit.data, 'landed_costs_value')
-    + Number(manifested.data?.[0]?.landed_costs_value || 0))
+  detail.landed_costs = round2(sum(poolRows, 'landed_costs_value') + sum(transit.data, 'landed_costs_value'))
   return detail
 }
 

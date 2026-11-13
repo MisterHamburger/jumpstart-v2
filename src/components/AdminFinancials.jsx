@@ -377,7 +377,7 @@ function ClosePanel({ books, month, onChange, busy }) {
         <p className="text-sm font-bold text-white mb-1">Month-end inventory</p>
         <p className="text-xs text-slate-400 mb-2">
           Live value at {p.inventory?.date || me}: {fmt2(p.inventory?.total)}
-          {p.inventory?.source === 'live' && <> — pools {fmt2(p.inventory.pools)}, in transit {fmt2(p.inventory.in_transit)}, manifested {fmt2(p.inventory.manifested)}, Kickstart intake {fmt2(p.inventory.kickstart_intake)}</>}
+          {p.inventory?.source === 'live' && <> — pools {fmt2(p.inventory.pools)}, in transit {fmt2(p.inventory.in_transit)} (manifested leftovers and Kickstart intake written off June 2026, not counted)</>}
           . COGS includes the inventory change: begin {fmt2(p.beginInventory)} → end {fmt2(p.endInventory)}.
         </p>
         {!closed && (

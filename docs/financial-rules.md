@@ -46,10 +46,12 @@ then in every page.
   - Freight a vendor builds into its price (delivered loads) is already in the vendor cost — don't add it again.
 - Balance sheet value of a load = vendor + freight + forklift (`loads.landed_cost`). Adjusted cost per unit =
   landed cost ÷ units.
-- Inventory is valued at landed cost: perpetual running average per pool, manifest item cost for manifested
-  loads (plus the load's freight/forklift in proportion to the manifest cost still on hand). The pool average is
-  tracked as vendor + freight parts, so cost of goods sold splits exactly into lines 5000 and 5010. Damaged/
-  written-off units and shrinkage are cost of goods sold.
+- Inventory is valued at landed cost: perpetual running average per pool, plus loads paid but not yet landed.
+  The pool average is tracked as vendor + freight parts, so cost of goods sold splits exactly into lines 5000
+  and 5010. Damaged/written-off units and shrinkage are cost of goods sold.
+- Manifested leftovers and Kickstart intake were written off at the June 2026 close (manifest leftovers
+  $18,583, Kickstart intake $27,070). Units still in that data are not inventory: in-stock = pools only, on the
+  Inventory tab, the Financials tab and every month-end snapshot. New stock comes in as pool loads.
 - A load that is paid but not yet landed is still inventory (in transit). A load that has landed but isn't paid
   yet is not counted until it's paid (books are cash basis).
 - Kickstart: item cost is `cost × 1.08` (sales tax); sourcing-team reimbursements for inventory are inventory.
